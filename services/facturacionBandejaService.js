@@ -1,7 +1,12 @@
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 import Complex from '../models/Complex.js';
 import Siniestro from '../models/CasoComplex.js';
-import { normalizarClaveGerente, nombreGerente } from '../config/gerentesFacturacion.js';
+import {
+  normalizarClaveGerente,
+  nombreGerente,
+  emailGerente,
+} from '../config/gerentesFacturacion.js';
 
 const TIPOS_ENVIO = new Set(['control_horas', 'gerencia']);
 const MAX_CASOS_BANDEJA = 500;
@@ -21,6 +26,7 @@ function crearRegistroEnvio({
     return null;
   }
   return {
+    id: crypto.randomUUID(),
     tipo,
     gerente: gerenteNorm,
     usuario: String(usuario || 'desconocido').trim(),
@@ -182,7 +188,7 @@ function filtrarEnvios(envios, { gerente, tipo, desde, hasta }) {
   });
 }
 
-function textoCoincide(caso, q) {
+function textoCoincide(caso, q, mapaAseg = {}) {
   const term = String(q || '').trim().toLowerCase();
   if (!term) return true;
   const campos = [
@@ -190,6 +196,7 @@ function textoCoincide(caso, q) {
     caso.nmroSinstro,
     caso.asgrBenfcro,
     caso.codiAsgrdra,
+    resolverNombreAseguradora(caso.codiAsgrdra, mapaAseg),
     caso.codiRespnsble,
     caso.descripcionEstado,
   ];
@@ -206,17 +213,149 @@ function mapaResponsables(responsables) {
   return mapa;
 }
 
+function registrarClaveAseguradora(mapa, cod, nombre) {
+  if (cod === undefined || cod === null) return;
+  const clave = String(cod).trim();
+  if (!clave) return;
+  mapa[clave] = nombre;
+  mapa[clave.toUpperCase()] = nombre;
+  if (/^\d+$/.test(clave)) {
+    const sinCeros = String(Number(clave));
+    if (sinCeros && sinCeros !== clave) mapa[sinCeros] = nombre;
+  }
+}
+
+function mapaAseguradoras(clientes) {
+  const mapa = {};
+  (clientes || []).forEach((c) => {
+    const nombre = (c.rzonSocial || c.nombre || '').trim();
+    if (!nombre) return;
+    for (const cod of [c.codiAsgrdra, c.cod1Asgrdra]) {
+      registrarClaveAseguradora(mapa, cod, nombre);
+    }
+    registrarClaveAseguradora(mapa, nombre, nombre);
+  });
+  return mapa;
+}
+
+function codigoAseguradoraCaso(doc) {
+  return (
+    doc?.codiAsgrdra ??
+    doc?.codi_asgrdra ??
+    doc?.cod1Asgrdra ??
+    null
+  );
+}
+
+function resolverNombreAseguradora(codiAsgrdra, mapaAseg) {
+  const cod = String(codiAsgrdra || '').trim();
+  if (!cod) return '—';
+  const nombre =
+    mapaAseg[cod] ||
+    mapaAseg[cod.toUpperCase()] ||
+    (/^\d+$/.test(cod) ? mapaAseg[String(Number(cod))] : null);
+  if (nombre) return nombre;
+  if (!/^\d+$/.test(cod)) return cod;
+  return '—';
+}
+
+function mapaEstadosCatalogo(estados) {
+  const porCodigo = {};
+  const porNombre = {};
+  (estados || []).forEach((e) => {
+    const cod = e.codiEstdo ?? e.codiEstado;
+    const desc = (e.descEstdo ?? e.descEstado ?? e.descripcion ?? '').trim();
+    if (cod === undefined || cod === null || !desc) return;
+
+    const claves = new Set([String(cod).trim()]);
+    const num = Number(cod);
+    if (!Number.isNaN(num)) {
+      claves.add(String(num));
+      claves.add(String(Math.floor(num)));
+    }
+    claves.forEach((k) => {
+      if (k && k !== 'NaN') porCodigo[k] = desc;
+    });
+    porNombre[desc.toUpperCase()] = desc;
+  });
+  return { porCodigo, porNombre };
+}
+
+function esSoloCodigoNumerico(valor) {
+  return /^\d+$/.test(String(valor || '').trim());
+}
+
+function buscarNombrePorCodigo(valor, porCodigo) {
+  const clave = String(valor).trim();
+  if (!clave) return null;
+  return (
+    porCodigo[clave] ??
+    porCodigo[String(Number(clave))] ??
+    porCodigo[String(Math.floor(Number(clave)))] ??
+    null
+  );
+}
+
+function resolverNombreEstado(caso, mapasEst) {
+  const { porCodigo, porNombre } = mapasEst || { porCodigo: {}, porNombre: {} };
+
+  const candidatos = [];
+  for (const v of [
+    caso.codiEstdo,
+    caso.codi_estado,
+    caso.estado,
+    caso.codEstado,
+    caso.descripcionEstado,
+    caso.descripcion_estado,
+  ]) {
+    if (v !== undefined && v !== null && String(v).trim() !== '') {
+      candidatos.push(String(v).trim());
+    }
+  }
+
+  const unicos = [...new Set(candidatos)];
+
+  for (const valor of unicos) {
+    if (esSoloCodigoNumerico(valor)) {
+      const nombre = buscarNombrePorCodigo(valor, porCodigo);
+      if (nombre) return nombre;
+    }
+  }
+
+  for (const valor of unicos) {
+    if (esSoloCodigoNumerico(valor)) continue;
+    const upper = valor.toUpperCase();
+    if (porNombre[upper]) return porNombre[upper];
+    if (valor.length > 1) return valor;
+  }
+
+  for (const valor of unicos) {
+    if (esSoloCodigoNumerico(valor)) return valor;
+  }
+
+  return '—';
+}
+
 function normalizarCasoLean(doc) {
   if (!doc) return null;
+  const codiEstdo =
+    doc.codiEstdo ?? doc.codi_estado ?? doc.estado ?? doc.codEstado ?? null;
+  const descripcionEstado =
+    doc.descripcionEstado ?? doc.descripcion_estado ?? null;
+
   return {
     _id: doc._id,
     nmroAjste: doc.nmroAjste,
     nmroSinstro: doc.nmroSinstro,
-    codiAsgrdra: doc.codiAsgrdra,
+    codiAsgrdra: codigoAseguradoraCaso(doc),
     asgrBenfcro: doc.asgrBenfcro,
     codiRespnsble: doc.codiRespnsble,
-    codiEstdo: doc.codiEstdo,
-    descripcionEstado: doc.descripcionEstado,
+    codiEstdo,
+    codi_estado: doc.codi_estado,
+    estado: doc.estado,
+    codEstado: doc.codEstado,
+    descripcionEstado,
+    descripcion_estado: doc.descripcion_estado,
     envios_facturacion: Array.isArray(doc.envios_facturacion) ? doc.envios_facturacion : [],
     fcha_envio_control_horas: doc.fcha_envio_control_horas,
     fcha_recibido_control_horas: doc.fcha_recibido_control_horas,
@@ -232,6 +371,8 @@ export async function listarBandejaFacturacion({
   hasta,
   q,
   responsables = [],
+  estados = [],
+  aseguradoras = [],
 }) {
   const gerenteNorm = normalizarClaveGerente(gerente);
   if (!gerenteNorm) {
@@ -239,6 +380,8 @@ export async function listarBandejaFacturacion({
   }
 
   const mapaResp = mapaResponsables(responsables);
+  const mapaEst = mapaEstadosCatalogo(estados);
+  const mapaAseg = mapaAseguradoras(aseguradoras);
   const filtro = { 'envios_facturacion.gerente': gerenteNorm };
   const proyeccion = {
     nmroAjste: 1,
@@ -247,7 +390,11 @@ export async function listarBandejaFacturacion({
     asgrBenfcro: 1,
     codiRespnsble: 1,
     codiEstdo: 1,
+    codi_estado: 1,
+    estado: 1,
+    codEstado: 1,
     descripcionEstado: 1,
+    descripcion_estado: 1,
     envios_facturacion: 1,
     fcha_envio_control_horas: 1,
     fcha_recibido_control_horas: 1,
@@ -279,26 +426,39 @@ export async function listarBandejaFacturacion({
     const caso = normalizarCasoLean(raw);
     if (!caso) continue;
 
-    const envios = filtrarEnvios(caso.envios_facturacion, {
-      gerente: gerenteNorm,
-      tipo,
-      desde,
-      hasta,
-    });
+    const enviosArr = Array.isArray(caso.envios_facturacion) ? caso.envios_facturacion : [];
 
-    for (const envio of envios) {
-      if (!textoCoincide(caso, q)) continue;
+    enviosArr.forEach((envio, envioIndice) => {
+      if (!envio || typeof envio !== 'object') return;
+      const coincideGerente =
+        normalizarClaveGerente(envio.gerente) === gerenteNorm;
+      if (!coincideGerente) return;
+
+      const enviosFiltrados = filtrarEnvios([envio], {
+        gerente: gerenteNorm,
+        tipo,
+        desde,
+        hasta,
+      });
+      if (!enviosFiltrados.length) return;
+      if (!textoCoincide(caso, q, mapaAseg)) return;
+
       const codResp = String(caso.codiRespnsble || '').trim().toUpperCase();
+      const nombreAseguradora = resolverNombreAseguradora(caso.codiAsgrdra, mapaAseg);
       filas.push({
         casoId: String(caso._id),
+        envioId: envio.id || null,
+        envioIndice,
         nmroAjste: caso.nmroAjste,
         nmroSinstro: caso.nmroSinstro,
         codiAsgrdra: caso.codiAsgrdra,
+        nombreAseguradora,
         asgrBenfcro: caso.asgrBenfcro,
         codiRespnsble: caso.codiRespnsble,
         nombreResponsable: mapaResp[codResp] || caso.codiRespnsble,
         codiEstdo: caso.codiEstdo,
-        descripcionEstado: caso.descripcionEstado,
+        nombreEstado: resolverNombreEstado(caso, mapaEst),
+        descripcionEstado: resolverNombreEstado(caso, mapaEst),
         tipoEnvio: envio.tipo,
         gerente: envio.gerente,
         nombreGerente: nombreGerente(envio.gerente),
@@ -311,10 +471,190 @@ export async function listarBandejaFacturacion({
         fchaRecibidoControlHoras: caso.fcha_recibido_control_horas,
         tieneControlHoras: Boolean(caso.control_horas?.filas?.length),
       });
-    }
+    });
   }
 
   filas.sort((a, b) => new Date(b.fechaEnvio) - new Date(a.fechaEnvio));
 
   return { items: filas, total: filas.length, gerente: gerenteNorm };
+}
+
+function esObjectIdValido(id) {
+  const s = String(id || '').trim();
+  return /^[a-fA-F0-9]{24}$/.test(s);
+}
+
+async function cargarCasoConEnvios(casoId) {
+  const id = String(casoId || '').trim();
+  if (!esObjectIdValido(id)) return null;
+  let doc = await Complex.findById(id).lean();
+  if (!doc) doc = await Siniestro.findById(id).lean();
+  return doc;
+}
+
+async function guardarEnviosFacturacion(casoId, envios, resumenes) {
+  const payload = {
+    envios_facturacion: envios,
+    ...resumenes,
+  };
+  let actualizado = await Complex.findByIdAndUpdate(casoId, { $set: payload }, { new: true });
+  if (!actualizado) {
+    actualizado = await Siniestro.findByIdAndUpdate(casoId, { $set: payload }, { new: true });
+  }
+  return Boolean(actualizado);
+}
+
+function asegurarIdsEnEnvios(envios) {
+  return (Array.isArray(envios) ? envios : []).map((e) => {
+    if (!e || typeof e !== 'object') return e;
+    return e.id ? e : { ...e, id: crypto.randomUUID() };
+  });
+}
+
+function ubicarIndiceEnvio(envios, selector = {}) {
+  const lista = Array.isArray(envios) ? envios : [];
+  const { envioId, envioIndice } = selector;
+
+  if (envioId) {
+    const idx = lista.findIndex((e) => e?.id === envioId);
+    if (idx >= 0) return idx;
+  }
+
+  if (envioIndice !== undefined && envioIndice !== null) {
+    const idx = Number(envioIndice);
+    if (Number.isInteger(idx) && idx >= 0 && idx < lista.length) return idx;
+  }
+
+  const fechaMs = selector.fechaEnvio ? new Date(selector.fechaEnvio).getTime() : NaN;
+  const gerente = normalizarClaveGerente(selector.gerente);
+  const tipo = selector.tipoEnvio;
+  const usuario = selector.enviadoPor ? String(selector.enviadoPor).trim() : '';
+
+  return lista.findIndex((e) => {
+    if (!e) return false;
+    if (gerente && normalizarClaveGerente(e.gerente) !== gerente) return false;
+    if (tipo && e.tipo !== tipo) return false;
+    if (usuario && String(e.usuario || '').trim() !== usuario) return false;
+    if (Number.isFinite(fechaMs)) {
+      const t = e.fecha ? new Date(e.fecha).getTime() : NaN;
+      if (!Number.isFinite(t) || Math.abs(t - fechaMs) > 2000) return false;
+    }
+    return true;
+  });
+}
+
+function recalcularResumenesEnvios(envios) {
+  const lista = Array.isArray(envios) ? envios : [];
+  const ultimo = lista.reduce((acc, e) => {
+    if (!e?.fecha) return acc;
+    if (!acc?.fecha) return e;
+    return new Date(e.fecha) > new Date(acc.fecha) ? e : acc;
+  }, null);
+
+  const resumenes = { ultimo_envio_facturacion: ultimo || null };
+
+  const ultimoControl = lista
+    .filter((e) => e?.tipo === 'control_horas')
+    .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))[0];
+  const ultimoGerencia = lista
+    .filter((e) => e?.tipo === 'gerencia')
+    .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))[0];
+
+  if (ultimoControl) {
+    Object.assign(resumenes, camposResumenPorTipo('control_horas', ultimoControl));
+  } else {
+    resumenes.gerente_ultimo_envio_control_horas = null;
+    resumenes.fcha_ultima_notificacion_control_horas = null;
+    resumenes.ultimo_envio_control_horas = null;
+  }
+
+  if (ultimoGerencia) {
+    Object.assign(resumenes, camposResumenPorTipo('gerencia', ultimoGerencia));
+  } else {
+    resumenes.gerente_ultimo_envio_gerencia = null;
+    resumenes.fcha_ultima_notificacion_gerencia = null;
+    resumenes.ultimo_envio_gerencia = null;
+  }
+
+  return resumenes;
+}
+
+/**
+ * Corrige el jefe destinatario de un envío ya registrado (sin duplicar ni borrar el caso).
+ */
+export async function corregirDestinatarioEnvioFacturacion({
+  casoId,
+  selector,
+  nuevoGerente,
+  corregidoPor,
+}) {
+  const gerenteNuevo = normalizarClaveGerente(nuevoGerente);
+  if (!casoId || !gerenteNuevo) {
+    return { ok: false, motivo: 'datos_invalidos' };
+  }
+
+  const doc = await cargarCasoConEnvios(casoId);
+  if (!doc) return { ok: false, motivo: 'caso_no_encontrado' };
+
+  let envios = asegurarIdsEnEnvios(doc.envios_facturacion);
+  const idx = ubicarIndiceEnvio(envios, selector);
+  if (idx < 0) return { ok: false, motivo: 'envio_no_encontrado' };
+
+  const anterior = envios[idx];
+  const gerenteAnterior = normalizarClaveGerente(anterior.gerente);
+
+  if (gerenteAnterior === gerenteNuevo) {
+    return { ok: true, motivo: 'sin_cambios', casoId: String(casoId), envio: anterior };
+  }
+
+  envios = [...envios];
+  envios[idx] = {
+    ...anterior,
+    gerente: gerenteNuevo,
+    nombreDestinatario: nombreGerente(gerenteNuevo),
+    emailDestinatario: emailGerente(gerenteNuevo) || anterior.emailDestinatario,
+    corregido_por: String(corregidoPor || '').trim(),
+    corregido_en: new Date(),
+    gerente_anterior: gerenteAnterior,
+  };
+
+  const resumenes = recalcularResumenesEnvios(envios);
+  const guardado = await guardarEnviosFacturacion(casoId, envios, resumenes);
+
+  return {
+    ok: guardado,
+    casoId: String(casoId),
+    envio: envios[idx],
+    gerenteAnterior,
+    gerenteNuevo,
+  };
+}
+
+/**
+ * Elimina un registro de envío del historial del caso (no elimina el caso Complex).
+ */
+export async function eliminarRegistroEnvioFacturacion({ casoId, selector, eliminadoPor }) {
+  if (!casoId) return { ok: false, motivo: 'datos_invalidos' };
+
+  const doc = await cargarCasoConEnvios(casoId);
+  if (!doc) return { ok: false, motivo: 'caso_no_encontrado' };
+
+  let envios = asegurarIdsEnEnvios(doc.envios_facturacion);
+  const idx = ubicarIndiceEnvio(envios, selector);
+  if (idx < 0) return { ok: false, motivo: 'envio_no_encontrado' };
+
+  const eliminado = envios[idx];
+  envios = envios.filter((_, i) => i !== idx);
+
+  const resumenes = recalcularResumenesEnvios(envios);
+  const guardado = await guardarEnviosFacturacion(casoId, envios, resumenes);
+
+  console.log('🗑️ [facturación] Registro de envío eliminado:', {
+    casoId,
+    eliminadoPor,
+    gerente: eliminado?.gerente,
+    tipo: eliminado?.tipo,
+  });
+
+  return { ok: guardado, casoId: String(casoId), eliminado };
 }

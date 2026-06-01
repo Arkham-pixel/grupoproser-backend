@@ -13,6 +13,8 @@ import {
   contarCasosAseguradoras,
   obtenerAutofillAjuste,
   obtenerBandejaFacturacion,
+  corregirEnvioBandejaFacturacion,
+  eliminarEnvioBandejaFacturacion,
 } from '../controllers/complex.controller.js';
 import { enviarEmailPrueba } from '../services/emailService.js';
 import multer from 'multer';
@@ -49,6 +51,10 @@ router.get('/intermediarios', obtenerIntermediarios);
 
 // Bandeja de casos enviados a jefes para facturación (antes de /:id)
 router.get('/bandeja-facturacion', obtenerBandejaFacturacion);
+router.patch('/bandeja-facturacion/envio', corregirEnvioBandejaFacturacion);
+router.post('/bandeja-facturacion/envio/corregir', corregirEnvioBandejaFacturacion);
+router.delete('/bandeja-facturacion/envio', eliminarEnvioBandejaFacturacion);
+router.post('/bandeja-facturacion/envio/eliminar', eliminarEnvioBandejaFacturacion);
 
 // 📧 Ruta para probar emails de casos complex
 router.post('/test-email', async (req, res) => {

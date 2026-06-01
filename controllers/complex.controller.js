@@ -11,12 +11,15 @@ import { enviarNotificacionAsignacion, enviarNotificacionAseguradora, enviarNoti
 import {
   listarBandejaFacturacion,
   persistirEnvioFacturacionTrasCorreo,
+  corregirDestinatarioEnvioFacturacion,
+  eliminarRegistroEnvioFacturacion,
 } from '../services/facturacionBandejaService.js';
 import {
   normalizarClaveGerente,
   resolverGerenteDesdeLogin,
   usuarioPuedeVerBandejaFacturacion,
   puedeElegirGerenteEnBandeja,
+  puedeAdministrarBandejaFacturacion,
 } from '../config/gerentesFacturacion.js';
 
 // Función helper para convertir fechas de string (yyyy-MM-dd) a Date sin problemas de zona horaria
@@ -2282,12 +2285,16 @@ export const obtenerBandejaFacturacion = async (req, res) => {
     }
 
     let responsables = [];
+    let estados = [];
+    let aseguradoras = [];
     try {
-      responsables = await Responsable.find()
-        .select('codiRespnsble nmbrRespnsble')
-        .lean();
-    } catch (errResp) {
-      console.warn('⚠️ Bandeja facturación: no se cargaron responsables:', errResp.message);
+      [responsables, estados, aseguradoras] = await Promise.all([
+        Responsable.find().select('codiRespnsble nmbrRespnsble').lean(),
+        Estado.find().select('codiEstdo codiEstado descEstdo descEstado descripcion').lean(),
+        Cliente.find().select('codiAsgrdra cod1Asgrdra rzonSocial').lean(),
+      ]);
+    } catch (errCat) {
+      console.warn('⚠️ Bandeja facturación: catálogos parciales:', errCat.message);
     }
 
     const resultado = await listarBandejaFacturacion({
@@ -2297,6 +2304,8 @@ export const obtenerBandejaFacturacion = async (req, res) => {
       hasta: req.query.hasta,
       q: req.query.q,
       responsables,
+      estados,
+      aseguradoras,
     });
 
     res.json({ success: true, ...resultado });
@@ -2309,6 +2318,93 @@ export const obtenerBandejaFacturacion = async (req, res) => {
         ? 'La consulta tardó demasiado. Intente de nuevo o acote el rango de fechas.'
         : error.message,
     });
+  }
+};
+
+/** Solo Oscar Atencio: corregir jefe destinatario de un envío registrado */
+export const corregirEnvioBandejaFacturacion = async (req, res) => {
+  try {
+    const login = String(req.body?.login || req.query?.login || '').trim();
+    if (!puedeAdministrarBandejaFacturacion(login)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Solo el supervisor autorizado puede corregir envíos de la bandeja',
+      });
+    }
+
+    const { casoId, nuevoGerente, envioId, envioIndice, fechaEnvio, gerente, tipoEnvio, enviadoPor } =
+      req.body || {};
+
+    const resultado = await corregirDestinatarioEnvioFacturacion({
+      casoId,
+      nuevoGerente,
+      corregidoPor: login,
+      selector: { envioId, envioIndice, fechaEnvio, gerente, tipoEnvio, enviadoPor },
+    });
+
+    if (!resultado.ok) {
+      const status =
+        resultado.motivo === 'caso_no_encontrado' || resultado.motivo === 'envio_no_encontrado'
+          ? 404
+          : 400;
+      const mensajes = {
+        caso_no_encontrado: 'No se encontró el caso',
+        envio_no_encontrado: 'No se encontró el registro de envío en ese caso',
+        datos_invalidos: 'Datos incompletos para la corrección',
+      };
+      return res.status(status).json({
+        success: false,
+        error: mensajes[resultado.motivo] || resultado.motivo,
+      });
+    }
+
+    res.json({ success: true, ...resultado });
+  } catch (error) {
+    console.error('❌ Error corrigiendo envío bandeja:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/** Solo Oscar Atencio: quitar un registro de envío (no borra el caso) */
+export const eliminarEnvioBandejaFacturacion = async (req, res) => {
+  try {
+    const login = String(req.body?.login || req.query?.login || '').trim();
+    if (!puedeAdministrarBandejaFacturacion(login)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Solo el supervisor autorizado puede eliminar registros de la bandeja',
+      });
+    }
+
+    const { casoId, envioId, envioIndice, fechaEnvio, gerente, tipoEnvio, enviadoPor } =
+      req.body || {};
+
+    const resultado = await eliminarRegistroEnvioFacturacion({
+      casoId,
+      eliminadoPor: login,
+      selector: { envioId, envioIndice, fechaEnvio, gerente, tipoEnvio, enviadoPor },
+    });
+
+    if (!resultado.ok) {
+      const status =
+        resultado.motivo === 'caso_no_encontrado' || resultado.motivo === 'envio_no_encontrado'
+          ? 404
+          : 400;
+      const mensajes = {
+        caso_no_encontrado: 'No se encontró el caso',
+        envio_no_encontrado: 'No se encontró el registro de envío en ese caso',
+        datos_invalidos: 'Datos incompletos',
+      };
+      return res.status(status).json({
+        success: false,
+        error: mensajes[resultado.motivo] || resultado.motivo,
+      });
+    }
+
+    res.json({ success: true, ...resultado });
+  } catch (error) {
+    console.error('❌ Error eliminando envío bandeja:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 

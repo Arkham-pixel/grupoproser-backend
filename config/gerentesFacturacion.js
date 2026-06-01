@@ -3,16 +3,21 @@ export const GERENTES_FACTURACION = {
   elkin: {
     clave: 'elkin',
     nombre: 'Elkin Tapia Gutiérrez',
+    email: 'etapia@proserpuertos.com.co',
     logins: ['72287602'],
   },
   iskharly: {
     clave: 'iskharly',
     nombre: 'Iskharly José Tapia Gutierrez',
+    email: 'itapia9@proserpuertos.com.co',
     logins: ['72007205'],
   },
   adriana: {
     clave: 'adriana',
     nombre: 'Adriana Angulo Funes',
+    email:
+      process.env.EMAIL_FACTURACION_AJUSTES?.trim() ||
+      'facturacion.ajustes@proserpuertos.com.co',
     logins: ['1143263277'],
   },
   test: {
@@ -65,4 +70,14 @@ export function usuarioPuedeVerBandejaFacturacion({ login }) {
 /** Puede consultar la bandeja de cualquier jefe (selector). */
 export function puedeElegirGerenteEnBandeja(login) {
   return esSupervisorBandejaFacturacion(login);
+}
+
+/** Solo Oscar: corregir destinatario o quitar un registro de envío (no borra el caso). */
+export function puedeAdministrarBandejaFacturacion(login) {
+  return esSupervisorBandejaFacturacion(login);
+}
+
+export function emailGerente(clave) {
+  const key = normalizarClaveGerente(clave);
+  return key ? GERENTES_FACTURACION[key].email || '' : '';
 }
