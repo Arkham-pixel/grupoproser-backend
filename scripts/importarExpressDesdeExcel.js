@@ -21,7 +21,6 @@ import {
   buildCatalogMaps as buildExpressCatalogMaps,
   normalizarConMapas,
 } from '../services/expressCatalogoService.js';
-import { normalizarConMapas } from '../services/expressCatalogoService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_FILE = path.resolve(__dirname, '../../SEGUIMIENTO SINIESTROS EXPRESS.xlsx');
@@ -195,12 +194,12 @@ function mapRow(row, maps, stats, rowIndex) {
       toStringOrNull(row['Columna']) ||
       toStringOrNull(row['Columna 2']),
     anexos: [],
-    aseguradora: ASEGURADORA_DEFAULT,
+    aseguradora: toStringOrNull(row['Aseguradora']) || ASEGURADORA_DEFAULT,
     intermediario,
     ciudadSiniestro: CIUDAD_DEFAULT,
     aseguradoBeneficiario: toStringOrNull(row['ASEGURADO']) || 'SIN NOMBRE',
     nit: toStringOrNull(row['NIT']),
-    analista: toStringOrNull(row['ANALISTA']),
+    analista,
     estadoProceso,
     salvamentoAplica: 'no_aplica',
     valorSalvamento: null,
@@ -321,8 +320,8 @@ async function main() {
   if (stats.intermediarioSinCatalogo.size) {
     console.log('  ', [...stats.intermediarioSinCatalogo].slice(0, 10).join(', '));
   }
-  console.log(`\n⚠️  Aseguradora y ciudad no vienen en Excel → se usa "${ASEGURADORA_DEFAULT}" / "${CIUDAD_DEFAULT}"`);
-  console.log('   Complételos en Carga Express después de importar si aplica.\n');
+  console.log(`\n⚠️  Ciudad no viene en Excel → se usa "${CIUDAD_DEFAULT}"`);
+  console.log('   Aseguradora se toma de la columna Excel cuando existe.\n');
 
   if (dryRun) {
     console.log('🔍 Modo dry-run: no se escribió en base de datos.');
