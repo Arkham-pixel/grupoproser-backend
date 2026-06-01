@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import cronParser from 'cron-parser';
+import { getNextCronRun } from '../utils/cronNextRun.js';
 import { enviarAlertasTodosAjustadores, obtenerAlertasTodosAjustadores } from './alertasService.js';
 
 // Configuración del cron job
@@ -144,8 +144,7 @@ class CronAlertasService {
     try {
       // Parsear el cron schedule para obtener la próxima ejecución
       const now = new Date();
-      const interval = cronParser.parseExpression(CRON_SCHEDULE, { tz: 'America/Bogota' });
-      this.nextExecution = interval.next().toDate();
+      this.nextExecution = getNextCronRun(CRON_SCHEDULE, 'America/Bogota');
     } catch (error) {
       console.error('❌ Error calculando próxima ejecución:', error);
       this.nextExecution = null;

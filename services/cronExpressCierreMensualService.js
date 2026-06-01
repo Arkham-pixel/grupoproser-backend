@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import cronParser from 'cron-parser';
+import { getNextCronRun } from '../utils/cronNextRun.js';
 import SiniestroExpress from '../models/SiniestroExpress.js';
 import EstadoExpressCierreMensual from '../models/EstadoExpressCierreMensual.js';
 import EstadoExpress from '../models/EstadoExpress.js';
@@ -209,8 +209,7 @@ class CronExpressCierreMensualService {
 
   calcularProximaEjecucion() {
     try {
-      const interval = cronParser.parseExpression(CRON_SCHEDULE, { tz: CRON_TIMEZONE });
-      this.nextExecution = interval.next().toDate();
+      this.nextExecution = getNextCronRun(CRON_SCHEDULE, CRON_TIMEZONE);
     } catch {
       this.nextExecution = null;
     }

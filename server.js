@@ -49,7 +49,19 @@ const mongoOptions = {
 };
 
 // Iniciar el servidor independientemente del estado de MongoDB
-const PORT = process.env.PORT || 3000;
+const rawPort = process.env.PORT ?? '3000';
+const PORT = Number.parseInt(String(rawPort).trim(), 10);
+if (!Number.isFinite(PORT) || PORT < 1 || PORT > 65535) {
+  console.error(
+    `❌ PORT inválido (${JSON.stringify(rawPort)}). Debe ser solo el número del puerto (ej. 3000), no la URI de MongoDB.`
+  );
+  process.exit(1);
+}
+if (String(rawPort).trim() !== String(PORT)) {
+  console.warn(
+    `⚠️ PORT tenía texto extra (${JSON.stringify(rawPort)}); se usa ${PORT}. Revise variables en Coolify.`
+  );
+}
 app.listen(PORT, async () => {
   console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
   console.log("⚠️ El servidor iniciará aunque MongoDB no esté disponible");
