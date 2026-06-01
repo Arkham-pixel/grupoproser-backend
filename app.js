@@ -46,8 +46,13 @@ console.log('📦 Tipo de intermediarioRoutes:', typeof intermediarioRoutes);
 const app = express();
 
 // Healthcheck de Coolify/Docker: GET /
+// PRUEBA DE SICRONIZACION CON CO0LIFY
 app.get('/', (req, res) => {
-  res.status(200).json({ ok: true, service: 'grupoproser-backend' });
+  res.status(200).json({
+    ok: true,
+    service: 'grupoproser-backend',
+    nota: 'PRUEBA DE SICRONIZACION CON CO0LIFY.',
+  });
 });
 
 // Tras Nginx/ALB, req.ip usa X-Forwarded-For (necesario para rate limit por IP)
