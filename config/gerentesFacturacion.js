@@ -1,0 +1,68 @@
+/** Claves de gerentes/jefes en el flujo de facturación Complex */
+export const GERENTES_FACTURACION = {
+  elkin: {
+    clave: 'elkin',
+    nombre: 'Elkin Tapia Gutiérrez',
+    logins: ['72287602'],
+  },
+  iskharly: {
+    clave: 'iskharly',
+    nombre: 'Iskharly José Tapia Gutierrez',
+    logins: ['72007205'],
+  },
+  adriana: {
+    clave: 'adriana',
+    nombre: 'Adriana Angulo Funes',
+    logins: ['1143263277'],
+  },
+  test: {
+    clave: 'test',
+    nombre: 'Prueba (danalyst)',
+    logins: [],
+  },
+};
+
+/** Supervisor: puede ver la bandeja de todos los jefes (no es jefe). */
+export const LOGIN_SUPERVISOR_BANDEJA = '1065012991';
+
+const LOGIN_A_GERENTE = Object.values(GERENTES_FACTURACION).reduce((acc, g) => {
+  g.logins.forEach((login) => {
+    acc[String(login).trim()] = g.clave;
+  });
+  return acc;
+}, {});
+
+export function normalizarClaveGerente(gerente) {
+  const g = String(gerente || '').trim().toLowerCase();
+  if (!g) return null;
+  if (GERENTES_FACTURACION[g]) return g;
+  if (g.includes('elkin')) return 'elkin';
+  if (g.includes('iskharly')) return 'iskharly';
+  if (g.includes('adriana') || g.includes('facturacion')) return 'adriana';
+  if (g === 'test') return 'test';
+  return null;
+}
+
+export function resolverGerenteDesdeLogin(login) {
+  return LOGIN_A_GERENTE[String(login || '').trim()] || null;
+}
+
+export function nombreGerente(clave) {
+  const key = normalizarClaveGerente(clave);
+  return key ? GERENTES_FACTURACION[key].nombre : clave || '—';
+}
+
+export function esSupervisorBandejaFacturacion(login) {
+  return String(login || '').trim() === LOGIN_SUPERVISOR_BANDEJA;
+}
+
+/** Solo jefes de facturación y el supervisor (Oscar Atencio). */
+export function usuarioPuedeVerBandejaFacturacion({ login }) {
+  if (esSupervisorBandejaFacturacion(login)) return true;
+  return Boolean(resolverGerenteDesdeLogin(login));
+}
+
+/** Puede consultar la bandeja de cualquier jefe (selector). */
+export function puedeElegirGerenteEnBandeja(login) {
+  return esSupervisorBandejaFacturacion(login);
+}

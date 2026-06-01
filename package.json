@@ -1,0 +1,43 @@
+{
+  "name": "tu-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "prueba.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "set NODE_ENV=development && node server.js",
+    "start:prod": "set NODE_ENV=production && node server.js",
+    "generar-sesiones-historicas": "node generar_sesiones_historicas.js",
+    "cerrar-sesiones-inactivas": "node services/cerrarSesionesInactivas.js",
+    "crear-usuarios-empleados": "node scripts/crear_usuarios_empleados_masivo.js",
+    "reporte-usuarios-empleados": "node scripts/crear_usuarios_empleados_masivo.js --solo-reporte",
+    "importar-express-excel": "node scripts/importarExpressDesdeExcel.js --replace",
+    "seed-estados-express": "node scripts/seedEstadosExpress.js --remap",
+    "seed-catalogos-express": "node scripts/seedExpressCatalogos.js --intermediarios-excel",
+    "s3-maintenance": "node scripts/s3-storage-maintenance.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1057.0",
+    "@aws-sdk/s3-request-presigner": "^3.1057.0",
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "cron-parser": "^5.3.0",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.4.1",
+    "firebase-admin": "^13.4.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.17.0",
+    "mongoose": "^8.16.1",
+    "multer": "^2.0.1",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^6.9.0",
+    "openai": "^6.8.1",
+    "xlsx": "^0.18.5"
+  }
+}
