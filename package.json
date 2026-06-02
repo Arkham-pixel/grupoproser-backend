@@ -12,6 +12,9 @@
     "crear-usuarios-empleados": "node scripts/crear_usuarios_empleados_masivo.js",
     "reporte-usuarios-empleados": "node scripts/crear_usuarios_empleados_masivo.js --solo-reporte",
     "importar-express-excel": "node scripts/importarExpressDesdeExcel.js --replace",
+    "remapear-responsables-express": "node scripts/remapearCatalogosExpress.js",
+    "remapear-catalogos-express": "node scripts/remapearCatalogosExpress.js",
+    "verificar-express": "node scripts/verificarIntegridadExpress.js",
     "seed-estados-express": "node scripts/seedEstadosExpress.js --remap",
     "seed-catalogos-express": "node scripts/seedExpressCatalogos.js --intermediarios-excel",
     "s3-maintenance": "node scripts/s3-storage-maintenance.js"

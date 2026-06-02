@@ -6,6 +6,9 @@ import {
   buildCatalogMaps,
   normalizarConMapas,
 } from '../services/expressCatalogoService.js';
+import { normalizarResponsable } from '../services/responsableResolverService.js';
+import { normalizarAseguradora } from '../services/clienteResolverService.js';
+import { normalizarEstadoExpress } from '../services/estadoExpressResolverService.js';
 import { EXPRESS_UPLOADS_DIR, resolveUploadRelativePath } from '../config/uploadsRoot.js';
 
 const expressUploadsDir = EXPRESS_UPLOADS_DIR;
@@ -28,6 +31,12 @@ const esValorVacio = (valor) =>
 
 const parseDate = (value) => {
   if (!value) return null;
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    const [year, month, day] = value.trim().split('-').map(Number);
+    if (!Number.isNaN(year) && !Number.isNaN(month) && !Number.isNaN(day)) {
+      return new Date(year, month - 1, day, 12, 0, 0);
+    }
+  }
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 };
@@ -284,6 +293,15 @@ const aplicarCatalogosExpress = async (payload) => {
     if (raw) {
       payload[tipo] = normalizarConMapas(maps, tipo, raw) ?? raw;
     }
+  }
+  if (payload.responsable) {
+    payload.responsable = await normalizarResponsable(payload.responsable);
+  }
+  if (payload.aseguradora) {
+    payload.aseguradora = await normalizarAseguradora(payload.aseguradora);
+  }
+  if (payload.estadoProceso) {
+    payload.estadoProceso = await normalizarEstadoExpress(payload.estadoProceso);
   }
   return payload;
 };

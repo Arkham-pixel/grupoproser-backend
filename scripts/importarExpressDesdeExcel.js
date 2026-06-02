@@ -15,12 +15,25 @@ import { fileURLToPath } from 'url';
 import XLSX from 'xlsx';
 import SiniestroExpress from '../models/SiniestroExpress.js';
 import Responsable from '../models/Responsable.js';
+import Cliente from '../models/Cliente.js';
 import EstadoExpress from '../models/EstadoExpress.js';
 import { normalizarAmparoExpress } from '../constants/expressAmparos.js';
 import {
   buildCatalogMaps as buildExpressCatalogMaps,
   normalizarConMapas,
 } from '../services/expressCatalogoService.js';
+import {
+  buildResponsableResolverIndex,
+  resolverResponsableConIndice,
+} from '../services/responsableResolverService.js';
+import {
+  buildClienteResolverIndex,
+  resolverClienteConIndice,
+} from '../services/clienteResolverService.js';
+import {
+  buildEstadoExpressResolverIndex,
+  resolverEstadoExpressConIndice,
+} from '../services/estadoExpressResolverService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_FILE = path.resolve(__dirname, '../../SEGUIMIENTO SINIESTROS EXPRESS.xlsx');
@@ -93,18 +106,15 @@ function parseArgs() {
 }
 
 async function buildCatalogMaps() {
-  const [responsables, estados] = await Promise.all([
+  const [responsables, clientes, estados] = await Promise.all([
     Responsable.find().lean(),
+    Cliente.find().lean(),
     EstadoExpress.find().lean(),
   ]);
 
-  const responsablePorNombre = new Map();
-  for (const r of responsables) {
-    const nombre = norm(r.nmbrRespnsble);
-    if (nombre) {
-      responsablePorNombre.set(nombre, String(r.codiRespnsble ?? r._id ?? nombre));
-    }
-  }
+  const responsableIndex = buildResponsableResolverIndex(responsables);
+  const clienteIndex = buildClienteResolverIndex(clientes);
+  const estadoIndex = buildEstadoExpressResolverIndex(estados);
 
   const estadoPorDesc = new Map();
   for (const e of estados) {
@@ -113,7 +123,7 @@ async function buildCatalogMaps() {
     if (desc && codigo) estadoPorDesc.set(desc, codigo);
   }
 
-  return { responsablePorNombre, estadoPorDesc };
+  return { responsableIndex, clienteIndex, estadoIndex, estadoPorDesc };
 }
 
 function mapRow(row, maps, stats, rowIndex) {
@@ -126,14 +136,14 @@ function mapRow(row, maps, stats, rowIndex) {
   }
 
   const ajustador = norm(row['AJUSTADOR']);
-  let responsable = maps.responsablePorNombre.get(ajustador);
+  let responsable = resolverResponsableConIndice(ajustador, maps.responsableIndex);
   if (!responsable && ajustador) {
     responsable = ajustador;
     stats.responsableSinCatalogo.add(ajustador);
   }
 
   const estadoTexto = norm(row['ESTADO DE SINIESTRO']);
-  let estadoProceso = maps.estadoPorDesc.get(estadoTexto);
+  let estadoProceso = resolverEstadoExpressConIndice(estadoTexto, maps.estadoIndex);
   if (!estadoProceso && estadoTexto) {
     estadoProceso = estadoTexto;
     stats.estadoSinCatalogo.add(estadoTexto);
@@ -167,6 +177,13 @@ function mapRow(row, maps, stats, rowIndex) {
     stats.intermediarioSinCatalogo.add(intermediarioRaw);
   }
 
+  const aseguradoraRaw = toStringOrNull(row['Aseguradora']) || ASEGURADORA_DEFAULT;
+  let aseguradora = resolverClienteConIndice(aseguradoraRaw, maps.clienteIndex);
+  if (!aseguradora && aseguradoraRaw) {
+    aseguradora = aseguradoraRaw;
+    if (aseguradoraRaw !== ASEGURADORA_DEFAULT) stats.aseguradoraSinCatalogo.add(aseguradoraRaw);
+  }
+
   return {
     responsable,
     codigoWorkflow: toStringOrNull(row['WF']),
@@ -194,7 +211,7 @@ function mapRow(row, maps, stats, rowIndex) {
       toStringOrNull(row['Columna']) ||
       toStringOrNull(row['Columna 2']),
     anexos: [],
-    aseguradora: toStringOrNull(row['Aseguradora']) || ASEGURADORA_DEFAULT,
+    aseguradora,
     intermediario,
     ciudadSiniestro: CIUDAD_DEFAULT,
     aseguradoBeneficiario: toStringOrNull(row['ASEGURADO']) || 'SIN NOMBRE',
@@ -257,7 +274,9 @@ async function main() {
   console.log('📊 Filas en Excel:', rows.length);
 
   let maps = {
-    responsablePorNombre: new Map(),
+    responsableIndex: buildResponsableResolverIndex([]),
+    clienteIndex: buildClienteResolverIndex([]),
+    estadoIndex: buildEstadoExpressResolverIndex([]),
     estadoPorDesc: new Map(),
     expressCatalog: { amparo: new Map(), analista: new Map(), intermediario: new Map() },
   };
@@ -280,6 +299,7 @@ async function main() {
   const stats = {
     omitidosSinNumero: 0,
     responsableSinCatalogo: new Set(),
+    aseguradoraSinCatalogo: new Set(),
     estadoSinCatalogo: new Set(),
     amparoSinCatalogo: new Set(),
     analistaSinCatalogo: new Set(),
