@@ -904,7 +904,7 @@ export const enviarNotificacionControlHoras = async (datos) => {
     console.log('📧 ===== INICIANDO ENVÍO DE NOTIFICACIÓN DE CONTROL DE HORAS =====');
     console.log('📧 Datos recibidos:', JSON.stringify(datos, null, 2));
 
-    // Obtener el gerente seleccionado (elkin, iskharly o test)
+    // Fase 1: solo Elkin o Iskharly (facturación recibe en fase 2 — evidencia/gerencia)
     const gerenteSeleccionado = datos.gerente || null;
     
     if (!gerenteSeleccionado) {
@@ -950,7 +950,6 @@ export const enviarNotificacionControlHoras = async (datos) => {
       }
       nombreDestinatario = 'Iskharly José Tapia Gutierrez';
     } else if (gerenteSeleccionado === 'test') {
-      // Opción de prueba - solo a danalyst
       emailDestinatario = 'danalyst@proserpuertos.com.co';
       nombreDestinatario = 'Prueba - Analista';
       console.log('🧪 Enviando notificación de prueba a danalyst@proserpuertos.com.co');
@@ -958,43 +957,16 @@ export const enviarNotificacionControlHoras = async (datos) => {
       console.error('❌ Gerente seleccionado no válido:', gerenteSeleccionado);
       return { success: false, message: 'Gerente seleccionado no válido' };
     }
-    
-    // Validar que tenemos un email
+
     if (!emailDestinatario) {
       console.error('❌ No se pudo obtener el email del destinatario');
       return { success: false, message: 'No se pudo obtener el email del destinatario' };
     }
 
-    // Email de Adriana Angulo Funes - recibe copia de las notificaciones de control de horas
-    // EXCEPTO cuando ella misma es el destinatario principal
-    const emailAdriana = EMAIL_FACTURACION_AJUSTES;
-    const nombreAdriana = 'Adriana Angulo Funes';
-    
-    // Determinar si debemos enviar copia a Adriana
-    // Solo si NO es el destinatario principal
-    const emailDestinatarioNormalizado = emailDestinatario.toUpperCase().trim();
-    const emailAdrianaNormalizado = emailAdriana.toUpperCase().trim();
-    const enviarCopiaAdriana = emailDestinatarioNormalizado !== emailAdrianaNormalizado;
+    const emails = [emailDestinatario];
 
-    // Destinatario principal: el gerente seleccionado
-    const destinatarios = [{ nombre: nombreDestinatario, email: emailDestinatario }];
-    const emails = [emailDestinatario]; // Array con el email del gerente
-
-    console.log('📧 Enviando notificación a:', emailDestinatario);
-    if (enviarCopiaAdriana) {
-      console.log('📧 Con copia a:', emailAdriana);
-    } else {
-      console.log('📧 Sin copia adicional (Adriana es el destinatario principal)');
-    }
-    console.log('📧 Total destinatarios (to + cc):', emails.length + (enviarCopiaAdriana ? 1 : 0));
-
-    console.log('📧 ===== CONFIRMACIÓN ANTES DE ENVIAR =====');
-    console.log('📧 Email destinatario principal (TO):', emails[0]);
-    console.log('📧 Nombre destinatario principal:', nombreDestinatario);
-    if (enviarCopiaAdriana) {
-      console.log('📧 Email con copia (CC):', emailAdriana);
-      console.log('📧 Nombre con copia:', nombreAdriana);
-    }
+    console.log('📧 Enviando notificación SOLO a:', emailDestinatario);
+    console.log('📧 Nombre destinatario:', nombreDestinatario);
 
     const archivos = (datos.archivos || []).map(nombre => `<li style="margin-bottom:4px;">📎 ${nombre}</li>`).join('');
     
@@ -1173,8 +1145,7 @@ export const enviarNotificacionControlHoras = async (datos) => {
 
     const mailOptions = {
       from: `"Grupo Proser - Sistema de Casos" <${process.env.EMAIL_USER}>`,
-      to: emails[0], // Destinatario principal: el gerente seleccionado
-      ...(enviarCopiaAdriana && { cc: emailAdriana }), // Copia a Adriana solo si no es el destinatario principal
+      to: emails[0],
       subject: tieneArchivos
         ? `⏰ Nuevo documento de control de horas - Caso ${datos.numeroCaso || 'sin número'}`
         : `⏰ Control de horas registrado - Caso ${datos.numeroCaso || 'sin número'}`,
@@ -1208,18 +1179,13 @@ export const enviarNotificacionControlHoras = async (datos) => {
 
     const info = await deliverMail(mailOptions, { tipo: 'control_horas', gerente: datos.gerente });
     console.log('✅ Notificación de control de horas enviada. Message ID:', info.messageId);
-    if (enviarCopiaAdriana) {
-      console.log('✅ Enviado a:', emailDestinatario, 'con copia a:', emailAdriana);
-    } else {
-      console.log('✅ Enviado a:', emailDestinatario, '(sin copia adicional)');
-    }
+    console.log('✅ Enviado a:', emailDestinatario);
 
     return {
       success: true,
       messageId: info.messageId,
-      destinatarios: enviarCopiaAdriana ? [...emails, emailAdriana] : emails, // Incluir Adriana solo si se envió copia
+      destinatarios: emails,
       destinatarioPrincipal: emails[0],
-      ...(enviarCopiaAdriana && { copia: emailAdriana })
     };
   } catch (error) {
     console.error('❌ Error enviando notificación de control de horas:', error);

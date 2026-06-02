@@ -2466,6 +2466,15 @@ export const notificarControlHoras = async (req, res) => {
       return res.status(400).json({ success: false, error: 'No se especificó el gerente destinatario' });
     }
 
+    const gerenteNorm = normalizarClaveGerente(gerente);
+    if (gerenteNorm === 'adriana') {
+      return res.status(400).json({
+        success: false,
+        error:
+          'Facturación no recibe el control de horas en esta fase. Envíe la evidencia en "Envío de Control de Horas" (fase 2) y seleccione a Adriana.',
+      });
+    }
+
     console.log('📧 [notificarControlHoras] Gerente seleccionado:', gerente);
     console.log('📧 [notificarControlHoras] ID del caso:', casoId);
     console.log('📧 [notificarControlHoras] Archivos con rutas:', archivosConRuta.length);
@@ -2481,20 +2490,11 @@ export const notificarControlHoras = async (req, res) => {
       resumenControlHoras,
       usuario,
       gerente,
-      casoId
+      casoId,
     });
 
     let persistencia = null;
     if (resultado?.success !== false) {
-      const copias = [];
-      const gerenteNorm = normalizarClaveGerente(gerente);
-      if (resultado.copia && gerenteNorm && gerenteNorm !== 'adriana') {
-        copias.push({
-          gerente: 'adriana',
-          nombre: 'Adriana Angulo Funes',
-          email: resultado.copia,
-        });
-      }
       persistencia = await persistirEnvioFacturacionTrasCorreo({
         casoId,
         numeroCaso,
@@ -2502,7 +2502,7 @@ export const notificarControlHoras = async (req, res) => {
         gerente,
         usuario,
         emailDestinatario: resultado.destinatarioPrincipal,
-        copias,
+        copias: [],
       });
     }
 
