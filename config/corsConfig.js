@@ -10,20 +10,42 @@
 import cors from 'cors';
 
 const PROD_APP = 'https://aplicacion.grupoproser.com.co';
-/** Front desplegado en Coolify (dominio distinto al API). */
-const PROD_APP_COOLIFY_ORIGINS = [
+/** Front desplegado en Coolify (DNS: arnald). */
+const PROD_APP_COOLIFY = 'https://arnald.grupoproser.com.co';
+/** Nombres antiguos (por si queda caché o enlaces viejos). */
+const LEGACY_ORIGINS = [
   'https://arnalddataflow.grupoproser.com.co',
-  'https://arnald.grupoproser.com.co',
+  'https://arnalddataflowbackend.grupoproser.com.co'
 ];
 
 const LOCAL_DEV_ORIGINS = [
   'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:5175',
   'http://localhost:3000',
   'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
+  'http://127.0.0.1:5175',
   'http://127.0.0.1:3000',
   'http://[::1]:5173',
+  'http://[::1]:5174',
   'http://[::1]:3000'
 ];
+
+/** Vite puede usar 5173, 5174, etc. si el puerto anterior está ocupado. */
+function isLocalDevOrigin(origin) {
+  if (!origin || process.env.NODE_ENV === 'production') return false;
+  try {
+    const { hostname, protocol } = new URL(origin);
+    const local =
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '[::1]';
+    return local && (protocol === 'http:' || protocol === 'https:');
+  } catch {
+    return false;
+  }
+}
 
 function parseOriginsEnv(value) {
   if (!value || typeof value !== 'string') return [];
@@ -45,7 +67,8 @@ function buildAllowedOriginSet() {
 
   const list = [
     PROD_APP,
-    ...PROD_APP_COOLIFY_ORIGINS,
+    PROD_APP_COOLIFY,
+    ...LEGACY_ORIGINS,
     ...parseOriginsEnv(process.env.FRONTEND_URL),
     ...parseOriginsEnv(process.env.CORS_ORIGIN),
     ...parseOriginsEnv(process.env.ALLOWED_ORIGINS),
@@ -64,7 +87,7 @@ export function createCorsOptions() {
         return callback(null, true);
       }
       const norm = normalizeOrigin(origin);
-      if (allowed.has(norm)) {
+      if (allowed.has(norm) || isLocalDevOrigin(origin)) {
         return callback(null, true);
       }
       console.warn(
