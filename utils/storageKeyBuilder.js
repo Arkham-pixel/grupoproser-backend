@@ -118,6 +118,58 @@ export function buildMaintenancePrefix({ year, quarter, month, day, ownerType, o
   return joined.endsWith('/') ? joined : `${joined}/`;
 }
 
+/**
+ * Convierte referencias internas (s3:legacy/uploads/...) a ruta local /uploads/...
+ * para servir o borrar archivos que aún están en disco.
+ */
+export function toLocalUploadPathFromStoredRef(storedPath) {
+  if (!storedPath || typeof storedPath !== 'string') return null;
+  const trimmed = storedPath.trim();
+
+  if (trimmed.startsWith('s3:legacy/')) {
+    const rest = trimmed.slice('s3:legacy/'.length).replace(/^\/+/, '');
+    return rest.startsWith('uploads/') ? `/${rest}` : `/uploads/${rest}`;
+  }
+  if (trimmed.startsWith('s3:uploads/')) {
+    return `/${trimmed.slice('s3:'.length)}`;
+  }
+  if (trimmed.startsWith('/uploads/')) return trimmed;
+  if (trimmed.startsWith('uploads/')) return `/${trimmed}`;
+  return null;
+}
+
+/**
+ * Variantes de clave S3 a probar (migración legacy, prefijo de bucket, etc.).
+ */
+export function resolveS3KeyCandidates(storedPath) {
+  const primary = parseS3KeyFromStoredPath(storedPath);
+  if (!primary) return [];
+
+  const candidates = [];
+  const push = (key) => {
+    const k = String(key || '').replace(/^\/+/, '');
+    if (k && !candidates.includes(k)) candidates.push(k);
+  };
+
+  push(primary);
+
+  const prefix = storageConfig.keyPrefix();
+  if (prefix) {
+    push(`${prefix}/${primary}`);
+    if (primary.startsWith('legacy/')) {
+      push(`${prefix}/${primary.slice('legacy/'.length)}`);
+    }
+  }
+
+  if (primary.startsWith('legacy/')) {
+    push(primary.slice('legacy/'.length));
+  } else if (primary.startsWith('uploads/')) {
+    push(`legacy/${primary}`);
+  }
+
+  return candidates;
+}
+
 export function parseS3KeyFromStoredPath(storedPath) {
   if (!storedPath || typeof storedPath !== 'string') return null;
   const trimmed = storedPath.trim();
@@ -129,6 +181,20 @@ export function parseS3KeyFromStoredPath(storedPath) {
   }
   if (trimmed.startsWith('s3:')) {
     return trimmed.slice('s3:'.length).replace(/^\/+/, '');
+  }
+  const publicBase = storageConfig.publicBaseUrl();
+  if (publicBase && trimmed.startsWith(`${publicBase}/`)) {
+    const raw = trimmed.slice(publicBase.length).replace(/^\//, '');
+    return raw
+      .split('/')
+      .map((segment) => {
+        try {
+          return decodeURIComponent(segment);
+        } catch {
+          return segment;
+        }
+      })
+      .join('/');
   }
   return null;
 }

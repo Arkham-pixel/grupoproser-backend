@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { resolveDocumentoArchivoPath } from '../config/uploadsRoot.js';
-import { resolveFileForRead } from '../services/fileStorageService.js';
+import { deleteStoredFile, resolveFileForRead } from '../services/fileStorageService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -401,6 +401,12 @@ export const eliminarDocumento = async (req, res) => {
     if (!documento || !documento.activo) {
       return res.status(404).json({ 
         message: 'Documento no encontrado' 
+      });
+    }
+
+    if (documento.archivo?.ruta) {
+      await deleteStoredFile(documento.archivo.ruta).catch((err) => {
+        console.warn('⚠️ No se pudo eliminar archivo del documento en almacenamiento:', err.message);
       });
     }
 

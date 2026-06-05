@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import mongoose from 'mongoose';
 import SiniestroExpress from '../models/SiniestroExpress.js';
 import {
@@ -9,26 +7,15 @@ import {
 import { normalizarResponsable } from '../services/responsableResolverService.js';
 import { normalizarAseguradora } from '../services/clienteResolverService.js';
 import { normalizarEstadoExpress } from '../services/estadoExpressResolverService.js';
-import { EXPRESS_UPLOADS_DIR, resolveUploadRelativePath } from '../config/uploadsRoot.js';
 import { deleteStoredFile, getPublicPathForField } from '../services/fileStorageService.js';
-
-const expressUploadsDir = EXPRESS_UPLOADS_DIR;
+import {
+  collectPathsFromExpressAnexos,
+  deleteOrphanedStoredFiles,
+} from '../utils/storedFileCleanup.js';
 
 const borrarArchivoFisicoExpress = async (url) => {
   if (!url || typeof url !== 'string') return;
-  if (url.startsWith('s3:') || url.startsWith('s3://') || url.startsWith('http')) {
-    await deleteStoredFile(url).catch(() => {});
-    return;
-  }
-  const match = url.match(/\/uploads\/express\/([^/?#]+)/i);
-  if (!match?.[1]) return;
-  const filePath = resolveUploadRelativePath(`uploads/express/${match[1]}`);
-  if (!fs.existsSync(filePath)) return;
-  try {
-    fs.unlinkSync(filePath);
-  } catch (err) {
-    console.warn('⚠️ No se pudo eliminar archivo express:', filePath, err.message);
-  }
+  await deleteStoredFile(url).catch(() => {});
 };
 
 const esValorVacio = (valor) =>
@@ -478,6 +465,18 @@ export const actualizarSiniestroExpress = async (req, res) => {
         success: false,
         error: `Los siguientes campos son obligatorios: ${faltantes.join(', ')}`,
       });
+    }
+
+    if (tieneCampoAnexos || tieneCampoSalvamentoAnexos) {
+      const rutasAnteriores = [
+        ...collectPathsFromExpressAnexos(registroActual.anexos),
+        ...collectPathsFromExpressAnexos(registroActual.anexosSalvamento),
+      ];
+      const rutasNuevas = [
+        ...collectPathsFromExpressAnexos(anexosFinales),
+        ...collectPathsFromExpressAnexos(anexosSalvamentoFinales),
+      ];
+      await deleteOrphanedStoredFiles(rutasAnteriores, rutasNuevas).catch(() => {});
     }
 
     const actualizado = await SiniestroExpress.findByIdAndUpdate(registroActual._id, payload, {

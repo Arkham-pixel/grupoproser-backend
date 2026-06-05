@@ -5,7 +5,7 @@ import Usuario from "../models/Usuario.js";
 import bcrypt from "bcryptjs";
 import path from "path";
 import { createMulterUpload, attachPersistedFileMiddleware } from "../storage/multerStorageFactory.js";
-import { STORAGE_CATEGORIES, getPublicPathForSingle } from "../services/fileStorageService.js";
+import { STORAGE_CATEGORIES, deleteReplacedStoredFile, getPublicPathForSingle } from "../services/fileStorageService.js";
 
 const router = express.Router();
 
@@ -122,7 +122,11 @@ router.put(
       // Actualizar foto si se proporciona
       if (req.file) {
         console.log('📸 Procesando archivo:', req.file.originalname);
-        usuario.foto = getPublicPathForSingle(req, (f) => `/uploads/${f.filename}`);
+        const nuevaFotoUrl = getPublicPathForSingle(req, (f) => `/uploads/${f.filename}`);
+        await deleteReplacedStoredFile(usuario.foto, nuevaFotoUrl).catch((err) => {
+          console.warn('⚠️ No se pudo eliminar la foto anterior:', err.message);
+        });
+        usuario.foto = nuevaFotoUrl;
         console.log('🔗 Nueva URL de foto:', usuario.foto);
       }
 

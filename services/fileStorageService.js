@@ -2,6 +2,7 @@ import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import {
+  canAccessS3Bucket,
   isS3StorageEnabled,
   isLocalStorageEnabled,
   storageConfig,
@@ -11,6 +12,8 @@ import {
   extensionFromOriginalName,
   parseS3KeyFromStoredPath,
   resolveOwnerFromRequest,
+  resolveS3KeyCandidates,
+  toLocalUploadPathFromStoredRef,
 } from '../utils/storageKeyBuilder.js';
 import * as s3 from './s3StorageService.js';
 import {
@@ -146,22 +149,13 @@ export async function persistUploadedFile({
 /**
  * Resuelve ubicación para lectura (descarga, adjuntos email, etc.).
  */
-export async function resolveFileForRead(storedPathOrKey) {
-  const s3Key = parseS3KeyFromStoredPath(storedPathOrKey);
-  if (s3Key && isS3StorageEnabled()) {
-    const obj = await s3.getObjectStream(s3Key);
-    return {
-      driver: 's3',
-      s3Key,
-      stream: obj.Body,
-      contentType: obj.ContentType,
-      contentLength: obj.ContentLength,
-    };
-  }
-
-  let relative = storedPathOrKey;
+async function resolveLocalFileForRead(storedPathOrKey) {
+  const localUploadPath = toLocalUploadPathFromStoredRef(storedPathOrKey);
+  let relative = localUploadPath || storedPathOrKey;
   if (relative.startsWith('/uploads/')) {
     relative = relative.slice(1);
+  } else if (relative.startsWith('s3:')) {
+    return { driver: 'local', localPath: null, exists: false };
   }
   const localPath = resolveUploadRelativePath(relative);
   if (!fs.existsSync(localPath)) {
@@ -175,15 +169,78 @@ export async function resolveFileForRead(storedPathOrKey) {
   };
 }
 
+async function resolveS3FileForRead(storedPathOrKey) {
+  if (!canAccessS3Bucket()) return null;
+
+  const keys = resolveS3KeyCandidates(storedPathOrKey);
+  if (!keys.length) return null;
+
+  let lastError;
+  for (const s3Key of keys) {
+    try {
+      const obj = await s3.getObjectStream(s3Key);
+      return {
+        driver: 's3',
+        s3Key,
+        stream: obj.Body,
+        contentType: obj.ContentType,
+        contentLength: obj.ContentLength,
+      };
+    } catch (error) {
+      lastError = error;
+      const missing =
+        error?.name === 'NoSuchKey' ||
+        error?.name === 'NotFound' ||
+        error?.$metadata?.httpStatusCode === 404;
+      if (!missing) throw error;
+    }
+  }
+
+  if (lastError) throw lastError;
+  return null;
+}
+
+export async function resolveFileForRead(storedPathOrKey) {
+  if (parseS3KeyFromStoredPath(storedPathOrKey) && canAccessS3Bucket()) {
+    try {
+      const fromS3 = await resolveS3FileForRead(storedPathOrKey);
+      if (fromS3) return fromS3;
+    } catch (error) {
+      const localFallback = await resolveLocalFileForRead(storedPathOrKey);
+      if (localFallback.exists) return localFallback;
+      throw error;
+    }
+  }
+
+  const local = await resolveLocalFileForRead(storedPathOrKey);
+  if (local.exists) return local;
+
+  if (parseS3KeyFromStoredPath(storedPathOrKey) && canAccessS3Bucket()) {
+    return resolveS3FileForRead(storedPathOrKey);
+  }
+
+  return local;
+}
+
 /**
  * URL de descarga (firmada en S3 si no hay CDN pública).
  */
 export async function getDownloadUrl(storedPathOrKey) {
-  const s3Key = parseS3KeyFromStoredPath(storedPathOrKey);
-  if (s3Key && isS3StorageEnabled()) {
-    const publicUrl = s3.getPublicObjectUrl(s3Key);
-    if (publicUrl) return publicUrl;
-    return s3.getSignedDownloadUrl(s3Key);
+  const s3Keys = resolveS3KeyCandidates(storedPathOrKey);
+  if (s3Keys.length && canAccessS3Bucket()) {
+    for (const s3Key of s3Keys) {
+      const publicUrl = s3.getPublicObjectUrl(s3Key);
+      if (publicUrl) return publicUrl;
+      try {
+        return await s3.getSignedDownloadUrl(s3Key);
+      } catch (error) {
+        const missing =
+          error?.name === 'NoSuchKey' ||
+          error?.name === 'NotFound' ||
+          error?.$metadata?.httpStatusCode === 404;
+        if (!missing) throw error;
+      }
+    }
   }
   if (storedPathOrKey.startsWith('http://') || storedPathOrKey.startsWith('https://')) {
     return storedPathOrKey;
@@ -191,21 +248,76 @@ export async function getDownloadUrl(storedPathOrKey) {
   return storedPathOrKey;
 }
 
+/** Indica si un valor guardado en BD apunta a un archivo en S3 o en uploads locales. */
+export function isStoredFileReference(value) {
+  if (!value || typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.startsWith('data:')) return false;
+  if (trimmed.startsWith('s3:') || trimmed.startsWith('s3://')) return true;
+  if (trimmed.startsWith('/uploads/')) return true;
+  const publicBase = storageConfig.publicBaseUrl();
+  if (publicBase && trimmed.startsWith(`${publicBase}/`)) return true;
+  return false;
+}
+
 export async function deleteStoredFile(storedPathOrKey) {
-  const s3Key = parseS3KeyFromStoredPath(storedPathOrKey);
-  if (s3Key && isS3StorageEnabled()) {
-    await s3.deleteObject(s3Key);
-    return { deleted: true, driver: 's3', key: s3Key };
+  if (!isStoredFileReference(storedPathOrKey)) {
+    return { deleted: false };
   }
 
-  let relative = storedPathOrKey;
+  const s3Keys = resolveS3KeyCandidates(storedPathOrKey);
+  if (s3Keys.length && canAccessS3Bucket()) {
+    for (const s3Key of s3Keys) {
+      try {
+        await s3.deleteObject(s3Key);
+        return { deleted: true, driver: 's3', key: s3Key };
+      } catch (error) {
+        const missing =
+          error?.name === 'NoSuchKey' ||
+          error?.name === 'NotFound' ||
+          error?.$metadata?.httpStatusCode === 404;
+        if (!missing) throw error;
+      }
+    }
+  }
+
+  const localUploadPath = toLocalUploadPathFromStoredRef(storedPathOrKey);
+  let relative = (localUploadPath || storedPathOrKey).trim();
   if (relative.startsWith('/uploads/')) relative = relative.slice(1);
+  if (relative.startsWith('s3:')) return { deleted: false };
   const localPath = resolveUploadRelativePath(relative);
   if (fs.existsSync(localPath)) {
     await fsp.unlink(localPath);
     return { deleted: true, driver: 'local', path: localPath };
   }
   return { deleted: false };
+}
+
+/** Elimina varios archivos almacenados (S3 o local). Ignora rutas inválidas. */
+export async function deleteStoredFiles(paths = []) {
+  const unique = [...new Set(paths.filter(isStoredFileReference))];
+  if (!unique.length) return { attempted: 0, deleted: 0 };
+
+  const results = await Promise.allSettled(unique.map((p) => deleteStoredFile(p)));
+  const deleted = results.filter((r) => r.status === 'fulfilled' && r.value?.deleted).length;
+  return { attempted: unique.length, deleted };
+}
+
+/** Borra archivos que estaban antes y ya no están en la lista nueva (p. ej. anexos quitados). */
+export async function deleteOrphanedStoredFiles(previousPaths = [], nextPaths = []) {
+  const prev = new Set(previousPaths.filter(isStoredFileReference));
+  const next = new Set(nextPaths.filter(isStoredFileReference));
+  const orphaned = [...prev].filter((p) => !next.has(p));
+  return deleteStoredFiles(orphaned);
+}
+
+/** Borra el archivo anterior cuando se reemplaza por otro. */
+export async function deleteReplacedStoredFile(oldPath, newPath) {
+  if (!oldPath || !isStoredFileReference(oldPath)) return { deleted: false };
+  if (newPath && String(oldPath).trim() === String(newPath).trim()) {
+    return { deleted: false };
+  }
+  return deleteStoredFile(oldPath);
 }
 
 /** Ruta local para multer cuando driver=local (sin cambios). */

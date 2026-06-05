@@ -7,9 +7,14 @@ import Estado from '../models/Estado.js';
 import ClasificacionRiesgo from '../models/ClasificacionRiesgo.js';
 import Ciudad from '../models/Ciudad.js';
 import { enviarNotificacionAsignacion, enviarNotificacionAseguradora, enviarNotificacionCreador } from '../services/emailService.js';
+import {
+  RIESGO_ATTACHMENT_FIELDS,
+  deleteAttachmentsFromRecord,
+  deleteReplacedStoredFile,
+} from '../utils/storedFileCleanup.js';
 
 const RUTA_RELATIVA_RIESGOS = '/uploads/riesgos/';
-const camposArchivoRiesgo = ['adjuntoAsignacion', 'adjuntoInspeccion', 'adjuntoContIni', 'anxoInfoFnal', 'anxoFactra'];
+const camposArchivoRiesgo = RIESGO_ATTACHMENT_FIELDS;
 
 const esValorVacio = (valor) => valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
 
@@ -592,6 +597,12 @@ export const actualizarRiesgo = async (req, res) => {
       ...mapearDatosRiesgo(req.body, casoActual.toObject()),
       nmroRiesgo: casoActual.nmroRiesgo,
     };
+
+    for (const campo of camposArchivoRiesgo) {
+      await deleteReplacedStoredFile(casoActual[campo], datosActualizados[campo]).catch((err) => {
+        console.warn(`⚠️ No se pudo eliminar adjunto anterior (${campo}):`, err.message);
+      });
+    }
     
     // Actualizar el caso
     const riesgo = await Riesgo.findByIdAndUpdate(req.params.id, datosActualizados, { new: true });
@@ -843,6 +854,11 @@ export const eliminarRiesgo = async (req, res) => {
   try {
     const riesgo = await Riesgo.findByIdAndDelete(req.params.id);
     if (!riesgo) return res.status(404).json({ error: 'Riesgo no encontrado' });
+
+    await deleteAttachmentsFromRecord(riesgo, camposArchivoRiesgo).catch((err) => {
+      console.warn('⚠️ No se pudieron eliminar adjuntos del riesgo en almacenamiento:', err.message);
+    });
+
     res.json({ mensaje: 'Riesgo eliminado' });
   } catch (err) {
     res.status(500).json({ error: 'Error al eliminar el riesgo' });

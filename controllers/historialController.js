@@ -1,7 +1,12 @@
 import HistorialFormulario from '../models/HistorialFormulario.js';
 import SecurUser from '../models/SecurUser.js';
 import { UPLOADS_ROOT } from '../config/uploadsRoot.js';
-import { deleteStoredFile } from '../services/fileStorageService.js';
+import { deleteReplacedStoredFile, deleteStoredFile } from '../services/fileStorageService.js';
+import {
+  collectPathsFromHistorialDatos,
+  deleteHistorialFormularioFiles,
+  deleteOrphanedStoredFiles,
+} from '../utils/storedFileCleanup.js';
 import mongoose from 'mongoose';
 import fs from 'fs/promises';
 import fsSync from 'fs';
@@ -1363,6 +1368,14 @@ class HistorialController {
         };
       }
 
+      if (datosActualizacion.datos) {
+        const rutasAnteriores = collectPathsFromHistorialDatos(formulario.datos);
+        const rutasNuevas = collectPathsFromHistorialDatos(datosActualizacion.datos);
+        await deleteOrphanedStoredFiles(rutasAnteriores, rutasNuevas).catch((err) => {
+          console.warn('⚠️ No se pudieron eliminar imágenes huérfanas del formulario:', err.message);
+        });
+      }
+
       // Actualizar campos de forma selectiva usando findByIdAndUpdate para evitar problemas de tamaño
       console.log('🔧 Actualizando campos del formulario usando actualización selectiva...');
       
@@ -1520,6 +1533,10 @@ class HistorialController {
           error: 'Formulario no encontrado'
         });
       }
+
+      await deleteHistorialFormularioFiles(formulario).catch((err) => {
+        console.warn('⚠️ No se pudieron eliminar todos los archivos del formulario:', err.message);
+      });
 
       await formulario.softDelete(req.user?.nombre || 'Usuario');
 
@@ -2055,6 +2072,14 @@ class HistorialController {
       }
 
       const nombreArchivoOriginal = req.file.originalname || `inspeccion-propiedades_${Date.now()}.docx`;
+
+      if (formulario.archivo?.ruta) {
+        await deleteReplacedStoredFile(formulario.archivo.ruta, req.fileStorage?.publicPath).catch(
+          (err) => {
+            console.warn('⚠️ No se pudo eliminar el Word anterior del formulario:', err.message);
+          }
+        );
+      }
 
       if (req.fileStorage?.driver === 's3') {
         formulario.archivo = {

@@ -21,6 +21,11 @@ import {
   puedeElegirGerenteEnBandeja,
   puedeAdministrarBandejaFacturacion,
 } from '../config/gerentesFacturacion.js';
+import {
+  collectPathsFromComplexRecord,
+  deleteComplexRecordFiles,
+  deleteOrphanedStoredFiles,
+} from '../utils/storedFileCleanup.js';
 
 // Función helper para convertir fechas de string (yyyy-MM-dd) a Date sin problemas de zona horaria
 const convertirFechaLocal = (fechaString) => {
@@ -1780,6 +1785,15 @@ export const actualizarComplex = async (req, res) => {
       console.log('🔧 [actualizarComplex] Actualizando codiRespnsble:', updateData.codiRespnsble);
     }
     
+    const anteriorObj = casoAnterior.toObject?.() ?? casoAnterior;
+    const siguienteObj = { ...anteriorObj, ...updateData };
+    await deleteOrphanedStoredFiles(
+      collectPathsFromComplexRecord(anteriorObj),
+      collectPathsFromComplexRecord(siguienteObj)
+    ).catch((err) => {
+      console.warn('⚠️ No se pudieron eliminar adjuntos huérfanos del caso Complex:', err.message);
+    });
+
     const casoActualizado = await Complex.findByIdAndUpdate(
       req.params.id,
       updateData,
@@ -2206,6 +2220,11 @@ export const eliminarComplex = async (req, res) => {
   try {
     const casoEliminado = await Complex.findByIdAndDelete(req.params.id);
     if (!casoEliminado) return res.status(404).json({ error: 'Caso no encontrado' });
+
+    await deleteComplexRecordFiles(casoEliminado.toObject?.() ?? casoEliminado).catch((err) => {
+      console.warn('⚠️ No se pudieron eliminar adjuntos del caso Complex en almacenamiento:', err.message);
+    });
+
     res.json({ mensaje: 'Caso eliminado correctamente' });
   } catch (error) {
     console.error('Error al eliminar el caso:', error);

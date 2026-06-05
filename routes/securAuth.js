@@ -11,7 +11,7 @@ import nodemailer from "nodemailer";
 import { JWT_SECRET } from "../config/secrets.js";
 import { UPLOADS_ROOT, ensureUploadDir } from "../config/uploadsRoot.js";
 import { createMulterUpload, attachPersistedFileMiddleware } from "../storage/multerStorageFactory.js";
-import { STORAGE_CATEGORIES, getPublicPathForSingle } from "../services/fileStorageService.js";
+import { STORAGE_CATEGORIES, deleteReplacedStoredFile, getPublicPathForSingle } from "../services/fileStorageService.js";
 
 const router = express.Router();
 
@@ -1639,6 +1639,10 @@ router.put("/perfil/foto", upload.single("foto"), persistFoto, async (req, res) 
     // Actualizar el campo foto con la URL relativa
     const nuevaFotoUrl = getPublicPathForSingle(req, (f) => `/uploads/${f.filename}`);
     console.log('🔄 Cambiando foto de:', usuario.foto, 'a:', nuevaFotoUrl);
+
+    await deleteReplacedStoredFile(usuario.foto, nuevaFotoUrl).catch((err) => {
+      console.warn('⚠️ No se pudo eliminar la foto anterior:', err.message);
+    });
     
     usuario.foto = nuevaFotoUrl;
     

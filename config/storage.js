@@ -26,8 +26,22 @@ export function getStorageDriver() {
   return raw === STORAGE_DRIVERS.S3 ? STORAGE_DRIVERS.S3 : STORAGE_DRIVERS.LOCAL;
 }
 
+export function isS3BucketConfigured() {
+  const bucket =
+    process.env.AWS_S3_BUCKET?.trim() ||
+    process.env.AWS_BUCKET_NAME?.trim() ||
+    '';
+  return Boolean(bucket);
+}
+
+/** Subidas nuevas van a S3 solo con STORAGE_DRIVER=s3. */
 export function isS3StorageEnabled() {
-  return getStorageDriver() === STORAGE_DRIVERS.S3 && Boolean(process.env.AWS_S3_BUCKET?.trim());
+  return getStorageDriver() === STORAGE_DRIVERS.S3 && isS3BucketConfigured();
+}
+
+/** Lectura/borrado de referencias s3:… requiere bucket (aunque el driver local siga activo en dev). */
+export function canAccessS3Bucket() {
+  return isS3BucketConfigured();
 }
 
 export function isLocalStorageEnabled() {
@@ -108,6 +122,10 @@ export function logStorageStatusOnBoot() {
       console.log(`   Endpoint: ${storageConfig.endpoint()}`);
     }
     console.log('   Claves: año/trimestre/mes/día/usuario|cliente/categoría/archivo');
+  } else if (isS3BucketConfigured()) {
+    console.log(
+      `📂 Subidas LOCAL — lectura S3 activa (bucket: ${storageConfig.bucket()}) para rutas s3: en BD`
+    );
   } else {
     console.log('📂 Almacenamiento LOCAL (backend/uploads). S3 listo; activar con STORAGE_DRIVER=s3 en despliegue.');
   }

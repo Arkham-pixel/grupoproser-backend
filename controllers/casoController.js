@@ -1,4 +1,8 @@
 import Siniestro from '../models/CasoComplex.js';
+import {
+  CASO_COMPLEX_ATTACHMENT_FIELDS,
+  deleteAttachmentsFromRecord,
+} from '../utils/storedFileCleanup.js';
 
 export const crearCaso = async (req, res) => {
   try {
@@ -47,6 +51,11 @@ export const eliminarCaso = async (req, res) => {
   try {
     const caso = await Siniestro.findByIdAndDelete(req.params.id);
     if (!caso) return res.status(404).json({ error: 'Caso no encontrado' });
+
+    await deleteAttachmentsFromRecord(caso, CASO_COMPLEX_ATTACHMENT_FIELDS).catch((err) => {
+      console.warn('⚠️ No se pudieron eliminar adjuntos del caso en almacenamiento:', err.message);
+    });
+
     res.json({ mensaje: 'Caso eliminado' });
   } catch (err) {
     res.status(500).json({ error: 'Error al eliminar el caso' });

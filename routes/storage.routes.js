@@ -1,23 +1,19 @@
 import express from 'express';
 import path from 'path';
-import { resolveFileForRead, getDownloadUrl } from '../services/fileStorageService.js';
+import { resolveFileForRead } from '../services/fileStorageService.js';
 
 const router = express.Router();
 
 /**
  * Sirve archivos almacenados en S3 (s3:clave) o legacy local (/uploads/...).
  * Usado por el frontend cuando la ruta guardada no es /uploads/ directo.
+ * Siempre hace streaming vía el backend (sin redirect a S3) para cumplir CSP del front.
  */
 router.get('/file', async (req, res) => {
   try {
     const ref = req.query.ref;
     if (!ref || typeof ref !== 'string') {
       return res.status(400).json({ message: 'Parámetro ref requerido' });
-    }
-
-    const signedOrPublic = await getDownloadUrl(ref);
-    if (signedOrPublic.startsWith('http://') || signedOrPublic.startsWith('https://')) {
-      return res.redirect(signedOrPublic);
     }
 
     const resolved = await resolveFileForRead(ref);
