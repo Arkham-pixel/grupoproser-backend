@@ -1,5 +1,7 @@
 import path from 'path';
+import jwt from 'jsonwebtoken';
 import { getStorageDateSegments, storageConfig } from '../config/storage.js';
+import { JWT_SECRET } from '../config/secrets.js';
 
 const SEGMENT_MAX = 120;
 
@@ -25,8 +27,40 @@ export const STORAGE_OWNER_TYPES = Object.freeze({
  */
 export function buildOwnerSegment(ownerType, ownerId) {
   const type = ownerType === STORAGE_OWNER_TYPES.CLIENTE ? 'clientes' : 'usuarios';
-  const id = sanitizeStorageSegment(ownerId, 'anonimo');
+  const id = sanitizeStorageSegment(ownerId, 'general');
   return `${type}/${id}`;
+}
+
+/**
+ * Extrae datos de autenticación del request (middleware o JWT en Authorization).
+ */
+function extractAuthFromRequest(req) {
+  const fromMiddleware = req?.usuario || req?.user;
+  if (fromMiddleware) return fromMiddleware;
+
+  const authHeader = req?.headers?.authorization;
+  if (!authHeader?.startsWith('Bearer ')) return null;
+
+  const token = authHeader.split(' ')[1];
+  if (!token) return null;
+
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch {
+    try {
+      return jwt.decode(token);
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
+ * Identificador legible para carpetas S3 (login > nombre > id).
+ */
+function resolveOwnerLabel(auth) {
+  if (!auth) return null;
+  return auth.login || auth.nombre || auth.name || auth.id || auth._id || null;
 }
 
 /**
@@ -111,14 +145,19 @@ export function resolveOwnerFromRequest(req, overrides = {}) {
   if (overrides.ownerType === STORAGE_OWNER_TYPES.CLIENTE && overrides.ownerId) {
     return { ownerType: STORAGE_OWNER_TYPES.CLIENTE, ownerId: overrides.ownerId };
   }
-  const userId =
-    overrides.ownerId ||
-    req?.usuario?.id ||
-    req?.usuario?._id ||
-    req?.user?.id ||
-    req?.user?._id;
+
+  if (overrides.ownerId) {
+    return {
+      ownerType: STORAGE_OWNER_TYPES.USUARIO,
+      ownerId: String(overrides.ownerId),
+    };
+  }
+
+  const auth = extractAuthFromRequest(req);
+  const ownerLabel = resolveOwnerLabel(auth);
+
   return {
     ownerType: STORAGE_OWNER_TYPES.USUARIO,
-    ownerId: userId ? String(userId) : 'anonimo',
+    ownerId: ownerLabel ? String(ownerLabel) : 'general',
   };
 }
