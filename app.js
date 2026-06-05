@@ -36,7 +36,10 @@ import siniestroExpressRoutes from './routes/siniestroExpress.routes.js';
 import chatgptRoutes from './routes/chatgpt.routes.js';
 import inspeccionPropiedadesRoutes from './routes/inspeccionPropiedades.routes.js';
 import documentoRoutes from './routes/documento.routes.js';
+import storageRoutes from './routes/storage.routes.js';
 import healthRoutes from './routes/health.routes.js';
+import multer from 'multer';
+import { mapS3ErrorMessage, isS3AccessDeniedError } from './services/s3StorageService.js';
 import { UPLOADS_ROOT } from './config/uploadsRoot.js';
 import { logStorageStatusOnBoot } from './config/storage.js';
 
@@ -174,9 +177,38 @@ app.use('/api/inspeccion-propiedades', inspeccionPropiedadesRoutes);
 console.log('📝 Registrando ruta /api/documentos...');
 app.use('/api/documentos', documentoRoutes);
 console.log('✅ Ruta /api/documentos registrada exitosamente');
+app.use('/api/storage', storageRoutes);
 console.log('EMAIL_USER:', process.env.EMAIL_USER);
 console.log('EMAIL_PASS:', process.env.EMAIL_PASS ? '***' : 'NO DEFINIDO');
 console.log('OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? '✅ Configurada' : '❌ No configurada');
 console.log('🔧 CORS configurado correctamente');
+
+// Errores de subida / S3 → JSON legible (evita 500 genérico)
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+
+  const isS3 =
+    err?.name === 'NoSuchBucket' ||
+    isS3AccessDeniedError(err) ||
+    err?.name === 'InvalidAccessKeyId' ||
+    err?.storageError;
+
+  if (isS3) {
+    let status = 500;
+    if (err?.name === 'NoSuchBucket') status = 503;
+    else if (isS3AccessDeniedError(err)) status = 403;
+    return res.status(status).json({
+      message: mapS3ErrorMessage(err),
+      error: err.message,
+      code: err.name,
+    });
+  }
+
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ message: err.message, code: err.code });
+  }
+
+  next(err);
+});
 
 export default app; 

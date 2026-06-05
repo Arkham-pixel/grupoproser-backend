@@ -1,6 +1,4 @@
 import express from 'express';
-import multer from 'multer';
-import path from 'path';
 import {
   crearRiesgo,
   obtenerRiesgos,
@@ -10,24 +8,16 @@ import {
   buscarRiesgos
 } from '../controllers/riesgoController.js';
 import { enviarEmailPrueba } from '../services/emailService.js';
-import { RIESGOS_UPLOADS_DIR, ensureUploadDir } from '../config/uploadsRoot.js';
+import { createMulterUpload, attachPersistedFileMiddleware } from '../storage/multerStorageFactory.js';
+import { STORAGE_CATEGORIES } from '../services/fileStorageService.js';
 
 const router = express.Router();
 
-const riesgoUploadsDir = ensureUploadDir(RIESGOS_UPLOADS_DIR);
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, riesgoUploadsDir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
-    cb(null, uniqueName);
-  }
+const upload = createMulterUpload({ category: STORAGE_CATEGORIES.RIESGOS });
+const persistRiesgoFiles = attachPersistedFileMiddleware({
+  category: STORAGE_CATEGORIES.RIESGOS,
 });
 
-const upload = multer({ storage });
 const procesarArchivosRiesgo = upload.fields([
   { name: 'adjuntoAsignacion', maxCount: 1 },
   { name: 'adjuntoInspeccion', maxCount: 1 },
@@ -35,11 +25,11 @@ const procesarArchivosRiesgo = upload.fields([
   { name: 'anxoFactra', maxCount: 1 },
 ]);
 
-router.post('/', procesarArchivosRiesgo, crearRiesgo);
+router.post('/', procesarArchivosRiesgo, persistRiesgoFiles, crearRiesgo);
 router.get('/', obtenerRiesgos);
 router.get('/buscar', buscarRiesgos);
 router.get('/:id', obtenerRiesgoPorId);
-router.put('/:id', procesarArchivosRiesgo, actualizarRiesgo);
+router.put('/:id', procesarArchivosRiesgo, persistRiesgoFiles, actualizarRiesgo);
 router.delete('/:id', eliminarRiesgo);
 
 // Ruta de prueba para email
@@ -58,4 +48,4 @@ router.post('/test-email', async (req, res) => {
   }
 });
 
-export default router; 
+export default router;

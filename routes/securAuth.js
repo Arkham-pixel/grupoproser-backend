@@ -4,13 +4,14 @@ import SecurUser from "../models/SecurUser.js";
 import SesionUsuario from "../models/SesionUsuario.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import multer from "multer";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
 import { JWT_SECRET } from "../config/secrets.js";
 import { UPLOADS_ROOT, ensureUploadDir } from "../config/uploadsRoot.js";
+import { createMulterUpload, attachPersistedFileMiddleware } from "../storage/multerStorageFactory.js";
+import { STORAGE_CATEGORIES, getPublicPathForSingle } from "../services/fileStorageService.js";
 
 const router = express.Router();
 
@@ -19,19 +20,17 @@ console.log('✅ Router securAuth inicializado');
 // ─── Configuración de multer para subida de fotos ─────────────
 const uploadsDir = ensureUploadDir(UPLOADS_ROOT);
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
+const upload = createMulterUpload({
+  category: STORAGE_CATEGORIES.PERFILES,
+  filenameFn: (req, file, cb) => {
     const ext = path.extname(file.originalname);
-    // Usar un timestamp único si no hay usuario.id disponible
     const userId = req.usuario?.id || 'unknown';
     cb(null, `${userId}-${Date.now()}${ext}`);
-  }
+  },
 });
-
-const upload = multer({ storage });
+const persistFoto = attachPersistedFileMiddleware({
+  category: STORAGE_CATEGORIES.PERFILES,
+});
 
 // Obtener perfil de un usuario específico por ID (para administradores)
 // IMPORTANTE: Esta ruta debe ir ANTES de /usuarios para que Express la capture correctamente
@@ -1597,7 +1596,7 @@ router.put("/perfil", async (req, res) => {
 });
 
 // Actualizar foto de perfil
-router.put("/perfil/foto", upload.single("foto"), async (req, res) => {
+router.put("/perfil/foto", upload.single("foto"), persistFoto, async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   
   try {
@@ -1638,7 +1637,7 @@ router.put("/perfil/foto", upload.single("foto"), async (req, res) => {
     });
     
     // Actualizar el campo foto con la URL relativa
-    const nuevaFotoUrl = `/uploads/${req.file.filename}`;
+    const nuevaFotoUrl = getPublicPathForSingle(req, (f) => `/uploads/${f.filename}`);
     console.log('🔄 Cambiando foto de:', usuario.foto, 'a:', nuevaFotoUrl);
     
     usuario.foto = nuevaFotoUrl;
@@ -1754,7 +1753,7 @@ router.delete("/usuarios", async (req, res) => {
 });
 
 // Crear nuevo usuario secur (solo admin y soporte pueden hacerlo)
-router.post("/register", upload.single("foto"), async (req, res) => {
+router.post("/register", upload.single("foto"), persistFoto, async (req, res) => {
   // Extraer datos de req.body (multer parsea multipart/form-data)
   const { nombre, correo, password, rol, celular, cedula, fechaNacimiento } = req.body;
   const token = req.headers.authorization?.split(' ')[1];
@@ -1836,7 +1835,7 @@ router.post("/register", upload.single("foto"), async (req, res) => {
     
     // Si hay foto, guardarla
     if (req.file) {
-      nuevoUsuario.foto = `/uploads/${req.file.filename}`;
+      nuevoUsuario.foto = getPublicPathForSingle(req, (f) => `/uploads/${f.filename}`);
       console.log('📸 Foto agregada:', nuevoUsuario.foto);
     }
     

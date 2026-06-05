@@ -3,35 +3,30 @@ import express from "express";
 import { verificarToken } from "../middleware/verificarToken.js";
 import Usuario from "../models/Usuario.js";
 import bcrypt from "bcryptjs";
-import multer from "multer";
-import fs from "fs";
 import path from "path";
-import { UPLOADS_ROOT, ensureUploadDir } from "../config/uploadsRoot.js";
+import { createMulterUpload, attachPersistedFileMiddleware } from "../storage/multerStorageFactory.js";
+import { STORAGE_CATEGORIES, getPublicPathForSingle } from "../services/fileStorageService.js";
 
 const router = express.Router();
 
-// ─── 1. Asegúrate de que exista la carpeta uploads/ ─────────────
-const uploadsDir = ensureUploadDir(UPLOADS_ROOT);
-
-// ─── 2. Configura multer para guardar en disco ───────────────────
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
+const upload = createMulterUpload({
+  category: STORAGE_CATEGORIES.PERFILES,
+  filenameFn: (req, file, cb) => {
     const ext = path.extname(file.originalname);
-    // Usar un timestamp único si no hay usuario.id disponible
     const userId = req.usuario?.id || 'unknown';
     cb(null, `${userId}-${Date.now()}${ext}`);
-  }
+  },
 });
-const upload = multer({ storage });
+const persistFoto = attachPersistedFileMiddleware({
+  category: STORAGE_CATEGORIES.PERFILES,
+});
 
-// ─── 3. Ruta PROTEGIDA: crear usuario (con foto opcional) ────────
+// ─── Ruta PROTEGIDA: crear usuario (con foto opcional) ────────
 router.post(
   "/crear",
   verificarToken,
   upload.single("foto"),
+  persistFoto,
   async (req, res) => {
     const rolSolicitante = req.usuario.rol;
     if (rolSolicitante !== "admin" && rolSolicitante !== "soporte") {
@@ -60,7 +55,7 @@ router.post(
       });
 
       if (req.file) {
-        nuevoUsuario.foto = `/uploads/${req.file.filename}`;
+        nuevoUsuario.foto = getPublicPathForSingle(req, (f) => `/uploads/${f.filename}`);
       }
 
       await nuevoUsuario.save();
@@ -96,7 +91,8 @@ router.get(
 router.put(
   "/perfil",
   verificarToken,
-  upload.single("foto"),         
+  upload.single("foto"),
+  persistFoto,
   async (req, res) => {
     console.log('📝 === INICIANDO ACTUALIZACIÓN DE PERFIL (USUARIO NORMAL) ===');
     console.log('👤 Usuario autenticado:', req.usuario);
@@ -125,8 +121,8 @@ router.put(
 
       // Actualizar foto si se proporciona
       if (req.file) {
-        console.log('📸 Procesando archivo:', req.file.filename);
-        usuario.foto = `/uploads/${req.file.filename}`;
+        console.log('📸 Procesando archivo:', req.file.originalname);
+        usuario.foto = getPublicPathForSingle(req, (f) => `/uploads/${f.filename}`);
         console.log('🔗 Nueva URL de foto:', usuario.foto);
       }
 

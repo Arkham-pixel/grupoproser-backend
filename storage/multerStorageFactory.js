@@ -3,17 +3,17 @@ import path from 'path';
 import multer from 'multer';
 import { isS3StorageEnabled } from '../config/storage.js';
 import { ensureUploadDir } from '../config/uploadsRoot.js';
-import { getLocalMulterDestination } from '../services/fileStorageService.js';
-import { generateUniqueFilename } from '../services/fileStorageService.js';
+import {
+  getLocalMulterDestination,
+  generateUniqueFilename,
+  persistAllUploadedFiles,
+} from '../services/fileStorageService.js';
 
 /**
- * Factory de multer para migración gradual a S3.
+ * Factory de multer para almacenamiento local o S3.
  *
- * - STORAGE_DRIVER=local (defecto): diskStorage idéntico al comportamiento actual.
- * - STORAGE_DRIVER=s3: memoryStorage (archivo en RAM); tras upload usar persistUploadedFile().
- *
- * Las rutas actuales pueden seguir con su multer.diskStorage hasta el despliegue;
- * al migrar, reemplazar por createMulterUpload({ category, ... }).
+ * - STORAGE_DRIVER=local: diskStorage (backend/uploads).
+ * - STORAGE_DRIVER=s3: memoryStorage + persistAllUploadedFiles() tras multer.
  */
 export function createMulterDiskStorage({ category, subfolder, filenameFn }) {
   const destDir = ensureUploadDir(getLocalMulterDestination(category, subfolder));
@@ -48,27 +48,25 @@ export function createMulterUpload(opts = {}) {
 }
 
 /**
- * Middleware post-multer: en S3 sube el buffer y adjunta metadata en req.fileStorage.
- * En local no hace nada (req.file ya tiene path en disco).
+ * Middleware post-multer: sube a S3 y adjunta metadata en req.fileStorage / req.filesStorage.
  */
 export function attachPersistedFileMiddleware({ category, ownerType, ownerIdFromReq }) {
   return async (req, res, next) => {
-    if (!isS3StorageEnabled() || !req.file) {
-      return next();
-    }
+    if (!isS3StorageEnabled()) return next();
+
+    const hasFiles =
+      req.file ||
+      (Array.isArray(req.files) && req.files.length > 0) ||
+      (req.files && typeof req.files === 'object' && Object.keys(req.files).length > 0);
+
+    if (!hasFiles) return next();
+
     try {
-      const { persistUploadedFile } = await import('../services/fileStorageService.js');
-      const ownerId =
-        typeof ownerIdFromReq === 'function' ? ownerIdFromReq(req) : ownerIdFromReq;
-      req.fileStorage = await persistUploadedFile({
-        req,
-        file: req.file,
-        category,
-        ownerType,
-        ownerId,
-      });
+      await persistAllUploadedFiles(req, { category, ownerType, ownerIdFromReq });
       next();
     } catch (err) {
+      console.error('❌ Error persistiendo archivo en S3:', err.message);
+      err.storageError = true;
       next(err);
     }
   };

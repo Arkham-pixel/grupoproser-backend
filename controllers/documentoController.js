@@ -6,11 +6,32 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { resolveDocumentoArchivoPath } from '../config/uploadsRoot.js';
+import { resolveFileForRead } from '../services/fileStorageService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const IDENTIFICADORES_PERMITIDOS = IDENTIFICADORES_GESTION_DOCUMENTOS;
+
+function buildArchivoFromUpload(req) {
+  const file = req.file;
+  if (req.fileStorage?.driver === 's3') {
+    return {
+      nombreOriginal: file.originalname,
+      nombreArchivo: req.fileStorage.filename,
+      ruta: req.fileStorage.publicPath,
+      tamaño: req.fileStorage.size,
+      tipoMime: req.fileStorage.mimetype,
+    };
+  }
+  return {
+    nombreOriginal: file.originalname,
+    nombreArchivo: file.filename,
+    ruta: `/uploads/documentos/${file.filename}`,
+    tamaño: file.size,
+    tipoMime: file.mimetype,
+  };
+}
 
 
 // Middleware para verificar acceso
@@ -129,13 +150,7 @@ export const subirDocumento = async (req, res) => {
     const documento = new Documento({
       nombre: nombre || req.file.originalname,
       descripcion: descripcion || '',
-      archivo: {
-        nombreOriginal: req.file.originalname,
-        nombreArchivo: req.file.filename,
-        ruta: `/uploads/documentos/${req.file.filename}`,
-        tamaño: req.file.size,
-        tipoMime: req.file.mimetype
-      },
+      archivo: buildArchivoFromUpload(req),
       usuarioSubio: {
         id: usuario.id || usuario._id,
         login: usuario.login,
@@ -262,7 +277,29 @@ export const descargarDocumento = async (req, res) => {
       });
     }
 
-    const filePath = resolveDocumentoArchivoPath(documento.archivo.nombreArchivo);
+    const rutaArchivo = documento.archivo.ruta || `/uploads/documentos/${documento.archivo.nombreArchivo}`;
+    const resolved = await resolveFileForRead(rutaArchivo);
+
+    if (resolved.driver === 's3' && resolved.stream) {
+      const nombreDescarga = encodeURIComponent(
+        documento.archivo.nombreOriginal || documento.nombre || 'documento'
+      );
+      res.setHeader(
+        'Content-Type',
+        resolved.contentType || documento.archivo.tipoMime || 'application/octet-stream'
+      );
+      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${nombreDescarga}`);
+      if (resolved.contentLength) {
+        res.setHeader('Content-Length', resolved.contentLength);
+      }
+      resolved.stream.pipe(res);
+      return;
+    }
+
+    const filePath =
+      resolved.driver === 'local' && resolved.localPath
+        ? resolved.localPath
+        : resolveDocumentoArchivoPath(documento.archivo.nombreArchivo);
 
     if (!fs.existsSync(filePath)) {
       // En desarrollo es habitual trabajar con datos de producción pero sin los
@@ -467,13 +504,7 @@ export const subirDocumentoParaUsuario = async (req, res) => {
     const documento = new Documento({
       nombre: nombre || req.file.originalname,
       descripcion: descripcion || '',
-      archivo: {
-        nombreOriginal: req.file.originalname,
-        nombreArchivo: req.file.filename,
-        ruta: `/uploads/documentos/${req.file.filename}`,
-        tamaño: req.file.size,
-        tipoMime: req.file.mimetype
-      },
+      archivo: buildArchivoFromUpload(req),
       usuarioSubio: {
         id: usuarioId, // ID del usuario al que pertenece el documento
         login: usuarioActual.login,

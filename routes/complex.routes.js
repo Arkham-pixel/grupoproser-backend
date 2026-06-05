@@ -17,32 +17,22 @@ import {
   eliminarEnvioBandejaFacturacion,
 } from '../controllers/complex.controller.js';
 import { enviarEmailPrueba } from '../services/emailService.js';
-import multer from 'multer';
-import path from 'path';
-import { UPLOADS_ROOT } from '../config/uploadsRoot.js';
+import { createMulterUpload, attachPersistedFileMiddleware } from '../storage/multerStorageFactory.js';
+import { STORAGE_CATEGORIES, getPublicPathForSingle } from '../services/fileStorageService.js';
 
 const router = express.Router();
 
-// Misma carpeta que express.static(/uploads)
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, UPLOADS_ROOT);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
-    cb(null, uniqueName);
-  }
+const upload = createMulterUpload({ category: STORAGE_CATEGORIES.COMPLEX });
+const persistComplexFile = attachPersistedFileMiddleware({
+  category: STORAGE_CATEGORIES.COMPLEX,
 });
-const upload = multer({ storage });
 
 // Ruta para subir archivos
-router.post('/upload', upload.single('file'), (req, res) => {
+router.post('/upload', upload.single('file'), persistComplexFile, (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No se subió ningún archivo' });
   }
-  // Devuelve la URL relativa para guardar en historialDocs
-  const url = `/uploads/${req.file.filename}`;
+  const url = getPublicPathForSingle(req, (f) => `/uploads/${f.filename}`);
   res.json({ url, filename: req.file.originalname });
 });
 

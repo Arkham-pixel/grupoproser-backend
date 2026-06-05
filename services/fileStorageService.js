@@ -127,6 +127,7 @@ export async function persistUploadedFile({
       category,
     },
   });
+  console.log(`☁️ S3 putObject OK — ${key}`);
 
   if (file.path && fs.existsSync(file.path)) {
     await fsp.unlink(file.path).catch(() => {});
@@ -219,6 +220,73 @@ export function getLocalMulterDestination(category, subfolder) {
     [STORAGE_CATEGORIES.HISTORIAL]: path.join(UPLOADS_ROOT, 'historial'),
   };
   return map[category] || UPLOADS_ROOT;
+}
+
+/**
+ * Persiste todos los archivos del request en S3 (single, array o fields).
+ */
+export async function persistAllUploadedFiles(req, { category, ownerType, ownerIdFromReq } = {}) {
+  if (!isS3StorageEnabled()) return;
+
+  const ownerId =
+    typeof ownerIdFromReq === 'function' ? ownerIdFromReq(req) : ownerIdFromReq;
+
+  req.filesStorage = req.filesStorage || {};
+
+  if (req.file) {
+    req.fileStorage = await persistUploadedFile({
+      req,
+      file: req.file,
+      category,
+      ownerType,
+      ownerId,
+    });
+    return;
+  }
+
+  if (Array.isArray(req.files)) {
+    req.filesStorage.__array = [];
+    for (const file of req.files) {
+      req.filesStorage.__array.push(
+        await persistUploadedFile({ req, file, category, ownerType, ownerId })
+      );
+    }
+    return;
+  }
+
+  if (req.files && typeof req.files === 'object') {
+    for (const [field, fileList] of Object.entries(req.files)) {
+      if (!Array.isArray(fileList)) continue;
+      req.filesStorage[field] = [];
+      for (const file of fileList) {
+        req.filesStorage[field].push(
+          await persistUploadedFile({ req, file, category, ownerType, ownerId })
+        );
+      }
+    }
+  }
+}
+
+export function getPublicPathForSingle(req, localPathBuilder) {
+  if (req.fileStorage?.publicPath) return req.fileStorage.publicPath;
+  if (req.file && typeof localPathBuilder === 'function') return localPathBuilder(req.file);
+  return null;
+}
+
+export function getPublicPathForField(req, fieldName, index = 0, localPathBuilder) {
+  const persisted = req.filesStorage?.[fieldName]?.[index];
+  if (persisted?.publicPath) return persisted.publicPath;
+  const file = req.files?.[fieldName]?.[index];
+  if (file && typeof localPathBuilder === 'function') return localPathBuilder(file);
+  return null;
+}
+
+export function getPersistedForField(req, fieldName, index = 0) {
+  return req.filesStorage?.[fieldName]?.[index] ?? null;
+}
+
+export function getPersistedForArrayIndex(req, index = 0) {
+  return req.filesStorage?.__array?.[index] ?? null;
 }
 
 export { isS3StorageEnabled, isLocalStorageEnabled, storageConfig };

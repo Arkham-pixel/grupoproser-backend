@@ -1,33 +1,31 @@
 // routes/usuario.js  (ahora en ESM)
 import { Router } from 'express';
 import Usuario from '../models/Usuario.js';
-import multer from 'multer';
 import path from 'path';
-import { UPLOADS_ROOT, ensureUploadDir } from '../config/uploadsRoot.js';
+import { createMulterUpload, attachPersistedFileMiddleware } from '../storage/multerStorageFactory.js';
+import { STORAGE_CATEGORIES, getPublicPathForSingle } from '../services/fileStorageService.js';
 
 const router = Router();
-const uploadsDir = ensureUploadDir(UPLOADS_ROOT);
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    // Le dice a multer: guarda el archivo dentro de uploadsDir
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    // Le dice a multer cómo nombrar el archivo:
-    // <userId>-<timestamp><extensión original>
+const upload = createMulterUpload({
+  category: STORAGE_CATEGORIES.PERFILES,
+  filenameFn: (req, file, cb) => {
     const ext = path.extname(file.originalname);
     cb(null, `${req.usuario.id}-${Date.now()}${ext}`);
-  }
+  },
 });
-export const upload = multer({ storage });
+const persistFoto = attachPersistedFileMiddleware({
+  category: STORAGE_CATEGORIES.PERFILES,
+});
 
+export { upload, persistFoto };
 
 // POST /api/usuarios/crear
 router.post(
   '/crear',
   verificarToken, 
   upload.single('foto'),
+  persistFoto,
   async (req, res) => {
     try {
       const {
@@ -41,8 +39,7 @@ router.post(
 
       let fotoUrl = null;
       if (req.file) {
-        // serviremos /uploads estático
-        fotoUrl = `/uploads/${req.file.filename}`;
+        fotoUrl = getPublicPathForSingle(req, (f) => `/uploads/${f.filename}`);
       }
 
       const nuevoUsuario = new Usuario({

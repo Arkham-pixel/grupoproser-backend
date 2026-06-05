@@ -1,6 +1,7 @@
 import HistorialFormulario from '../models/HistorialFormulario.js';
 import SecurUser from '../models/SecurUser.js';
 import { UPLOADS_ROOT } from '../config/uploadsRoot.js';
+import { deleteStoredFile } from '../services/fileStorageService.js';
 import mongoose from 'mongoose';
 import fs from 'fs/promises';
 import fsSync from 'fs';
@@ -1994,15 +1995,15 @@ class HistorialController {
       }
 
       const casoId = req.query.casoId || 'general';
-      const imagenesSubidas = req.files.map(file => {
-        // La ruta relativa será /uploads/historial/{casoId}/{filename}
-        const rutaRelativa = `/uploads/historial/${casoId}/${file.filename}`;
+      const imagenesSubidas = req.files.map((file, index) => {
+        const persisted = req.filesStorage?.__array?.[index];
+        const rutaRelativa = persisted?.publicPath || `/uploads/historial/${casoId}/${file.filename}`;
         return {
           nombre: file.originalname,
           ruta: rutaRelativa,
-          tamaño: file.size,
-          tipoMime: file.mimetype,
-          filename: file.filename
+          tamaño: persisted?.size ?? file.size,
+          tipoMime: persisted?.mimetype ?? file.mimetype,
+          filename: persisted?.filename ?? file.filename,
         };
       });
 
@@ -2038,11 +2039,14 @@ class HistorialController {
 
       const formulario = await HistorialFormulario.findById(id);
       if (!formulario) {
-        // Eliminar archivo subido si el formulario no existe
-        try {
-          await fs.unlink(req.file.path);
-        } catch (e) {
-          console.error('Error eliminando archivo huérfano:', e);
+        if (req.fileStorage?.publicPath) {
+          await deleteStoredFile(req.fileStorage.publicPath).catch(() => {});
+        } else if (req.file?.path) {
+          try {
+            await fs.unlink(req.file.path);
+          } catch (e) {
+            console.error('Error eliminando archivo huérfano:', e);
+          }
         }
         return res.status(404).json({
           success: false,
@@ -2050,53 +2054,55 @@ class HistorialController {
         });
       }
 
-      // Obtener carpeta del caso o crear una por defecto
-      const carpetaCaso = formulario.carpetaCaso || formulario.casoId || 'general';
-      const uploadsDir = UPLOADS_ROOT;
-      
-      // Crear carpeta del caso si no existe
-      const carpetaCasoPath = path.join(uploadsDir, carpetaCaso);
-      if (!fsSync.existsSync(carpetaCasoPath)) {
-        await fs.mkdir(carpetaCasoPath, { recursive: true });
-        console.log('✅ Carpeta del caso creada:', carpetaCasoPath);
-      }
-
-      // Mover archivo a la carpeta del caso con el nombre original
       const nombreArchivoOriginal = req.file.originalname || `inspeccion-propiedades_${Date.now()}.docx`;
-      const rutaFinal = path.join(carpetaCasoPath, nombreArchivoOriginal);
-      
-      // Si el archivo ya está en la carpeta correcta con el nombre correcto, no mover
-      if (req.file.path !== rutaFinal) {
-        // Si ya existe un archivo en la ruta final, eliminarlo
-        try {
-          await fs.access(rutaFinal);
-          await fs.unlink(rutaFinal);
-          console.log('✅ Archivo anterior eliminado:', rutaFinal);
-        } catch (e) {
-          // El archivo no existe, está bien
+
+      if (req.fileStorage?.driver === 's3') {
+        formulario.archivo = {
+          nombre: nombreArchivoOriginal,
+          ruta: req.fileStorage.publicPath,
+          tamaño: req.fileStorage.size,
+          tipoMime: req.fileStorage.mimetype || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        };
+      } else {
+        const carpetaCaso = formulario.carpetaCaso || formulario.casoId || 'general';
+        const uploadsDir = UPLOADS_ROOT;
+        const carpetaCasoPath = path.join(uploadsDir, carpetaCaso);
+        if (!fsSync.existsSync(carpetaCasoPath)) {
+          await fs.mkdir(carpetaCasoPath, { recursive: true });
+          console.log('✅ Carpeta del caso creada:', carpetaCasoPath);
         }
 
-        // Mover archivo a la ubicación final (copy+unlink si rename falla, p. ej. volúmenes Windows)
-        try {
-          await fs.rename(req.file.path, rutaFinal);
-          console.log('✅ Archivo movido a:', rutaFinal);
-        } catch (renameErr) {
-          await fs.copyFile(req.file.path, rutaFinal);
-          await fs.unlink(req.file.path);
-          console.log('✅ Archivo copiado a (fallback rename):', rutaFinal, renameErr?.code || renameErr?.message);
+        const rutaFinal = path.join(carpetaCasoPath, nombreArchivoOriginal);
+
+        if (req.file.path !== rutaFinal) {
+          try {
+            await fs.access(rutaFinal);
+            await fs.unlink(rutaFinal);
+            console.log('✅ Archivo anterior eliminado:', rutaFinal);
+          } catch (e) {
+            // El archivo no existe, está bien
+          }
+
+          try {
+            await fs.rename(req.file.path, rutaFinal);
+            console.log('✅ Archivo movido a:', rutaFinal);
+          } catch (renameErr) {
+            await fs.copyFile(req.file.path, rutaFinal);
+            await fs.unlink(req.file.path);
+            console.log('✅ Archivo copiado a (fallback rename):', rutaFinal, renameErr?.code || renameErr?.message);
+          }
         }
+
+        const rutaRelativa = `/uploads/${carpetaCaso}/${nombreArchivoOriginal}`;
+        const stats = await fs.stat(rutaFinal);
+
+        formulario.archivo = {
+          nombre: nombreArchivoOriginal,
+          ruta: rutaRelativa,
+          tamaño: stats.size,
+          tipoMime: req.file.mimetype || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        };
       }
-
-      // Actualizar formulario con la información del archivo
-      const rutaRelativa = `/uploads/${carpetaCaso}/${nombreArchivoOriginal}`;
-      const stats = await fs.stat(rutaFinal);
-      
-      formulario.archivo = {
-        nombre: nombreArchivoOriginal,
-        ruta: rutaRelativa,
-        tamaño: stats.size,
-        tipoMime: req.file.mimetype || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-      };
       
       formulario.fechaModificacion = new Date();
       if (formulario.metadata) {
@@ -2105,11 +2111,7 @@ class HistorialController {
       
       await formulario.save();
 
-      console.log('✅ Archivo Word guardado exitosamente:', {
-        nombre: nombreArchivoOriginal,
-        ruta: rutaRelativa,
-        tamaño: stats.size
-      });
+      console.log('✅ Archivo Word guardado exitosamente:', formulario.archivo);
 
       res.json({
         success: true,

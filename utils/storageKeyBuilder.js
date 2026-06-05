@@ -1,5 +1,5 @@
 import path from 'path';
-import { getSemester, getStorageYear, storageConfig } from '../config/storage.js';
+import { getStorageDateSegments, storageConfig } from '../config/storage.js';
 
 const SEGMENT_MAX = 120;
 
@@ -37,7 +37,7 @@ export function buildOwnerSegment(ownerType, ownerId) {
  * @param {string} [opts.ownerId]
  * @param {string} opts.category - documentos | historial | express | riesgos | perfiles | complex | general
  * @param {string} opts.filename - nombre final del archivo
- * @param {Date} [opts.date]
+ * @param {Date} [opts.date] - fecha de la subida (año/trimestre/mes/día en la ruta)
  */
 export function buildS3ObjectKey({
   ownerType = STORAGE_OWNER_TYPES.USUARIO,
@@ -46,13 +46,12 @@ export function buildS3ObjectKey({
   filename,
   date = new Date(),
 }) {
-  const year = getStorageYear(date);
-  const semester = getSemester(date);
+  const { year, quarter, month, day } = getStorageDateSegments(date);
   const owner = buildOwnerSegment(ownerType, ownerId);
   const cat = sanitizeStorageSegment(category, 'general');
   const safeName = sanitizeStorageSegment(filename, `archivo-${Date.now()}`);
 
-  const parts = [year, semester, owner, cat, safeName];
+  const parts = [year, quarter, month, day, owner, cat, safeName];
   const key = parts.join('/');
 
   const prefix = storageConfig.keyPrefix();
@@ -62,16 +61,20 @@ export function buildS3ObjectKey({
 /**
  * Prefijos para borrado masivo (mantenimiento).
  * - deleteYear: 2026/
- * - deleteSemester: 2026/1/
- * - deleteOwner: 2026/1/usuarios/abc123/
+ * - deleteQuarter: 2026/2/
+ * - deleteMonth: 2026/2/06/
+ * - deleteDay: 2026/2/06/05/
+ * - deleteOwner: 2026/2/06/05/usuarios/abc123/
  */
-export function buildMaintenancePrefix({ year, semester, ownerType, ownerId, category }) {
+export function buildMaintenancePrefix({ year, quarter, month, day, ownerType, ownerId, category }) {
   const segments = [];
   const prefix = storageConfig.keyPrefix();
   if (prefix) segments.push(prefix);
 
   if (year) segments.push(sanitizeStorageSegment(year));
-  if (semester) segments.push(sanitizeStorageSegment(semester));
+  if (quarter) segments.push(sanitizeStorageSegment(quarter));
+  if (month) segments.push(sanitizeStorageSegment(month));
+  if (day) segments.push(sanitizeStorageSegment(day));
   if (ownerType && ownerId) {
     segments.push(buildOwnerSegment(ownerType, ownerId));
   }

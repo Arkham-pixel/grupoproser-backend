@@ -11,7 +11,10 @@ import cors from 'cors';
 
 const PROD_APP = 'https://aplicacion.grupoproser.com.co';
 /** Front desplegado en Coolify (dominio distinto al API). */
-const PROD_APP_COOLIFY = 'https://arnalddataflow.grupoproser.com.co';
+const PROD_APP_COOLIFY_ORIGINS = [
+  'https://arnalddataflow.grupoproser.com.co',
+  'https://arnald.grupoproser.com.co',
+];
 
 const LOCAL_DEV_ORIGINS = [
   'http://localhost:5173',
@@ -42,7 +45,7 @@ function buildAllowedOriginSet() {
 
   const list = [
     PROD_APP,
-    PROD_APP_COOLIFY,
+    ...PROD_APP_COOLIFY_ORIGINS,
     ...parseOriginsEnv(process.env.FRONTEND_URL),
     ...parseOriginsEnv(process.env.CORS_ORIGIN),
     ...parseOriginsEnv(process.env.ALLOWED_ORIGINS),

@@ -10,11 +10,16 @@ import { normalizarResponsable } from '../services/responsableResolverService.js
 import { normalizarAseguradora } from '../services/clienteResolverService.js';
 import { normalizarEstadoExpress } from '../services/estadoExpressResolverService.js';
 import { EXPRESS_UPLOADS_DIR, resolveUploadRelativePath } from '../config/uploadsRoot.js';
+import { deleteStoredFile, getPublicPathForField } from '../services/fileStorageService.js';
 
 const expressUploadsDir = EXPRESS_UPLOADS_DIR;
 
-const borrarArchivoFisicoExpress = (url) => {
+const borrarArchivoFisicoExpress = async (url) => {
   if (!url || typeof url !== 'string') return;
+  if (url.startsWith('s3:') || url.startsWith('s3://') || url.startsWith('http')) {
+    await deleteStoredFile(url).catch(() => {});
+    return;
+  }
   const match = url.match(/\/uploads\/express\/([^/?#]+)/i);
   if (!match?.[1]) return;
   const filePath = resolveUploadRelativePath(`uploads/express/${match[1]}`);
@@ -148,21 +153,28 @@ const generarConsecutivoExpress = async () => {
   return `EXP-${año}-${mes}-${maxSecuencial + 1}`;
 };
 
-const mapArchivoSubido = (file) => ({
-  nombre: file.originalname,
-  url: `/uploads/express/${file.filename}`,
-  tamano: file.size,
-  tipo: file.mimetype,
-});
+const mapArchivoSubido = (req, file, fieldName) => {
+  const files = req.files?.[fieldName] || [];
+  const index = Math.max(0, files.indexOf(file));
+  const url =
+    getPublicPathForField(req, fieldName, index, (f) => `/uploads/express/${f.filename}`) ||
+    `/uploads/express/${file.filename}`;
+  return {
+    nombre: file.originalname,
+    url,
+    tamano: file.size,
+    tipo: file.mimetype,
+  };
+};
 
-const mapArchivosSubidos = (filesPayload = {}) => {
+const mapArchivosSubidos = (req, filesPayload = {}) => {
   const listaAnexos = Array.isArray(filesPayload.anexos) ? filesPayload.anexos : [];
   const listaSalvamento = Array.isArray(filesPayload.salvamentoAnexos)
     ? filesPayload.salvamentoAnexos
     : [];
   return {
-    anexos: listaAnexos.map(mapArchivoSubido),
-    anexosSalvamento: listaSalvamento.map(mapArchivoSubido),
+    anexos: listaAnexos.map((file) => mapArchivoSubido(req, file, 'anexos')),
+    anexosSalvamento: listaSalvamento.map((file) => mapArchivoSubido(req, file, 'salvamentoAnexos')),
   };
 };
 
@@ -308,7 +320,7 @@ const aplicarCatalogosExpress = async (payload) => {
 
 export const crearSiniestroExpress = async (req, res) => {
   try {
-    const { anexos, anexosSalvamento } = mapArchivosSubidos(req.files || {});
+    const { anexos, anexosSalvamento } = mapArchivosSubidos(req, req.files || {});
 
     const payload = await aplicarCatalogosExpress(
       normalizarSalvamentoEnPayload(
@@ -401,6 +413,7 @@ export const actualizarSiniestroExpress = async (req, res) => {
     const anexosExistentes = parseAnexosExistentes(req.body.anexosExistentes);
     const salvamentoExistentes = parseAnexosExistentes(req.body.salvamentoAnexosExistentes);
     const { anexos: anexosNuevos, anexosSalvamento: salvamentoNuevos } = mapArchivosSubidos(
+      req,
       req.files || {}
     );
 
@@ -498,7 +511,7 @@ export const eliminarSiniestroExpress = async (req, res) => {
     }
 
     const todosAnexos = [...(registro.anexos ?? []), ...(registro.anexosSalvamento ?? [])];
-    todosAnexos.forEach((anexo) => borrarArchivoFisicoExpress(anexo?.url));
+    await Promise.all(todosAnexos.map((anexo) => borrarArchivoFisicoExpress(anexo?.url)));
 
     await SiniestroExpress.deleteOne({ _id: registro._id });
 

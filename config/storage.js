@@ -5,7 +5,7 @@
  * En despliegue: STORAGE_DRIVER=s3 + variables AWS → subida solo a S3.
  *
  * Estructura de claves en S3:
- *   {año}/{semestre}/{usuarios|clientes}/{id}/{categoría}/{archivo}
+ *   {año}/{trimestre}/{mes}/{día}/{usuarios|clientes}/{id}/{categoría}/{archivo}
  */
 
 export const STORAGE_DRIVERS = Object.freeze({
@@ -36,8 +36,16 @@ export function isLocalStorageEnabled() {
 
 export const storageConfig = Object.freeze({
   driver: () => getStorageDriver(),
-  bucket: () => process.env.AWS_S3_BUCKET?.trim() || '',
+  bucket: () =>
+    process.env.AWS_S3_BUCKET?.trim() ||
+    process.env.AWS_BUCKET_NAME?.trim() ||
+    '',
   region: () => process.env.AWS_REGION?.trim() || 'us-east-1',
+  /** Endpoint personalizado (MinIO, Coolify, etc.). Ej: https://s3.us-east-2.amazonaws.com */
+  endpoint: () => process.env.AWS_S3_ENDPOINT?.trim().replace(/\/$/, '') || '',
+  forcePathStyle: () => envFlag('AWS_S3_FORCE_PATH_STYLE', false),
+  /** Crear bucket al arrancar si no existe (solo dev; requiere s3:CreateBucket) */
+  autoCreateBucket: () => envFlag('AWS_S3_AUTO_CREATE_BUCKET', false),
   /** Prefijo opcional dentro del bucket (ej. "proser-prod") */
   keyPrefix: () => {
     const p = process.env.AWS_S3_KEY_PREFIX?.trim();
@@ -54,16 +62,34 @@ export const storageConfig = Object.freeze({
     isS3StorageEnabled() && envFlag('STORAGE_SERVE_LEGACY_LOCAL_UPLOADS', true),
 });
 
-/**
- * Semestre calendario: 1 = ene–jun, 2 = jul–dic.
- */
-export function getSemester(date = new Date()) {
-  const month = date.getMonth() + 1;
-  return month <= 6 ? '1' : '2';
-}
-
 export function getStorageYear(date = new Date()) {
   return String(date.getFullYear());
+}
+
+/** Trimestre calendario: 1 = ene–mar, 2 = abr–jun, 3 = jul–sep, 4 = oct–dic. */
+export function getQuarter(date = new Date()) {
+  const month = date.getMonth() + 1;
+  return String(Math.ceil(month / 3));
+}
+
+/** Mes con cero a la izquierda (01–12) para orden lexicográfico en S3. */
+export function getStorageMonth(date = new Date()) {
+  return String(date.getMonth() + 1).padStart(2, '0');
+}
+
+/** Día del mes con cero a la izquierda (01–31). */
+export function getStorageDay(date = new Date()) {
+  return String(date.getDate()).padStart(2, '0');
+}
+
+/** Segmentos de fecha usados en rutas S3. */
+export function getStorageDateSegments(date = new Date()) {
+  return {
+    year: getStorageYear(date),
+    quarter: getQuarter(date),
+    month: getStorageMonth(date),
+    day: getStorageDay(date),
+  };
 }
 
 export function logStorageStatusOnBoot() {
@@ -78,8 +104,28 @@ export function logStorageStatusOnBoot() {
     console.log(
       `☁️ Almacenamiento S3 activo — bucket: ${storageConfig.bucket()}, región: ${storageConfig.region()}`
     );
-    console.log('   Claves: año/semestre/usuario|cliente/categoría/archivo');
+    if (storageConfig.endpoint()) {
+      console.log(`   Endpoint: ${storageConfig.endpoint()}`);
+    }
+    console.log('   Claves: año/trimestre/mes/día/usuario|cliente/categoría/archivo');
   } else {
     console.log('📂 Almacenamiento LOCAL (backend/uploads). S3 listo; activar con STORAGE_DRIVER=s3 en despliegue.');
+  }
+}
+
+export async function verifyS3OnBoot() {
+  if (!isS3StorageEnabled()) return;
+  try {
+    const { ensureBucketReady } = await import('../services/s3StorageService.js');
+    await ensureBucketReady();
+    console.log(`✅ Bucket S3 accesible: ${storageConfig.bucket()}`);
+  } catch (error) {
+    const { mapS3ErrorMessage } = await import('../services/s3StorageService.js');
+    console.error('');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('  ❌ S3 NO DISPONIBLE — las subidas fallarán hasta corregir esto:');
+    console.error(`  ${mapS3ErrorMessage(error)}`);
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('');
   }
 }

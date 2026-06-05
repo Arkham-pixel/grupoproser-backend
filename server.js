@@ -1,4 +1,5 @@
 import './config/loadEnv.js';
+import './config/mongoDns.js';
 import mongoose from "mongoose";
 import app from "./app.js";
 import path from 'path';
@@ -17,6 +18,7 @@ import { iniciarCronCambioEstados } from './services/cronCambioEstadosService.js
 import { iniciarCronEmailOutbox } from './services/cronEmailOutboxService.js';
 import { iniciarCronExpressCierreMensual } from './services/cronExpressCierreMensualService.js';
 import { verifyMailOnStartup } from './services/mailTransport.js';
+import { verifyS3OnBoot } from './config/storage.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -66,6 +68,7 @@ app.listen(PORT, async () => {
   console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
   console.log("⚠️ El servidor iniciará aunque MongoDB no esté disponible");
   await verifyMailOnStartup();
+  await verifyS3OnBoot();
 });
 
 // Intentar conectar a MongoDB en segundo plano

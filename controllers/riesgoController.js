@@ -32,6 +32,11 @@ const obtenerCadena = (valor, fallback = '') => {
 
 const procesarArchivosEnRequest = (req) => {
   camposArchivoRiesgo.forEach((campo) => {
+    const persisted = req.filesStorage?.[campo]?.[0];
+    if (persisted?.publicPath) {
+      req.body[campo] = persisted.publicPath;
+      return;
+    }
     const archivo = req.files?.[campo]?.[0];
     if (archivo) {
       req.body[campo] = `${RUTA_RELATIVA_RIESGOS}${archivo.filename}`;

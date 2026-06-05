@@ -1,0 +1,45 @@
+import express from 'express';
+import path from 'path';
+import { resolveFileForRead, getDownloadUrl } from '../services/fileStorageService.js';
+
+const router = express.Router();
+
+/**
+ * Sirve archivos almacenados en S3 (s3:clave) o legacy local (/uploads/...).
+ * Usado por el frontend cuando la ruta guardada no es /uploads/ directo.
+ */
+router.get('/file', async (req, res) => {
+  try {
+    const ref = req.query.ref;
+    if (!ref || typeof ref !== 'string') {
+      return res.status(400).json({ message: 'Parámetro ref requerido' });
+    }
+
+    const signedOrPublic = await getDownloadUrl(ref);
+    if (signedOrPublic.startsWith('http://') || signedOrPublic.startsWith('https://')) {
+      return res.redirect(signedOrPublic);
+    }
+
+    const resolved = await resolveFileForRead(ref);
+
+    if (resolved.driver === 's3' && resolved.stream) {
+      res.setHeader('Content-Type', resolved.contentType || 'application/octet-stream');
+      if (resolved.contentLength) {
+        res.setHeader('Content-Length', resolved.contentLength);
+      }
+      resolved.stream.pipe(res);
+      return;
+    }
+
+    if (resolved.exists && resolved.localPath) {
+      return res.sendFile(path.resolve(resolved.localPath));
+    }
+
+    return res.status(404).json({ message: 'Archivo no encontrado' });
+  } catch (error) {
+    console.error('❌ Error sirviendo archivo:', error.message);
+    return res.status(500).json({ message: 'Error al servir archivo' });
+  }
+});
+
+export default router;
