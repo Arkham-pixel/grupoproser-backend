@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { resolveDocumentoArchivoPath } from '../config/uploadsRoot.js';
 import { deleteStoredFile, resolveFileForRead } from '../services/fileStorageService.js';
+import { resolveBackendPublicUrl } from '../config/platformUrls.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -309,7 +310,7 @@ export const descargarDocumento = async (req, res) => {
       const esProduccion = process.env.NODE_ENV === 'production';
       if (!esProduccion) {
         try {
-          const PROD_URL = 'https://aplicacion.grupoproser.com.co';
+          const PROD_URL = resolveBackendPublicUrl();
           const rutaArchivo = documento.archivo.ruta || `/uploads/documentos/${documento.archivo.nombreArchivo}`;
           const prodUrl = `${PROD_URL}${rutaArchivo.startsWith('/') ? '' : '/'}${rutaArchivo}`;
 

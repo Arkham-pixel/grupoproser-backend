@@ -3,6 +3,7 @@ import { deliverMail } from './mailTransport.js';
 import Cliente from '../models/Cliente.js';
 import mongoose from 'mongoose';
 import { resolverNombreEstado } from '../utils/resolverEstado.js';
+import { resolveFrontendUrl } from '../config/platformUrls.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -1092,13 +1093,7 @@ export const enviarNotificacionControlHoras = async (datos) => {
     // Construir URL del frontend para el enlace directo al caso
     // IMPORTANTE: Para correos, siempre usar URL accesible (producción o FRONTEND_URL configurado)
     // No usar localhost porque los usuarios no pueden acceder desde sus máquinas
-    let frontendUrl = process.env.FRONTEND_URL;
-    
-    if (!frontendUrl) {
-      // Si no está configurado FRONTEND_URL, usar URL de producción por defecto
-      // Esto asegura que los enlaces en los correos funcionen para todos los usuarios
-      frontendUrl = 'https://aplicacion.grupoproser.com.co';
-    }
+    let frontendUrl = resolveFrontendUrl();
     
     console.log('🔗 [Enlace Caso] casoId recibido:', datos.casoId);
     console.log('🔗 [Enlace Caso] numeroCaso:', datos.numeroCaso);
@@ -1344,13 +1339,7 @@ export const enviarNotificacionGerencia = async (datos) => {
     // Construir URL del frontend para el enlace directo al caso
     // IMPORTANTE: Para correos, siempre usar URL accesible (producción o FRONTEND_URL configurado)
     // No usar localhost porque los usuarios no pueden acceder desde sus máquinas
-    let frontendUrl = process.env.FRONTEND_URL;
-    
-    if (!frontendUrl) {
-      // Si no está configurado FRONTEND_URL, usar URL de producción por defecto
-      // Esto asegura que los enlaces en los correos funcionen para todos los usuarios
-      frontendUrl = 'https://aplicacion.grupoproser.com.co';
-    }
+    let frontendUrl = resolveFrontendUrl();
     
     console.log('🔗 [Enlace Caso Gerencia] frontendUrl:', frontendUrl);
     console.log('🔗 [Enlace Caso Gerencia] NODE_ENV:', process.env.NODE_ENV);

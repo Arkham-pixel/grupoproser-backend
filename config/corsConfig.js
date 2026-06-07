@@ -8,15 +8,7 @@
  * - INCLUDE_LOCALHOST_CORS=true: en producción, incluye también localhost (solo debugging).
  */
 import cors from 'cors';
-
-const PROD_APP = 'https://aplicacion.grupoproser.com.co';
-/** Front desplegado en Coolify (DNS: arnald). */
-const PROD_APP_COOLIFY = 'https://arnald.grupoproser.com.co';
-/** Nombres antiguos (por si queda caché o enlaces viejos). */
-const LEGACY_ORIGINS = [
-  'https://arnalddataflow.grupoproser.com.co',
-  'https://arnalddataflowbackend.grupoproser.com.co'
-];
+import { PRODUCTION_CORS_ORIGINS } from './platformUrls.js';
 
 const LOCAL_DEV_ORIGINS = [
   'http://localhost:5173',
@@ -66,9 +58,7 @@ function buildAllowedOriginSet() {
     !isProd || process.env.INCLUDE_LOCALHOST_CORS === 'true';
 
   const list = [
-    PROD_APP,
-    PROD_APP_COOLIFY,
-    ...LEGACY_ORIGINS,
+    ...PRODUCTION_CORS_ORIGINS,
     ...parseOriginsEnv(process.env.FRONTEND_URL),
     ...parseOriginsEnv(process.env.CORS_ORIGIN),
     ...parseOriginsEnv(process.env.ALLOWED_ORIGINS),
