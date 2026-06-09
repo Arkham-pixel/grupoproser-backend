@@ -1,6 +1,10 @@
 /** Debe coincidir con frontend/src/config/expressCatalogosPermitidos.js */
 
-export const LOGIN_CATALOGOS_EXPRESS_EXTRA = ['1048210029'];
+export const LOGIN_CATALOGOS_EXPRESS_EXTRA = [
+  '1048210029', // Alexander Escalante
+  '1007183772', // Maria Garcias
+  '1044800214', // Gabriel Moreno
+];
 
 export const EMAILS_CATALOGOS_EXPRESS_EXTRA = ['aescalante@proserpuertos.com.co'];
 
