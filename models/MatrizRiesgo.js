@@ -87,6 +87,12 @@ const matrizRiesgoSchema = new mongoose.Schema({
     mapaCalor: {
       type: mongoose.Schema.Types.Mixed,
       default: {}
+    },
+    
+    // Sección de gestión de riesgos (planes de acción)
+    gestionRiesgos: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {}
     }
   },
   
