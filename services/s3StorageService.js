@@ -100,6 +100,13 @@ export function getBucketName() {
   return storageConfig.bucket();
 }
 
+/** Metadatos x-amz-meta-* deben ser ASCII; UTF-8 sin codificar rompe la firma SigV4. */
+function toS3MetadataValue(value) {
+  const s = String(value ?? '').slice(0, 1024);
+  if (!s) return '';
+  return /^[\x00-\x7F]*$/.test(s) ? s : encodeURIComponent(s);
+}
+
 export async function putObject({ key, body, contentType, metadata = {} }) {
   const client = getS3Client();
   await client.send(
@@ -109,7 +116,7 @@ export async function putObject({ key, body, contentType, metadata = {} }) {
       Body: body,
       ContentType: contentType || 'application/octet-stream',
       Metadata: Object.fromEntries(
-        Object.entries(metadata).map(([k, v]) => [k, String(v ?? '').slice(0, 1024)])
+        Object.entries(metadata).map(([k, v]) => [k, toS3MetadataValue(v)])
       ),
     })
   );
