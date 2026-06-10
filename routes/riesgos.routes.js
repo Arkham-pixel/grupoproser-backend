@@ -20,6 +20,7 @@ const persistRiesgoFiles = attachPersistedFileMiddleware({
 
 const procesarArchivosRiesgo = upload.fields([
   { name: 'adjuntoAsignacion', maxCount: 1 },
+  { name: 'adjuntoContIni', maxCount: 1 },
   { name: 'adjuntoInspeccion', maxCount: 1 },
   { name: 'anxoInfoFnal', maxCount: 1 },
   { name: 'anxoFactra', maxCount: 1 },
