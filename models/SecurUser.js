@@ -8,6 +8,10 @@ const SecurUserSchema = new mongoose.Schema({
   email: { type: String, required: true },
   active: { type: String, default: "Y" },
   mfa: { type: String, default: null },
+  // 2FA con app de autenticación (Google/Microsoft Authenticator - TOTP)
+  totpSecret: { type: String, default: null },      // secreto definitivo (cuando 2FA está activo)
+  totpTempSecret: { type: String, default: null },  // secreto pendiente de confirmar durante la activación
+  totpEnabled: { type: Boolean, default: false },
   picture: { type: mongoose.Schema.Types.Buffer },
   foto: { type: String }, // Campo para almacenar la URL de la foto de perfil
   role: { type: String, enum: ["admin","soporte","usuario","visualizador"], required: true },

@@ -8,6 +8,8 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
+import { generateSecret, generateURI, verifySync } from "otplib";
+import QRCode from "qrcode";
 import { JWT_SECRET } from "../config/secrets.js";
 import { UPLOADS_ROOT, ensureUploadDir } from "../config/uploadsRoot.js";
 import { createMulterUpload, attachPersistedFileMiddleware } from "../storage/multerStorageFactory.js";
@@ -110,7 +112,7 @@ router.get("/usuarios", async (req, res) => {
     // Gestión de documentos / listados: sin foto binaria (picture puede ser Buffer muy pesado)
     const usuarios = await SecurUser.find(
       {},
-      { pswd: 0, mfa: 0, activationCode: 0, picture: 0 }
+      { pswd: 0, mfa: 0, activationCode: 0, picture: 0, totpSecret: 0, totpTempSecret: 0 }
     )
       .sort({ name: 1 })
       .lean();
@@ -304,6 +306,26 @@ router.post("/login", async (req, res) => {
     
     console.log('✅ Credenciales válidas para:', correo);
     
+    // ========== 2FA CON APP DE AUTENTICACIÓN (TOTP) ==========
+    // Si el usuario activó la verificación en dos pasos con Google/Microsoft Authenticator,
+    // no se entrega el JWT todavía: se devuelve un token temporal y se exige el código de 6 dígitos.
+    if (usuario.totpEnabled && usuario.totpSecret) {
+      console.log('🔐 Usuario con 2FA (TOTP) activado, solicitando código:', correo);
+      
+      const tempToken = jwt.sign(
+        { id: usuario._id, purpose: "2fa" },
+        JWT_SECRET,
+        { expiresIn: "5m" }
+      );
+      
+      return res.json({
+        twoFARequired: true,
+        method: "totp",
+        tempToken,
+        message: "Ingresa el código de tu app de autenticación"
+      });
+    }
+    
     // ========== 2FA TEMPORALMENTE SUSPENDIDO ==========
     // TODO: Reactivar cuando se resuelva el problema del email
     /*
@@ -394,8 +416,11 @@ router.post("/login", async (req, res) => {
     */
     // ========== FIN DE 2FA SUSPENDIDO ==========
     
-    // LOGIN DIRECTO (TEMPORAL) - Sin 2FA
-    console.log('⚠️ 2FA temporalmente suspendido - iniciando sesión directa');
+    if (usuario.totpTempSecret && !usuario.totpEnabled) {
+      console.log('ℹ️ Usuario con 2FA pendiente de confirmar (escaneó QR pero no activó):', correo);
+    } else {
+      console.log('ℹ️ Login directo - 2FA con app no activado para:', correo);
+    }
     
     // Generar token JWT
     const token = jwt.sign(
@@ -435,7 +460,9 @@ router.post("/login", async (req, res) => {
         email: usuario.email,
         role: usuario.role
       },
-      message: "Inicio de sesión exitoso (2FA suspendido temporalmente)"
+      twoFASetupRecommended: !usuario.totpEnabled,
+      twoFASetupPending: Boolean(usuario.totpTempSecret && !usuario.totpEnabled),
+      message: "Inicio de sesión exitoso"
     });
     
   } catch (error) {
@@ -513,10 +540,87 @@ router.post("/refresh-token", async (req, res) => {
 
 // Verificar código 2FA y completar login
 router.post("/login/2fa", async (req, res) => {
-  const { correo, code } = req.body;
+  const { correo, code, tempToken } = req.body;
   try {
     console.log('🔐 Verificando código 2FA para:', correo);
     
+    // ===== FLUJO TOTP (app de autenticación: Google/Microsoft Authenticator) =====
+    if (tempToken) {
+      let decoded;
+      try {
+        decoded = jwt.verify(tempToken, JWT_SECRET);
+      } catch (err) {
+        return res.status(401).json({ message: "Sesión de verificación expirada. Inicia sesión de nuevo." });
+      }
+      
+      if (decoded.purpose !== "2fa") {
+        return res.status(401).json({ message: "Token de verificación inválido" });
+      }
+      
+      const usuario = await SecurUser.findById(decoded.id);
+      if (!usuario || usuario.active !== "Y") {
+        return res.status(404).json({ message: "Usuario no encontrado o inactivo" });
+      }
+      
+      if (!usuario.totpEnabled || !usuario.totpSecret) {
+        return res.status(400).json({ message: "La verificación en dos pasos no está activada" });
+      }
+      
+      const { valid: codigoValido } = verifySync({
+        token: String(code || '').replace(/\s/g, ''),
+        secret: usuario.totpSecret,
+        epochTolerance: TOTP_EPOCH_TOLERANCE,
+      });
+      
+      if (!codigoValido) {
+        console.log('❌ Código TOTP incorrecto para:', usuario.login);
+        return res.status(401).json({ message: "Código incorrecto. Verifica tu app de autenticación." });
+      }
+      
+      console.log('✅ Código TOTP válido para:', usuario.login);
+      
+      // Generar token JWT definitivo
+      const token = jwt.sign(
+        { id: usuario._id, login: usuario.login, role: usuario.role },
+        JWT_SECRET,
+        { expiresIn: "4h" }
+      );
+      
+      // Registrar inicio de sesión
+      try {
+        const ip = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
+        const userAgent = req.headers['user-agent'] || 'unknown';
+        
+        const nuevaSesion = new SesionUsuario({
+          usuarioId: usuario._id,
+          login: usuario.login,
+          nombre: usuario.name,
+          inicioSesion: new Date(),
+          activa: true,
+          ip: ip,
+          userAgent: userAgent
+        });
+        
+        await nuevaSesion.save();
+        console.log(`✅ Sesión registrada para usuario: ${usuario.name} (${usuario.login})`);
+      } catch (sessionError) {
+        console.error('⚠️ Error al registrar sesión (no crítico):', sessionError);
+      }
+      
+      return res.json({
+        token,
+        usuario: {
+          id: usuario._id,
+          login: usuario.login,
+          name: usuario.name,
+          email: usuario.email,
+          role: usuario.role
+        },
+        message: "Login exitoso"
+      });
+    }
+    
+    // ===== FLUJO LEGADO: código enviado por correo =====
     // Buscar usuario
     const usuario = await SecurUser.findOne({ login: correo });
     if (!usuario) {
@@ -580,6 +684,172 @@ router.post("/login/2fa", async (req, res) => {
     
   } catch (error) {
     console.error("❌ Error en verificación 2FA:", error);
+    res.status(500).json({ message: "Error en el servidor" });
+  }
+});
+
+// =====================================================
+// ENDPOINTS DE 2FA CON APP DE AUTENTICACIÓN (TOTP)
+// Google Authenticator / Microsoft Authenticator
+// =====================================================
+
+// Tolerancia de ±30 segundos por desfase de reloj del celular (epochTolerance en segundos)
+const TOTP_EPOCH_TOLERANCE = 30;
+const TOTP_ISSUER = "ARNALD DATA FLOW";
+
+// En la app de autenticación se muestra: "ARNALD DATA FLOW: {ID}"
+const obtenerEtiquetaTotp = (usuario) =>
+  usuario.cedula || usuario.login;
+
+const generarDatosTotp = async (usuario, secret) => {
+  const label = obtenerEtiquetaTotp(usuario);
+  const otpauthUrl = generateURI({
+    issuer: TOTP_ISSUER,
+    label,
+    secret,
+  });
+  const qr = await QRCode.toDataURL(otpauthUrl, { width: 280, margin: 2 });
+  return { qr, secret, label, issuer: TOTP_ISSUER };
+};
+
+// Helper: obtener el usuario autenticado desde el token Bearer
+const obtenerUsuarioDesdeToken = async (req) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return { error: { status: 401, message: "Token requerido" } };
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    // No aceptar tokens temporales de 2FA para gestionar la configuración
+    if (decoded.purpose === "2fa") {
+      return { error: { status: 401, message: "Token inválido" } };
+    }
+    const usuario = await SecurUser.findById(decoded.id);
+    if (!usuario) return { error: { status: 404, message: "Usuario no encontrado" } };
+    return { usuario };
+  } catch (err) {
+    return { error: { status: 401, message: "Token inválido o expirado" } };
+  }
+};
+
+// Estado actual del 2FA del usuario autenticado
+router.get("/2fa/status", async (req, res) => {
+  const { usuario, error } = await obtenerUsuarioDesdeToken(req);
+  if (error) return res.status(error.status).json({ message: error.message });
+  
+  res.json({
+    enabled: Boolean(usuario.totpEnabled && usuario.totpSecret),
+    pending: Boolean(usuario.totpTempSecret && !usuario.totpEnabled),
+    accountId: obtenerEtiquetaTotp(usuario),
+    issuer: TOTP_ISSUER,
+  });
+});
+
+// Paso 1 de activación: generar secreto y QR para escanear con la app
+router.post("/2fa/setup", async (req, res) => {
+  const { usuario, error } = await obtenerUsuarioDesdeToken(req);
+  if (error) return res.status(error.status).json({ message: error.message });
+  
+  try {
+    if (usuario.totpEnabled && usuario.totpSecret) {
+      return res.status(400).json({ message: "La verificación en dos pasos ya está activada" });
+    }
+    
+    const reutilizarPendiente = Boolean(usuario.totpTempSecret);
+    const secret = usuario.totpTempSecret || generateSecret();
+    if (!reutilizarPendiente) {
+      usuario.totpTempSecret = secret;
+      await usuario.save();
+    }
+
+    const datosTotp = await generarDatosTotp(usuario, secret);
+
+    console.log(
+      reutilizarPendiente
+        ? `🔐 QR TOTP reutilizado (activación pendiente) para: ${usuario.login}`
+        : `🔐 Secreto TOTP generado para: ${usuario.login}`
+    );
+
+    res.json({
+      ...datosTotp,
+      pending: true,
+      message: "Escanea el código QR con Google Authenticator o Microsoft Authenticator. Luego confirma con el código de 6 dígitos."
+    });
+  } catch (err) {
+    console.error("❌ Error generando configuración 2FA:", err);
+    res.status(500).json({ message: "Error en el servidor" });
+  }
+});
+
+// Paso 2 de activación: confirmar con el primer código de la app
+router.post("/2fa/activate", async (req, res) => {
+  const { usuario, error } = await obtenerUsuarioDesdeToken(req);
+  if (error) return res.status(error.status).json({ message: error.message });
+  
+  try {
+    const { code } = req.body;
+    
+    if (!usuario.totpTempSecret) {
+      return res.status(400).json({ message: "Primero debes generar el código QR" });
+    }
+    
+    const { valid: codigoValido } = verifySync({
+      token: String(code || '').replace(/\s/g, ''),
+      secret: usuario.totpTempSecret,
+      epochTolerance: TOTP_EPOCH_TOLERANCE,
+    });
+    
+    if (!codigoValido) {
+      return res.status(401).json({ message: "Código incorrecto. Verifica tu app de autenticación e intenta de nuevo." });
+    }
+    
+    usuario.totpSecret = usuario.totpTempSecret;
+    usuario.totpTempSecret = null;
+    usuario.totpEnabled = true;
+    usuario.mfaLastUpdated = new Date().toISOString();
+    await usuario.save();
+    
+    console.log('✅ 2FA (TOTP) activado para:', usuario.login);
+    
+    res.json({ enabled: true, message: "Verificación en dos pasos activada correctamente" });
+  } catch (err) {
+    console.error("❌ Error activando 2FA:", err);
+    res.status(500).json({ message: "Error en el servidor" });
+  }
+});
+
+// Desactivar 2FA (requiere un código válido de la app)
+router.post("/2fa/disable", async (req, res) => {
+  const { usuario, error } = await obtenerUsuarioDesdeToken(req);
+  if (error) return res.status(error.status).json({ message: error.message });
+  
+  try {
+    const { code } = req.body;
+    
+    if (!usuario.totpEnabled || !usuario.totpSecret) {
+      return res.status(400).json({ message: "La verificación en dos pasos no está activada" });
+    }
+    
+    const { valid: codigoValido } = verifySync({
+      token: String(code || '').replace(/\s/g, ''),
+      secret: usuario.totpSecret,
+      epochTolerance: TOTP_EPOCH_TOLERANCE,
+    });
+    
+    if (!codigoValido) {
+      return res.status(401).json({ message: "Código incorrecto. No se desactivó la verificación en dos pasos." });
+    }
+    
+    usuario.totpSecret = null;
+    usuario.totpTempSecret = null;
+    usuario.totpEnabled = false;
+    usuario.mfaLastUpdated = new Date().toISOString();
+    await usuario.save();
+    
+    console.log('⚠️ 2FA (TOTP) desactivado para:', usuario.login);
+    
+    res.json({ enabled: false, message: "Verificación en dos pasos desactivada" });
+  } catch (err) {
+    console.error("❌ Error desactivando 2FA:", err);
     res.status(500).json({ message: "Error en el servidor" });
   }
 });
