@@ -26,6 +26,7 @@ import {
   deleteComplexRecordFiles,
   deleteOrphanedStoredFiles,
 } from '../utils/storedFileCleanup.js';
+import { controlHorasTieneDatos } from '../utils/controlHorasUtils.js';
 
 // Función helper para convertir fechas de string (yyyy-MM-dd) a Date sin problemas de zona horaria
 const convertirFechaLocal = (fechaString) => {
@@ -1163,6 +1164,7 @@ export const obtenerTodos = async (req, res) => {
           nmroFactra: casoObj.nmroFactra || '',
           // Historial de documentos
           historialDocs: casoObj.historialDocs || [],
+          control_horas: casoObj.control_horas || null,
           // Campos de timestamps
           createdAt: casoObj.createdAt || null,
           updatedAt: casoObj.updatedAt || null,
@@ -1598,6 +1600,22 @@ export const actualizarComplex = async (req, res) => {
       }
     } else {
       console.log('💾 [actualizarComplex] Usando historialDocs del payload:', Array.isArray(datosParaActualizar.historialDocs) ? datosParaActualizar.historialDocs.length : 'no es array', 'documentos');
+    }
+
+    // Evitar borrar control de horas al guardar otros campos del caso con payload vacío o incompleto
+    if (datosParaActualizar.control_horas !== undefined) {
+      const anteriorCH = casoAnterior.control_horas;
+      const incomingCH = datosParaActualizar.control_horas;
+
+      if (incomingCH === null) {
+        delete datosParaActualizar.control_horas;
+        console.log('🛡️ [actualizarComplex] control_horas null ignorado; se preserva el existente');
+      } else if (!controlHorasTieneDatos(incomingCH) && controlHorasTieneDatos(anteriorCH)) {
+        delete datosParaActualizar.control_horas;
+        console.log(
+          '🛡️ [actualizarComplex] Preservando control_horas existente (payload sin filas válidas)'
+        );
+      }
     }
     
     // Log antes de guardar
@@ -2522,6 +2540,8 @@ export const notificarControlHoras = async (req, res) => {
         usuario,
         emailDestinatario: resultado.destinatarioPrincipal,
         copias: [],
+        controlHoras: tieneControlHorasRegistrado ? controlHoras : null,
+        resumenControlHoras,
       });
     }
 

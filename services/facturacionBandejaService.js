@@ -20,6 +20,8 @@ function crearRegistroEnvio({
   nombreDestinatario,
   emailDestinatario,
   rolEnvio = 'principal',
+  controlHoras,
+  resumenControlHoras,
 }) {
   const gerenteNorm = normalizarClaveGerente(gerente);
   if (!gerenteNorm || !TIPOS_ENVIO.has(tipo)) {
@@ -35,6 +37,8 @@ function crearRegistroEnvio({
     nombreDestinatario: nombreDestinatario || nombreGerente(gerenteNorm),
     emailDestinatario: emailDestinatario ? String(emailDestinatario).trim() : '',
     rolEnvio: rolEnvio === 'copia' ? 'copia' : 'principal',
+    ...(controlHoras ? { controlHoras } : {}),
+    ...(resumenControlHoras ? { resumenControlHoras } : {}),
   };
 }
 
@@ -118,6 +122,8 @@ export async function persistirEnvioFacturacionTrasCorreo({
   nombreDestinatario,
   emailDestinatario,
   copias = [],
+  controlHoras,
+  resumenControlHoras,
 }) {
   const idResuelto = await resolverCasoIdFacturacion({ casoId, numeroCaso });
 
@@ -140,6 +146,8 @@ export async function persistirEnvioFacturacionTrasCorreo({
     nombreDestinatario,
     emailDestinatario,
     rolEnvio: 'principal',
+    controlHoras,
+    resumenControlHoras,
   });
   registros.push(principal);
 
