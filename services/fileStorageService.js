@@ -29,6 +29,7 @@ export const STORAGE_CATEGORIES = Object.freeze({
   RIESGOS: 'riesgos',
   PERFILES: 'perfiles',
   COMPLEX: 'complex',
+  PUERTOS: 'puertos',
   GENERAL: 'general',
 });
 
