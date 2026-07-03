@@ -201,6 +201,18 @@ export function normalizeStoredFileReference(storedPath) {
   return url.replace(/\/{2,}/g, '/');
 }
 
+/** Referencia canónica para comparar rutas (evita borrar S3 al normalizar /s3: → s3:). */
+export function canonicalStoredFileReference(storedPath) {
+  const normalized = normalizeStoredFileReference(storedPath);
+  if (!normalized) return '';
+
+  const s3Key = parseS3KeyFromStoredPath(normalized);
+  if (s3Key) return `s3:${s3Key.replace(/^\/+/, '')}`;
+
+  if (normalized.startsWith('/uploads/')) return normalized.replace(/\/{2,}/g, '/');
+  return normalized;
+}
+
 /** Rutas S3 recientes para búsqueda por nombre de archivo (fallback). */
 export function buildRecentStorageSearchPrefixes(date = new Date(), monthsBack = 4) {
   const prefixes = [];

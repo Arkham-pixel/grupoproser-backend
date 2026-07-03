@@ -4,6 +4,7 @@ import {
   deleteReplacedStoredFile,
   isStoredFileReference,
 } from '../services/fileStorageService.js';
+import { normalizeStoredFileReference } from './storageKeyBuilder.js';
 
 export const RIESGO_ATTACHMENT_FIELDS = Object.freeze([
   'adjuntoAsignacion',
@@ -100,7 +101,9 @@ export function collectPathsFromExpressAnexos(anexos = []) {
   if (!Array.isArray(anexos)) return [];
   return anexos
     .map((anexo) => anexo?.url || anexo?.ruta || anexo?.path)
-    .filter(isStoredFileReference);
+    .filter(isStoredFileReference)
+    .map((path) => normalizeStoredFileReference(path))
+    .filter(Boolean);
 }
 
 export function collectPathsFromComplexRecord(record) {

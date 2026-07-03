@@ -16,6 +16,7 @@ import {
   buildRecentStorageSearchPrefixes,
   extractS3PathHints,
   toLocalUploadPathFromStoredRef,
+  canonicalStoredFileReference,
 } from '../utils/storageKeyBuilder.js';
 import * as s3 from './s3StorageService.js';
 import {
@@ -351,17 +352,33 @@ export async function deleteStoredFiles(paths = []) {
 
 /** Borra archivos que estaban antes y ya no están en la lista nueva (p. ej. anexos quitados). */
 export async function deleteOrphanedStoredFiles(previousPaths = [], nextPaths = []) {
-  const prev = new Set(previousPaths.filter(isStoredFileReference));
-  const next = new Set(nextPaths.filter(isStoredFileReference));
-  const orphaned = [...prev].filter((p) => !next.has(p));
+  const nextCanonical = new Set(
+    nextPaths
+      .filter(isStoredFileReference)
+      .map((p) => canonicalStoredFileReference(p))
+      .filter(Boolean)
+  );
+
+  const orphaned = [];
+  const seen = new Set();
+  for (const path of previousPaths.filter(isStoredFileReference)) {
+    const canonical = canonicalStoredFileReference(path);
+    if (!canonical || nextCanonical.has(canonical)) continue;
+    if (seen.has(canonical)) continue;
+    seen.add(canonical);
+    orphaned.push(path);
+  }
+
   return deleteStoredFiles(orphaned);
 }
 
 /** Borra el archivo anterior cuando se reemplaza por otro. */
 export async function deleteReplacedStoredFile(oldPath, newPath) {
   if (!oldPath || !isStoredFileReference(oldPath)) return { deleted: false };
-  if (newPath && String(oldPath).trim() === String(newPath).trim()) {
-    return { deleted: false };
+  if (newPath) {
+    const prev = canonicalStoredFileReference(oldPath);
+    const next = canonicalStoredFileReference(newPath);
+    if (prev && next && prev === next) return { deleted: false };
   }
   return deleteStoredFile(oldPath);
 }

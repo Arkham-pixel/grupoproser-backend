@@ -10,7 +10,6 @@ import { normalizarEstadoExpress } from '../services/estadoExpressResolverServic
 import {
   deleteStoredFile,
   getPersistedForField,
-  getPublicPathForField,
   isS3StorageEnabled,
 } from '../services/fileStorageService.js';
 import {
@@ -153,10 +152,15 @@ const mapArchivoSubido = (req, file, fieldName) => {
   const files = req.files?.[fieldName] || [];
   const index = Math.max(0, files.indexOf(file));
   const persisted = getPersistedForField(req, fieldName, index);
-  let url =
-    persisted?.publicPath ||
-    getPublicPathForField(req, fieldName, index, (f) => `/uploads/express/${f.filename}`) ||
-    null;
+
+  let url = null;
+  if (persisted?.s3Key) {
+    url = `s3:${persisted.s3Key}`;
+  } else if (persisted?.publicPath) {
+    url = normalizarUrlAnexoExpress(persisted.publicPath);
+  } else if (!isS3StorageEnabled()) {
+    url = `/uploads/express/${file.filename || file.originalname}`;
+  }
 
   if (isS3StorageEnabled()) {
     url = normalizarUrlAnexoExpress(url || '');
@@ -167,8 +171,6 @@ const mapArchivoSubido = (req, file, fieldName) => {
       err.storageError = true;
       throw err;
     }
-  } else if (!url) {
-    url = `/uploads/express/${file.filename}`;
   }
 
   url = normalizarUrlAnexoExpress(url);
