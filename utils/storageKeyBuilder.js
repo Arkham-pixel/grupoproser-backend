@@ -1,6 +1,6 @@
 import path from 'path';
 import jwt from 'jsonwebtoken';
-import { getStorageDateSegments, storageConfig } from '../config/storage.js';
+import { getStorageDateSegments, getStorageYear, getQuarter, getStorageMonth, storageConfig } from '../config/storage.js';
 import { JWT_SECRET } from '../config/secrets.js';
 
 const SEGMENT_MAX = 120;
@@ -139,8 +139,125 @@ export function toLocalUploadPathFromStoredRef(storedPath) {
 }
 
 /**
- * Variantes de clave S3 a probar (migración legacy, prefijo de bucket, etc.).
+ * Normaliza referencias guardadas en BD (S3, /uploads/, URLs proxy).
+ * Evita rutas corruptas tipo /s3:..., s3:////usuarios/... o /api/storage/file.
  */
+export function normalizeStoredFileReference(storedPath) {
+  if (!storedPath || typeof storedPath !== 'string') return '';
+  let url = storedPath.trim();
+  if (!url || url.startsWith('data:')) return '';
+
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    try {
+      const parsed = new URL(url);
+      const ref = parsed.searchParams.get('ref');
+      if (ref) return normalizeStoredFileReference(ref);
+
+      const pathname = decodeURIComponent(parsed.pathname || '');
+      if (/^\/?s3:/i.test(pathname)) {
+        return normalizeStoredFileReference(pathname);
+      }
+
+      const publicBase = storageConfig.publicBaseUrl();
+      if (publicBase && url.startsWith(`${publicBase}/`)) {
+        const key = url.slice(publicBase.length).replace(/^\//, '');
+        return key ? `s3:${key}` : url;
+      }
+
+      if (pathname.startsWith('/uploads/')) {
+        return pathname.replace(/\/{2,}/g, '/');
+      }
+
+      return url;
+    } catch {
+      return url;
+    }
+  }
+
+  if (/^\/?s3:/i.test(url)) {
+    url = url.replace(/^\//, '');
+    if (url.toLowerCase().startsWith('s3://')) {
+      const key = url.slice(5).replace(/^\/+/, '');
+      return key ? `s3:${key}` : '';
+    }
+    if (url.toLowerCase().startsWith('s3:')) {
+      const key = url.slice(3).replace(/^\/+/, '');
+      return key ? `s3:${key}` : '';
+    }
+  }
+
+  if (url.startsWith('uploads/')) {
+    return `/${url.replace(/\/{2,}/g, '/')}`;
+  }
+  if (url.startsWith('/uploads/')) {
+    return url.replace(/\/{2,}/g, '/');
+  }
+
+  if (url.startsWith('/api/storage/file')) return '';
+
+  if (!url.startsWith('/')) {
+    url = `/${url}`;
+  }
+  return url.replace(/\/{2,}/g, '/');
+}
+
+/** Rutas S3 recientes para búsqueda por nombre de archivo (fallback). */
+export function buildRecentStorageSearchPrefixes(date = new Date(), monthsBack = 4) {
+  const prefixes = [];
+  const cursor = new Date(date.getFullYear(), date.getMonth(), 1);
+  for (let i = 0; i < monthsBack; i += 1) {
+    const year = getStorageYear(cursor);
+    const quarter = getQuarter(cursor);
+    const month = getStorageMonth(cursor);
+    prefixes.push(`${year}/${quarter}/${month}/`);
+    prefixes.push(`${year}/${quarter}/`);
+    cursor.setMonth(cursor.getMonth() - 1);
+  }
+  return [...new Set(prefixes)];
+}
+
+/** Extrae pistas de una clave parcial o corrupta (p. ej. usuarios/id/express/archivo.pdf). */
+export function extractS3PathHints(storedKey) {
+  if (!storedKey || typeof storedKey !== 'string') return null;
+  const key = storedKey.replace(/^\/+/, '');
+  const filename = key.split('/').pop() || '';
+  if (!filename) return null;
+
+  const ownerMatch = key.match(/(?:^|\/)(usuarios|clientes)\/([^/]+)\/([^/]+)\/([^/]+)$/);
+  if (ownerMatch) {
+    return {
+      ownerType: ownerMatch[1],
+      ownerId: ownerMatch[2],
+      category: ownerMatch[3],
+      filename: ownerMatch[4],
+    };
+  }
+
+  const categoryMatch = key.match(/(?:^|\/)(express|documentos|historial|riesgos|complex|puertos|perfiles|general)\/([^/]+)$/i);
+  if (categoryMatch) {
+    return { category: categoryMatch[1], filename: categoryMatch[2] };
+  }
+
+  return { filename };
+}
+
+/** Si falta el segmento día (bug al guardar), prueba 01–31. */
+export function expandMissingDayS3KeyVariants(primary) {
+  const match = primary.match(
+    /^(\d{4}\/\d{1,2}\/\d{2})\/(usuarios|clientes)\/([^/]+)\/([^/]+)\/(.+)$/
+  );
+  if (!match) return [];
+
+  const [, datePrefix, ownerType, ownerId, category, filename] = match;
+  const variants = [];
+  for (let day = 1; day <= 31; day += 1) {
+    variants.push(
+      `${datePrefix}/${String(day).padStart(2, '0')}/${ownerType}/${ownerId}/${category}/${filename}`
+    );
+  }
+  return variants;
+}
+
 export function resolveS3KeyCandidates(storedPath) {
   const primary = parseS3KeyFromStoredPath(storedPath);
   if (!primary) return [];
@@ -153,9 +270,16 @@ export function resolveS3KeyCandidates(storedPath) {
 
   push(primary);
 
+  for (const variant of expandMissingDayS3KeyVariants(primary)) {
+    push(variant);
+  }
+
   const prefix = storageConfig.keyPrefix();
   if (prefix) {
     push(`${prefix}/${primary}`);
+    for (const variant of expandMissingDayS3KeyVariants(primary)) {
+      push(`${prefix}/${variant}`);
+    }
     if (primary.startsWith('legacy/')) {
       push(`${prefix}/${primary.slice('legacy/'.length)}`);
     }
@@ -172,15 +296,17 @@ export function resolveS3KeyCandidates(storedPath) {
 
 export function parseS3KeyFromStoredPath(storedPath) {
   if (!storedPath || typeof storedPath !== 'string') return null;
-  const trimmed = storedPath.trim();
+  let trimmed = storedPath.trim();
+
+  if (trimmed.startsWith('/s3:')) {
+    trimmed = trimmed.slice(1);
+  }
+
   if (trimmed.startsWith('s3://')) {
-    const withoutScheme = trimmed.slice('s3://'.length);
-    const slash = withoutScheme.indexOf('/');
-    if (slash === -1) return null;
-    return withoutScheme.slice(slash + 1);
+    return trimmed.slice('s3://'.length).replace(/^\/+/, '') || null;
   }
   if (trimmed.startsWith('s3:')) {
-    return trimmed.slice('s3:'.length).replace(/^\/+/, '');
+    return trimmed.slice('s3:'.length).replace(/^\/+/, '') || null;
   }
   const publicBase = storageConfig.publicBaseUrl();
   if (publicBase && trimmed.startsWith(`${publicBase}/`)) {

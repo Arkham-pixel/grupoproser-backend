@@ -208,3 +208,55 @@ export function getPublicObjectUrl(key) {
   const encodedKey = key.split('/').map((segment) => encodeURIComponent(segment)).join('/');
   return `${base}/${encodedKey}`;
 }
+
+/**
+ * Busca en S3 por sufijo de clave cuando la referencia en BD está corrupta.
+ * Ej.: usuarios/1044800214/express/1781014140953-289236508.pdf
+ */
+export async function findObjectKeysByFilename(
+  filename,
+  { ownerId, category, searchPrefixes = [], maxResults = 5 } = {}
+) {
+  if (!filename || typeof filename !== 'string') return [];
+
+  const safeName = filename.replace(/^\/+/, '').split('/').pop();
+  if (!safeName) return [];
+
+  const suffixParts = [];
+  if (ownerId) suffixParts.push(String(ownerId));
+  if (category) suffixParts.push(String(category));
+  suffixParts.push(safeName);
+  const suffix = suffixParts.join('/');
+
+  const client = getS3Client();
+  const bucket = getBucketName();
+  const matches = [];
+
+  for (const prefix of searchPrefixes) {
+    let continuationToken;
+    do {
+      const resp = await client.send(
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: prefix,
+          ContinuationToken: continuationToken,
+          MaxKeys: 500,
+        })
+      );
+
+      for (const obj of resp.Contents || []) {
+        const key = obj.Key || '';
+        if (key.endsWith(`/${suffix}`) || key.endsWith(`/${safeName}`)) {
+          if (!matches.includes(key)) matches.push(key);
+          if (matches.length >= maxResults) return matches;
+        }
+      }
+
+      continuationToken = resp.IsTruncated ? resp.NextContinuationToken : undefined;
+    } while (continuationToken && matches.length < maxResults);
+
+    if (matches.length) break;
+  }
+
+  return matches;
+}

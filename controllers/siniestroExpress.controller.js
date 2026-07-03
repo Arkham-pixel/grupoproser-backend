@@ -7,11 +7,17 @@ import {
 import { normalizarResponsable } from '../services/responsableResolverService.js';
 import { normalizarAseguradora } from '../services/clienteResolverService.js';
 import { normalizarEstadoExpress } from '../services/estadoExpressResolverService.js';
-import { deleteStoredFile, getPublicPathForField } from '../services/fileStorageService.js';
+import {
+  deleteStoredFile,
+  getPersistedForField,
+  getPublicPathForField,
+  isS3StorageEnabled,
+} from '../services/fileStorageService.js';
 import {
   collectPathsFromExpressAnexos,
   deleteOrphanedStoredFiles,
 } from '../utils/storedFileCleanup.js';
+import { normalizeStoredFileReference } from '../utils/storageKeyBuilder.js';
 
 const borrarArchivoFisicoExpress = async (url) => {
   if (!url || typeof url !== 'string') return;
@@ -56,21 +62,24 @@ const toStringOrNull = (value, fallback = null) => {
   return String(value).trim();
 };
 
-const cleanRelativeUrl = (valor = '') => {
-  if (!valor || typeof valor !== 'string') return '';
-  let url = valor;
-  if (url.startsWith('http')) {
-    try {
-      const parsed = new URL(url);
-      url = parsed.pathname || '';
-    } catch {
-      // Ignorar errores y mantener la URL original
-    }
-  }
-  if (!url.startsWith('/')) {
-    url = `/${url}`;
-  }
-  return url.replace(/\/{2,}/g, '/');
+const normalizarUrlAnexoExpress = (valor = '') => normalizeStoredFileReference(valor);
+
+const normalizarListaAnexosExpress = (anexos = []) =>
+  (Array.isArray(anexos) ? anexos : [])
+    .map((anexo) => {
+      if (!anexo) return null;
+      const url = normalizarUrlAnexoExpress(anexo.url || anexo.ruta || anexo.path || '');
+      if (!url) return null;
+      return { ...anexo, url };
+    })
+    .filter(Boolean);
+
+const serializarSiniestroExpress = (documento) => {
+  if (!documento) return documento;
+  const obj = typeof documento.toObject === 'function' ? documento.toObject() : { ...documento };
+  obj.anexos = normalizarListaAnexosExpress(obj.anexos);
+  obj.anexosSalvamento = normalizarListaAnexosExpress(obj.anexosSalvamento);
+  return obj;
 };
 
 const parseAnexosExistentes = (valor) => {
@@ -87,7 +96,7 @@ const parseAnexosExistentes = (valor) => {
   return lista
     .map((anexo, index) => {
       if (!anexo) return null;
-      const url = cleanRelativeUrl(anexo.url || anexo.ruta || anexo.path || '');
+      const url = normalizarUrlAnexoExpress(anexo.url || anexo.ruta || anexo.path || '');
       if (!url) return null;
       const nombre =
         anexo.nombre ||
@@ -143,9 +152,27 @@ const generarConsecutivoExpress = async () => {
 const mapArchivoSubido = (req, file, fieldName) => {
   const files = req.files?.[fieldName] || [];
   const index = Math.max(0, files.indexOf(file));
-  const url =
+  const persisted = getPersistedForField(req, fieldName, index);
+  let url =
+    persisted?.publicPath ||
     getPublicPathForField(req, fieldName, index, (f) => `/uploads/express/${f.filename}`) ||
-    `/uploads/express/${file.filename}`;
+    null;
+
+  if (isS3StorageEnabled()) {
+    url = normalizarUrlAnexoExpress(url || '');
+    if (!/^s3:/i.test(url)) {
+      const err = new Error(
+        `El archivo "${file.originalname}" no se guardó en S3. Verifique la conexión al bucket.`
+      );
+      err.storageError = true;
+      throw err;
+    }
+  } else if (!url) {
+    url = `/uploads/express/${file.filename}`;
+  }
+
+  url = normalizarUrlAnexoExpress(url);
+
   return {
     nombre: file.originalname,
     url,
@@ -345,7 +372,7 @@ export const crearSiniestroExpress = async (req, res) => {
     }
 
     const documento = await SiniestroExpress.create(payload);
-    res.status(201).json({ success: true, data: documento });
+    res.status(201).json({ success: true, data: serializarSiniestroExpress(documento) });
   } catch (error) {
     console.error('❌ Error al crear siniestro express:', error);
     res.status(500).json({
@@ -373,7 +400,7 @@ export const listarSiniestrosExpress = async (req, res) => {
       total,
       page: Number(page),
       limit: Number(limit),
-      data: documentos,
+      data: documentos.map(serializarSiniestroExpress),
     });
   } catch (error) {
     console.error('❌ Error al listar siniestros express:', error);
@@ -485,7 +512,7 @@ export const actualizarSiniestroExpress = async (req, res) => {
 
     res.json({
       success: true,
-      data: actualizado,
+      data: serializarSiniestroExpress(actualizado),
     });
   } catch (error) {
     console.error('❌ Error al actualizar siniestro express:', error);

@@ -13,6 +13,8 @@ import {
   parseS3KeyFromStoredPath,
   resolveOwnerFromRequest,
   resolveS3KeyCandidates,
+  buildRecentStorageSearchPrefixes,
+  extractS3PathHints,
   toLocalUploadPathFromStoredRef,
 } from '../utils/storageKeyBuilder.js';
 import * as s3 from './s3StorageService.js';
@@ -122,15 +124,24 @@ export async function persistUploadedFile({
     throw new Error('Archivo sin buffer ni path');
   }
 
-  await s3.putObject({
-    key,
-    body,
-    contentType: file.mimetype,
-    metadata: {
-      originalName: file.originalname,
-      category,
-    },
-  });
+  const S3_TIMEOUT_MS = 60000;
+  await Promise.race([
+    s3.putObject({
+      key,
+      body,
+      contentType: file.mimetype,
+      metadata: {
+        originalName: file.originalname,
+        category,
+      },
+    }),
+    new Promise((_, reject) => {
+      setTimeout(
+        () => reject(new Error(`Subida a S3 superó ${S3_TIMEOUT_MS / 1000}s (${file.originalname || 'imagen'})`)),
+        S3_TIMEOUT_MS
+      );
+    }),
+  ]);
   console.log(`☁️ S3 putObject OK — ${key}`);
 
   if (file.path && fs.existsSync(file.path)) {
@@ -170,6 +181,25 @@ async function resolveLocalFileForRead(storedPathOrKey) {
   };
 }
 
+function isS3MissingObjectError(error) {
+  return (
+    error?.name === 'NoSuchKey' ||
+    error?.name === 'NotFound' ||
+    error?.$metadata?.httpStatusCode === 404
+  );
+}
+
+async function tryReadS3Key(s3Key) {
+  const obj = await s3.getObjectStream(s3Key);
+  return {
+    driver: 's3',
+    s3Key,
+    stream: obj.Body,
+    contentType: obj.ContentType,
+    contentLength: obj.ContentLength,
+  };
+}
+
 async function resolveS3FileForRead(storedPathOrKey) {
   if (!canAccessS3Bucket()) return null;
 
@@ -179,21 +209,36 @@ async function resolveS3FileForRead(storedPathOrKey) {
   let lastError;
   for (const s3Key of keys) {
     try {
-      const obj = await s3.getObjectStream(s3Key);
-      return {
-        driver: 's3',
-        s3Key,
-        stream: obj.Body,
-        contentType: obj.ContentType,
-        contentLength: obj.ContentLength,
-      };
+      return await tryReadS3Key(s3Key);
     } catch (error) {
       lastError = error;
-      const missing =
-        error?.name === 'NoSuchKey' ||
-        error?.name === 'NotFound' ||
-        error?.$metadata?.httpStatusCode === 404;
-      if (!missing) throw error;
+      if (!isS3MissingObjectError(error)) throw error;
+    }
+  }
+
+  const primary = keys[0];
+  const hints = extractS3PathHints(primary);
+  if (hints?.filename) {
+    const bucketPrefix = storageConfig.keyPrefix();
+    const searchPrefixes = buildRecentStorageSearchPrefixes().map((p) =>
+      bucketPrefix ? `${bucketPrefix}/${p}` : p
+    );
+    searchPrefixes.push(...buildRecentStorageSearchPrefixes());
+
+    const discovered = await s3.findObjectKeysByFilename(hints.filename, {
+      ownerId: hints.ownerId,
+      category: hints.category,
+      searchPrefixes,
+      maxResults: 3,
+    });
+
+    for (const s3Key of discovered) {
+      try {
+        return await tryReadS3Key(s3Key);
+      } catch (error) {
+        lastError = error;
+        if (!isS3MissingObjectError(error)) throw error;
+      }
     }
   }
 

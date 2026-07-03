@@ -34,6 +34,13 @@ router.get('/file', async (req, res) => {
     return res.status(404).json({ message: 'Archivo no encontrado' });
   } catch (error) {
     console.error('❌ Error sirviendo archivo:', error.message);
+    const missing =
+      error?.name === 'NoSuchKey' ||
+      error?.name === 'NotFound' ||
+      error?.$metadata?.httpStatusCode === 404;
+    if (missing) {
+      return res.status(404).json({ message: 'Archivo no encontrado en S3' });
+    }
     return res.status(500).json({ message: 'Error al servir archivo' });
   }
 });
