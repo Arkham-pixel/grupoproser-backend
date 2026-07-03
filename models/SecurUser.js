@@ -14,7 +14,7 @@ const SecurUserSchema = new mongoose.Schema({
   totpEnabled: { type: Boolean, default: false },
   picture: { type: mongoose.Schema.Types.Buffer },
   foto: { type: String }, // Campo para almacenar la URL de la foto de perfil
-  role: { type: String, enum: ["admin","soporte","usuario","visualizador"], required: true },
+  role: { type: String, enum: ["admin","soporte","usuario","visualizador","puertos"], required: true },
   phone: { type: String },
   activationCode: { type: String },
   privAdmin: { type: String, default: "" },

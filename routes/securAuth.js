@@ -11,9 +11,11 @@ import nodemailer from "nodemailer";
 import { generateSecret, generateURI, verifySync } from "otplib";
 import QRCode from "qrcode";
 import { JWT_SECRET } from "../config/secrets.js";
+import { esRolValido } from "../config/roles.js";
 import { UPLOADS_ROOT, ensureUploadDir } from "../config/uploadsRoot.js";
 import { createMulterUpload, attachPersistedFileMiddleware } from "../storage/multerStorageFactory.js";
 import { STORAGE_CATEGORIES, deleteReplacedStoredFile, getPublicPathForSingle } from "../services/fileStorageService.js";
+import { resolveFrontendUrl } from "../config/platformUrls.js";
 
 const router = express.Router();
 
@@ -936,34 +938,9 @@ router.post("/forgot-password", async (req, res) => {
       throw new Error('Error al guardar el token de recuperación. Intenta nuevamente.');
     }
     
-    // Crear URL de reset
-    // Usar FRONTEND_URL si está configurado, sino intentar detectar desde el request
-    let frontendUrl = process.env.FRONTEND_URL;
-    
-    if (!frontendUrl) {
-      // Intentar detectar desde el request (útil en producción)
-      const protocol = req.protocol || (req.secure ? 'https' : 'http');
-      const host = req.get('host') || req.headers.host || req.headers['x-forwarded-host'];
-      
-      // Si estamos en producción y tenemos el host, construir la URL
-      if (host && !host.includes('localhost') && !host.includes('127.0.0.1')) {
-        // En producción, asumir que el frontend está en el mismo dominio
-        // Si el backend está en un puerto específico, el frontend podría estar en el puerto 80/443
-        // O podríamos usar el mismo host directamente
-        const hostWithoutPort = host.split(':')[0]; // Quitar puerto si existe
-        frontendUrl = `${protocol}://${hostWithoutPort}`;
-        
-        // Si hay un puerto específico para el frontend en producción, agregarlo
-        // Por ejemplo, si FRONTEND_PORT está configurado
-        if (process.env.FRONTEND_PORT && process.env.FRONTEND_PORT !== '80' && process.env.FRONTEND_PORT !== '443') {
-          frontendUrl = `${protocol}://${hostWithoutPort}:${process.env.FRONTEND_PORT}`;
-        }
-      } else {
-        // Desarrollo local por defecto
-        frontendUrl = 'http://localhost:5173';
-      }
-    }
-    
+    // Enlace al formulario del frontend (no al API)
+    const requestHost = req.get('host') || req.headers.host || req.headers['x-forwarded-host'];
+    const frontendUrl = resolveFrontendUrl({ requestHost });
     const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
     
     console.log('🔗 URL de reset generada:', resetUrl);
@@ -2071,6 +2048,11 @@ router.post("/register", upload.single("foto"), persistFoto, async (req, res) =>
       console.log('❌ Faltan campos obligatorios');
       return res.status(400).json({ message: "Nombre, correo, cédula y contraseña son obligatorios" });
     }
+
+    const rolAsignado = rol || "usuario";
+    if (!esRolValido(rolAsignado)) {
+      return res.status(400).json({ message: `Rol inválido. Valores permitidos: admin, soporte, usuario, visualizador, puertos` });
+    }
     
     // Validar que la cédula no esté vacía
     const cedulaTrim = cedula.trim();
@@ -2100,7 +2082,7 @@ router.post("/register", upload.single("foto"), persistFoto, async (req, res) =>
       email: correo,
       login: cedulaTrim, // Usar la cédula como login
       pswd: hashedPassword,
-      role: rol || "usuario",
+      role: rolAsignado,
       phone: celular || "",
       cedula: cedulaTrim,
       fechaNacimiento: fechaNacimiento || "",
@@ -2348,7 +2330,12 @@ router.put("/actualizar-usuario/:login", async (req, res) => {
     if (name !== undefined) usuario.name = name;
     if (email !== undefined) usuario.email = email;
     if (phone !== undefined) usuario.phone = phone;
-    if (role !== undefined) usuario.role = role;
+    if (role !== undefined) {
+      if (!esRolValido(role)) {
+        return res.status(400).json({ message: 'Rol inválido. Valores permitidos: admin, soporte, usuario, visualizador, puertos' });
+      }
+      usuario.role = role;
+    }
     if (active !== undefined) usuario.active = active;
 
     await usuario.save();

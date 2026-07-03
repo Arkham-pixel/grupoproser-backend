@@ -16,7 +16,7 @@ const UsuarioSchema = new mongoose.Schema({
   nombre: { type: String, required: true, trim: true },
   correo: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: true },
-  rol: { type: String, enum: ["admin","soporte","usuario","visualizador"], default: "usuario" },
+  rol: { type: String, enum: ["admin","soporte","usuario","visualizador","puertos"], default: "usuario" },
   celular: { type: String, trim: true },
   cedula: { type: String, trim: true },
   fechaNacimiento: { type: Date },

@@ -8,6 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import { corsMiddleware } from "./config/corsConfig.js";
 import { helmetMiddleware, loginRateLimitMiddleware } from "./config/httpSecurity.js";
+import { resolveFrontendUrl } from "./config/platformUrls.js";
 
 import authRoutes from "./routes/auth.js";
 import securAuthRoutes from "./routes/securAuth.js";
@@ -137,6 +138,13 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // 4️ Monta aquí tus rutas
+// Redirige enlaces de recuperación que apunten al dominio del API hacia el frontend
+app.get('/reset-password/:token', (req, res) => {
+  const requestHost = req.get('host') || req.headers.host || req.headers['x-forwarded-host'];
+  const frontendUrl = resolveFrontendUrl({ requestHost });
+  res.redirect(302, `${frontendUrl}/reset-password/${req.params.token}`);
+});
+
 app.use("/api/auth", authRoutes);
 app.use("/api/secur-auth", securAuthRoutes);
 console.log('✅ Ruta /api/secur-auth montada');

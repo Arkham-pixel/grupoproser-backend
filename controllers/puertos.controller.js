@@ -5,6 +5,29 @@ import {
   deleteOrphanedStoredFiles,
   isStoredFileReference,
 } from '../services/fileStorageService.js';
+import {
+  aplicarEstadoCasoExportacion,
+  estadoListaDesdeCaso,
+} from '../services/puertosEstadoExportacion.js';
+
+/** Casos de inspección asegurado (RII-CP-004) — también detecta registros antiguos sin tipoRegistro. */
+const esInspeccionAsegurado = (doc = {}) => {
+  if (doc.tipoRegistro === 'inspeccion_asegurado') return true;
+  const informe = doc.informeInspeccionAsegurado;
+  if (informe && typeof informe === 'object' && Object.keys(informe).length > 0) return true;
+  const labor = String(doc.laborRealizada || '').toUpperCase();
+  return labor.includes('INSPECCIÓN ASEGURADO') || labor.includes('INSPECCION ASEGURADO');
+};
+
+const normalizarTipoRegistroCaso = (datos = {}) => {
+  if (esInspeccionAsegurado(datos)) {
+    return { ...datos, tipoRegistro: 'inspeccion_asegurado' };
+  }
+  if (!datos.tipoRegistro) {
+    return { ...datos, tipoRegistro: 'caso_exportacion' };
+  }
+  return datos;
+};
 
 const CAMPOS_FECHA = [
   'fchaAsgncion',
@@ -158,6 +181,34 @@ function sanitizarInformeExportacion(informe = {}) {
   return out;
 }
 
+function sanitizarInformeInspeccionAsegurado(informe = {}) {
+  if (!informe || typeof informe !== 'object') return informe;
+  const sanitizarArrayImgs = (arr) => (arr || []).map(sanitizarImagenPersistida).filter(Boolean);
+  const camposImagen = [
+    'imagenesAspectoAlmacenamiento',
+    'imagenesAspectoModelo',
+    'imagenesInspeccionBordo',
+    'imagenesInspeccionDescargue',
+    'imagenesRegistro',
+  ];
+  const out = { ...informe };
+  for (const campo of camposImagen) {
+    if (out[campo]) out[campo] = sanitizarArrayImgs(out[campo]);
+  }
+  if (Array.isArray(out.registrosPorVin)) {
+    out.registrosPorVin = out.registrosPorVin
+      .filter((r) => r && typeof r === 'object')
+      .map((r) => ({
+        ...r,
+        fotos: sanitizarArrayImgs(r.fotos),
+      }));
+  }
+  if (typeof out.imagenFirma === 'string' && !isStoredFileReference(out.imagenFirma)) {
+    delete out.imagenFirma;
+  }
+  return out;
+}
+
 const generarConsecutivoCaso = async () => {
   const year = new Date().getFullYear();
   const prefix = `BT${year}`;
@@ -178,33 +229,138 @@ const generarConsecutivoCaso = async () => {
   return `${prefix}${String(secuencia).padStart(3, '0')}/${year}`;
 };
 
-const mapCasoALista = (doc) => ({
-  id: doc._id?.toString(),
-  tipoRegistro: 'caso_exportacion',
-  nroReferencia: doc.consecutivo || '',
-  tipoInspeccion: doc.laborRealizada || 'INSPECCIÓN EXPORTACIÓN',
-  tipoAveria: '',
-  regional: doc.ciudadRiesgo || '',
-  fecha: formatearFechaLista(doc.fchaInspccion || doc.fchaAsgncion || doc.createdAt),
-  asegurado: doc.nombreAseguradora || doc.codiAsgrdra || '',
-  mercancia: doc.asgrBenfcro || '',
-  estado: doc.descripcionEstado || doc.codiEstdo || '',
-  beneficiario: doc.asgrBenfcro || '',
-});
+const mapCasoALista = (doc) => {
+  if (esInspeccionAsegurado(doc)) {
+    const informe = doc.informeInspeccionAsegurado || {};
+    const estado = doc.descripcionEstado || 'En curso';
+    return {
+      id: doc._id?.toString(),
+      tipoRegistro: 'inspeccion_asegurado',
+      nroReferencia: doc.consecutivo || informe.numeroPoliza || '',
+      consecutivo: doc.consecutivo || '',
+      numeroSolicitud: doc.numeroSolicitud || informe.numeroPoliza || '',
+      tipoInspeccion: doc.laborRealizada || 'INSPECCIÓN ASEGURADO',
+      tipoAveria: '',
+      regional: doc.ciudadRiesgo || informe.municipio || '',
+      lugar: doc.lugar || informe.patioOperacion || '',
+      actividad: informe.nombreMotonave ? `Motonave ${informe.nombreMotonave}` : '',
+      fecha: formatearFechaLista(doc.fechaInforme || informe.fecha || doc.createdAt),
+      fechaAsignacion: '',
+      fechaInforme: formatearFechaLista(doc.fechaInforme),
+      asegurado: doc.asgrBenfcro || informe.asegurado || '',
+      mercancia: informe.nombreMotonave || informe.modelosVehiculos || '',
+      estado,
+      estadoCodigo: doc.codiEstdo || 'en_curso',
+      estadoProgreso: 0,
+      estadoTotal: 0,
+      estadoDetalle: '',
+      avance: '',
+      beneficiario: doc.asgrBenfcro || informe.asegurado || '',
+      inspector: informe.inspectores || '',
+      creadoPor: doc.creadoPor || '',
+      actualizadoPor: doc.actualizadoPor || '',
+      fechaCreacion: formatearFechaLista(doc.createdAt),
+      fechaActualizacion: formatearFechaLista(doc.updatedAt),
+    };
+  }
+
+  const estado = estadoListaDesdeCaso(doc);
+  return {
+    id: doc._id?.toString(),
+    tipoRegistro: 'caso_exportacion',
+    nroReferencia: doc.consecutivo || doc.numeroSolicitud || '',
+    consecutivo: doc.consecutivo || '',
+    numeroSolicitud: doc.numeroSolicitud || '',
+    tipoInspeccion: doc.laborRealizada || 'INSPECCIÓN EXPORTACIÓN',
+    tipoAveria: '',
+    regional: doc.ciudadRiesgo || '',
+    lugar: doc.lugar || '',
+    actividad: doc.actividad || '',
+    fecha: formatearFechaLista(doc.fchaInspccion || doc.fchaAsgncion || doc.createdAt),
+    fechaAsignacion: formatearFechaLista(doc.fchaAsgncion),
+    fechaInforme: formatearFechaLista(doc.fechaInforme),
+    asegurado: doc.nombreAseguradora || doc.codiAsgrdra || '',
+    mercancia: doc.asgrBenfcro || '',
+    estado: estado.etiqueta,
+    estadoCodigo: estado.codigo,
+    estadoProgreso: estado.progreso,
+    estadoTotal: estado.total,
+    estadoDetalle: estado.detalle || '',
+    avance: estado.total ? `${estado.progreso}/${estado.total}` : '',
+    beneficiario: doc.asgrBenfcro || '',
+    inspector: doc.nombreResponsable || '',
+    creadoPor: doc.creadoPor || '',
+    actualizadoPor: doc.actualizadoPor || '',
+    fechaCreacion: formatearFechaLista(doc.createdAt),
+    fechaActualizacion: formatearFechaLista(doc.updatedAt),
+  };
+};
 
 const mapActaALista = (doc) => ({
   id: doc._id?.toString(),
   tipoRegistro: 'acta',
   nroReferencia: doc.nroActa || '',
+  consecutivo: doc.nroActa || '',
+  numeroSolicitud: '',
   tipoInspeccion: doc.tipoInspeccion || '',
   tipoAveria: doc.detalleInspeccion?.tipoAveria || '',
-  regional: doc.regional || '',
+  regional: doc.regional || doc.ciudad || '',
+  lugar: doc.ciudad || '',
+  actividad: '',
   fecha: formatearFechaLista(doc.fechaActa || doc.createdAt),
+  fechaAsignacion: '',
+  fechaInforme: '',
   asegurado: doc.asegurado || '',
   mercancia: doc.mercancia || '',
-  estado: doc.estado || '',
+  estado: doc.estado || 'Maqueta',
+  estadoCodigo: 'maqueta',
+  estadoProgreso: 0,
+  estadoTotal: 0,
+  avance: '',
   beneficiario: doc.asegurado || '',
+  inspector: doc.nombreInspector || '',
+  creadoPor: doc.creadoPor || '',
+  actualizadoPor: doc.actualizadoPor || '',
+  fechaCreacion: formatearFechaLista(doc.createdAt),
+  fechaActualizacion: formatearFechaLista(doc.updatedAt),
 });
+
+function aplicarFiltrosPostLista(registros, query) {
+  const estado = String(query.estado || '').trim();
+  const regional = String(query.regional || '').trim();
+  const cliente = String(query.cliente || '').trim();
+  const fechaDesde = String(query.fechaDesde || '').trim();
+  const fechaHasta = String(query.fechaHasta || '').trim();
+
+  return registros.filter((r) => {
+    if (estado) {
+      const codigoFila = r.estadoCodigo || '';
+      const normalizado =
+        codigoFila === 'completo'
+          ? 'terminado'
+          : codigoFila === 'iniciado' || codigoFila === 'en_progreso'
+            ? 'en_curso'
+            : codigoFila;
+      const filtroNorm =
+        estado === 'completo'
+          ? 'terminado'
+          : estado === 'iniciado' || estado === 'en_progreso'
+            ? 'en_curso'
+            : estado;
+      if (normalizado !== filtroNorm) return false;
+    }
+    if (regional && !String(r.regional || '').toLowerCase().includes(regional.toLowerCase())) {
+      return false;
+    }
+    if (cliente && !String(r.asegurado || '').toLowerCase().includes(cliente.toLowerCase())) {
+      return false;
+    }
+    const f = r.fecha || '';
+    if (fechaDesde && f && f < fechaDesde) return false;
+    if (fechaHasta && f && f > fechaHasta) return false;
+    return true;
+  });
+}
 
 export const listarRegistrosPuertos = async (req, res) => {
   try {
@@ -224,10 +380,11 @@ export const listarRegistrosPuertos = async (req, res) => {
       filtrosActa.$or = [{ nroActa: regex }, { asegurado: regex }, { mercancia: regex }];
     }
 
-    const incluirCasos = !tipo || tipo === 'caso_exportacion' || tipo === 'caso';
+    const incluirCasos =
+      !tipo || tipo === 'caso_exportacion' || tipo === 'caso' || tipo === 'inspeccion_asegurado';
     const incluirActas = !tipo || tipo === 'acta';
 
-    const [casos, actas] = await Promise.all([
+    const [casosRaw, actas] = await Promise.all([
       incluirCasos
         ? PuertosCaso.find(filtrosCaso).sort({ updatedAt: -1 }).limit(limite).lean()
         : [],
@@ -236,10 +393,37 @@ export const listarRegistrosPuertos = async (req, res) => {
         : [],
     ]);
 
-    const registros = [
-      ...casos.map(mapCasoALista),
-      ...actas.map(mapActaALista),
-    ].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+    let casos = casosRaw;
+    if (tipo === 'inspeccion_asegurado') {
+      casos = casosRaw.filter((c) => esInspeccionAsegurado(c));
+    } else if (tipo === 'caso_exportacion' || tipo === 'caso') {
+      casos = casosRaw.filter(
+        (c) => !esInspeccionAsegurado(c) && (!c.tipoRegistro || c.tipoRegistro === 'caso_exportacion')
+      );
+    }
+
+    casos.forEach((doc) => {
+      if (esInspeccionAsegurado(doc) && doc.tipoRegistro !== 'inspeccion_asegurado') {
+        doc.tipoRegistro = 'inspeccion_asegurado';
+        PuertosCaso.findByIdAndUpdate(doc._id, { tipoRegistro: 'inspeccion_asegurado' }, {
+          timestamps: false,
+        }).catch(() => {});
+      }
+      const desc = String(doc.descripcionEstado || doc.codiEstdo || '').trim();
+      if (/^x{3,}$/i.test(desc)) {
+        PuertosCaso.findByIdAndUpdate(doc._id, aplicarEstadoCasoExportacion(doc), {
+          timestamps: false,
+        }).catch(() => {});
+      }
+    });
+
+    const registros = aplicarFiltrosPostLista(
+      [
+        ...casos.map(mapCasoALista),
+        ...actas.map(mapActaALista),
+      ].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')),
+      req.query
+    );
 
     res.json({ total: registros.length, registros });
   } catch (error) {
@@ -254,12 +438,23 @@ export const crearPuertosCaso = async (req, res) => {
       return actualizarPuertosCaso({ ...req, params: { id: req.body._id } }, res);
     }
 
-    let datos = convertirFechasEnDatos({ ...req.body });
+    let datos = normalizarTipoRegistroCaso(convertirFechasEnDatos({ ...req.body }));
     if (!datos.consecutivo?.trim()) {
       datos.consecutivo = await generarConsecutivoCaso();
     }
     if (datos.informeExportacion) {
       datos.informeExportacion = sanitizarInformeExportacion(datos.informeExportacion);
+    }
+    if (datos.informeInspeccionAsegurado) {
+      datos.informeInspeccionAsegurado = sanitizarInformeInspeccionAsegurado(
+        datos.informeInspeccionAsegurado
+      );
+    }
+    if (datos.tipoRegistro === 'inspeccion_asegurado') {
+      datos.codiEstdo = datos.codiEstdo || 'en_curso';
+      datos.descripcionEstado = datos.descripcionEstado || 'En curso';
+    } else {
+      datos = aplicarEstadoCasoExportacion(datos);
     }
 
     const caso = new PuertosCaso(datos);
@@ -306,12 +501,23 @@ export const actualizarPuertosCaso = async (req, res) => {
       return res.status(400).json({ error: 'Identificador de caso no válido' });
     }
 
-    const datos = convertirFechasEnDatos({ ...req.body });
+    let datos = normalizarTipoRegistroCaso(convertirFechasEnDatos({ ...req.body }));
     delete datos._id;
     delete datos.createdAt;
     delete datos.updatedAt;
     if (datos.informeExportacion) {
       datos.informeExportacion = sanitizarInformeExportacion(datos.informeExportacion);
+    }
+    if (datos.informeInspeccionAsegurado) {
+      datos.informeInspeccionAsegurado = sanitizarInformeInspeccionAsegurado(
+        datos.informeInspeccionAsegurado
+      );
+    }
+    if (datos.tipoRegistro === 'inspeccion_asegurado') {
+      datos.codiEstdo = datos.codiEstdo || 'en_curso';
+      datos.descripcionEstado = datos.descripcionEstado || 'En curso';
+    } else {
+      datos = aplicarEstadoCasoExportacion(datos);
     }
 
     const casoAnterior = await PuertosCaso.findById(id).lean();
@@ -332,7 +538,10 @@ export const actualizarPuertosCaso = async (req, res) => {
     res.json(caso);
   } catch (error) {
     console.error('❌ actualizarPuertosCaso:', error);
-    res.status(500).json({ error: 'Error al actualizar el caso' });
+    res.status(500).json({
+      error: 'Error al actualizar el caso',
+      detalles: process.env.NODE_ENV === 'development' ? error.message : undefined,
+    });
   }
 };
 
@@ -431,6 +640,8 @@ export const subirImagenesPuertosCaso = async (req, res) => {
         filename: persisted?.filename ?? file.filename,
       };
     });
+
+    console.log(`✅ Puertos upload-images OK: ${imagenesSubidas.length} imagen(es), casoId=${casoId}`);
 
     res.json({
       imagenes: imagenesSubidas,

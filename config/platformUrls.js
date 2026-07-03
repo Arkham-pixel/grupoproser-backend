@@ -27,12 +27,51 @@ function trimOrigin(url) {
   return typeof url === 'string' ? url.trim().replace(/\/+$/, '') : '';
 }
 
-/** URL del front para enlaces en correos y notificaciones. */
-export function resolveFrontendUrl() {
+/** Backend público → frontend (cuando el API infiere la URL desde el host de la petición). */
+const BACKEND_HOST_TO_FRONTEND = {
+  'arnaldbackend.grupoproser.com.co': PRODUCTION_FRONTEND_URL,
+  'aplicacion.grupoproser.com.co': LEGACY_FRONTEND_URL,
+};
+
+function hostnameFromUrl(url) {
+  if (!url) return null;
+  try {
+    const normalized = url.startsWith('http') ? url : `https://${url}`;
+    return new URL(normalized).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function isLocalOrigin(url) {
+  return /localhost|127\.0\.0\.1/i.test(url || '');
+}
+
+/**
+ * URL del front para enlaces en correos y notificaciones.
+ * @param {{ requestHost?: string }} [options] - Host del request (ej. arnaldbackend…)
+ */
+export function resolveFrontendUrl(options = {}) {
   const fromEnv = trimOrigin(process.env.FRONTEND_URL);
-  if (fromEnv) return fromEnv;
-  if (process.env.NODE_ENV === 'production') return PRODUCTION_FRONTEND_URL;
-  return 'http://localhost:5173';
+  if (fromEnv && !isLocalOrigin(fromEnv)) return fromEnv;
+
+  const requestHost = (options.requestHost || '').split(':')[0].toLowerCase();
+  if (requestHost && BACKEND_HOST_TO_FRONTEND[requestHost]) {
+    return BACKEND_HOST_TO_FRONTEND[requestHost];
+  }
+
+  const backendHost =
+    hostnameFromUrl(process.env.BASE_URL) ||
+    hostnameFromUrl(process.env.BACKEND_URL);
+  if (backendHost && BACKEND_HOST_TO_FRONTEND[backendHost]) {
+    return BACKEND_HOST_TO_FRONTEND[backendHost];
+  }
+
+  if ((process.env.NODE_ENV || '').trim().toLowerCase() === 'production') {
+    return PRODUCTION_FRONTEND_URL;
+  }
+
+  return fromEnv || 'http://localhost:5173';
 }
 
 /** URL pública del API (fallback dev → prod, proxy de archivos legacy). */

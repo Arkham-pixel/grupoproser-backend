@@ -46,6 +46,8 @@ const uploadPuertosImages = createMulterUpload({
 
   multerOptions: {
 
+    limits: { fileSize: 6 * 1024 * 1024, files: 1 },
+
     fileFilter: (_req, file, cb) => {
 
       if (file.mimetype.startsWith('image/')) {
@@ -100,7 +102,7 @@ router.post(
 
         return res.status(413).json({
 
-          error: 'La imagen supera el tamaño máximo permitido (25MB).',
+          error: 'La imagen supera el tamaño máximo permitido (6 MB).',
 
           code: err.code,
 
@@ -120,9 +122,25 @@ router.post(
 
   },
 
+  (req, res, next) => {
+    const n = Array.isArray(req.files) ? req.files.length : 0;
+    console.log(`📷 Puertos upload-images: ${n} archivo(s) recibido(s), casoId=${req.query.casoId || 'general'}`);
+    next();
+  },
+
   persistPuertosImages,
 
-  subirImagenesPuertosCaso
+  subirImagenesPuertosCaso,
+
+  (err, req, res, _next) => {
+    if (!err) return;
+    console.error('❌ upload-images Puertos:', err.message || err);
+    const status = err.storageError ? 502 : 500;
+    res.status(status).json({
+      error: err.message || 'Error al subir imágenes del caso Puertos',
+      detalles: process.env.NODE_ENV === 'development' ? String(err.stack || '') : undefined,
+    });
+  }
 
 );
 
