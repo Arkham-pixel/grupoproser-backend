@@ -1,5 +1,8 @@
 import HistorialFormulario from '../models/HistorialFormulario.js';
 import SecurUser from '../models/SecurUser.js';
+import Complex from '../models/Complex.js';
+import CasoComplex from '../models/CasoComplex.js';
+import Responsable from '../models/Responsable.js';
 import { UPLOADS_ROOT } from '../config/uploadsRoot.js';
 import { deleteReplacedStoredFile, deleteStoredFile } from '../services/fileStorageService.js';
 import {
@@ -27,6 +30,135 @@ const construirFiltroPorNumeroAjuste = (numeroAjuste) => ({
     { 'trazabilidadSecuencia.numeroAjuste': numeroAjuste }
   ]
 });
+
+const normalizarClaveComparable = (valor) =>
+  String(valor || '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, ' ');
+
+const construirIdentidadesUsuario = (usuarioActual, usuarioBD = null) => {
+  const identidades = new Set();
+  const agregar = (valor) => {
+    const raw = String(valor || '').trim();
+    if (!raw) return;
+    identidades.add(raw);
+    identidades.add(normalizarClaveComparable(raw));
+  };
+
+  agregar(usuarioActual?.id);
+  agregar(usuarioActual?.login);
+  agregar(usuarioActual?.name);
+  agregar(usuarioActual?.nombre);
+  agregar(usuarioActual?.cedula);
+  agregar(usuarioBD?._id);
+  agregar(usuarioBD?.login);
+  agregar(usuarioBD?.name);
+  agregar(usuarioBD?.cedula);
+
+  return identidades;
+};
+
+const valoresResponsableCaso = (caso) => {
+  const valores = new Set();
+  const agregar = (valor) => {
+    const raw = String(valor || '').trim();
+    if (!raw) return;
+    valores.add(raw);
+    valores.add(normalizarClaveComparable(raw));
+  };
+
+  agregar(caso?.codiRespnsble);
+  agregar(caso?.codi_responble);
+  agregar(caso?.responsable);
+  agregar(caso?.nombreResponsable);
+  return valores;
+};
+
+/**
+ * Permite abrir el ajuste al responsable asignado del caso Complex,
+ * aunque el formulario lo haya creado un admin/soporte.
+ */
+async function esResponsableAsignadoDelFormulario(usuarioActual, formulario, usuarioBD = null) {
+  try {
+    const numeroAjuste = String(
+      formulario?.numeroCaso ||
+      formulario?.datos?.numeroAjuste ||
+      formulario?.datos?.numeroCaso ||
+      formulario?.trazabilidadSecuencia?.numeroAjuste ||
+      ''
+    ).trim();
+
+    if (!numeroAjuste) return false;
+
+    const filtroNumero = {
+      $or: [
+        { nmroAjste: numeroAjuste },
+        { nmroAjste: numeroAjuste.toUpperCase() },
+        { nmroAjste: { $regex: new RegExp(`^${numeroAjuste.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
+      ]
+    };
+
+    let caso =
+      (await Complex.findOne(filtroNumero).select('nmroAjste codiRespnsble').lean()) ||
+      (await CasoComplex.findOne(filtroNumero).select('nmroAjste codiRespnsble').lean());
+
+    if (!caso?.codiRespnsble) return false;
+
+    const identidadesUsuario = construirIdentidadesUsuario(usuarioActual, usuarioBD);
+    const responsablesCaso = valoresResponsableCaso(caso);
+
+    // Si coincide directo (login/cédula/nombre = codiRespnsble del caso)
+    for (const valor of responsablesCaso) {
+      if (identidadesUsuario.has(valor)) return true;
+    }
+
+    // Resolver catálogo de responsables por código o nombre
+    const codigoResponsable = String(caso.codiRespnsble).trim();
+    const responsableDB = await Responsable.findOne({
+      $or: [
+        { codiRespnsble: codigoResponsable },
+        { nmbrRespnsble: codigoResponsable },
+        { codiRespnsble: { $regex: new RegExp(`^${codigoResponsable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
+        { nmbrRespnsble: { $regex: new RegExp(`^${codigoResponsable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
+      ]
+    }).lean();
+
+    if (!responsableDB) return false;
+
+    const valoresCatalogo = new Set();
+    for (const valor of [
+      responsableDB.codiRespnsble,
+      responsableDB.nmbrRespnsble,
+      responsableDB.email
+    ]) {
+      const raw = String(valor || '').trim();
+      if (!raw) continue;
+      valoresCatalogo.add(raw);
+      valoresCatalogo.add(normalizarClaveComparable(raw));
+    }
+
+    for (const valor of valoresCatalogo) {
+      if (identidadesUsuario.has(valor)) return true;
+    }
+
+    // Cruzar por email del responsable contra el usuario logueado
+    if (responsableDB.email) {
+      const emailResp = String(responsableDB.email).trim().toLowerCase();
+      const emailUsuario = String(
+        usuarioBD?.email || usuarioActual?.email || ''
+      ).trim().toLowerCase();
+      if (emailResp && emailUsuario && emailResp === emailUsuario) return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.error('⚠️ Error verificando responsable asignado del formulario:', error);
+    return false;
+  }
+}
 
 /** Misma raíz que `app.js` y multer (`UPLOADS_ROOT`) + fallbacks por cwd o repo raíz. */
 function obtenerRaicesUploadsFisicas() {
@@ -842,10 +974,13 @@ class HistorialController {
         });
       }
 
-      // Verificar permisos: usuarios normales solo pueden ver sus propios formularios
-      // Usar la misma lógica flexible que en obtenerHistorial para comparar userIds
+      // Verificar permisos:
+      // 1) dueño del formulario
+      // 2) admin/soporte
+      // 3) responsable asignado del caso Complex (aunque el ajuste lo haya iniciado otro usuario)
       if (!esAdminOSoporte) {
         let tienePermiso = false;
+        let usuarioBD = null;
         const userIdStr = String(userIdUsuario);
         const formularioUserId = String(formulario.userId || '');
         const formularioUsuario = String(formulario.usuario || '');
@@ -856,8 +991,6 @@ class HistorialController {
         } else {
           // Buscar el usuario en BD para obtener todos sus valores posibles
           try {
-            let usuarioBD = null;
-            
             // Primero intentar buscar por _id del token
             if (usuarioActual?.id && mongoose.Types.ObjectId.isValid(usuarioActual.id)) {
               usuarioBD = await SecurUser.findById(usuarioActual.id);
@@ -919,8 +1052,31 @@ class HistorialController {
             tienePermiso = formularioUserId === userIdStr || formularioUsuario === userIdStr;
           }
         }
+
+        // Si no es dueño, permitir acceso al responsable asignado del caso
+        if (!tienePermiso) {
+          tienePermiso = await esResponsableAsignadoDelFormulario(
+            usuarioActual,
+            formulario,
+            usuarioBD
+          );
+          if (tienePermiso) {
+            console.log('✅ Acceso concedido por responsable asignado del caso Complex', {
+              formularioId: id,
+              login: usuarioActual?.login,
+              numeroCaso: formulario?.numeroCaso
+            });
+          }
+        }
         
         if (!tienePermiso) {
+          console.warn('⛔ Acceso denegado a formulario', {
+            formularioId: id,
+            login: usuarioActual?.login,
+            role: rolUsuario,
+            formularioUserId,
+            numeroCaso: formulario?.numeroCaso
+          });
           return res.status(403).json({
             success: false,
             error: 'No tienes permisos para ver este formulario'
