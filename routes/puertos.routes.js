@@ -28,7 +28,17 @@ import {
 
 } from '../controllers/puertos.controller.js';
 
+import {
+  actualizarCatalogoPuertos,
+  crearCatalogoPuertos,
+  ejecutarSeedCatalogosPuertos,
+  eliminarCatalogoPuertos,
+  listarCatalogoPuertos,
+  listarTodosCatalogosPuertos,
+  obtenerTiposCatalogoPuertos,
+} from '../controllers/puertosCatalogo.controller.js';
 import { verificarToken } from '../middleware/verificarToken.js';
+import { verificarCatalogosPuertos } from '../middleware/verificarCatalogosPuertos.js';
 
 import { createMulterUpload, attachPersistedFileMiddleware } from '../storage/multerStorageFactory.js';
 
@@ -81,6 +91,15 @@ const persistPuertosImages = attachPersistedFileMiddleware({
 // Listado unificado (Actas + Casos exportación)
 
 router.get('/registros', listarRegistrosPuertos);
+
+// Catálogos (inspectores, empaques, tipos de avería, etc.)
+router.get('/catalogos/tipos', obtenerTiposCatalogoPuertos);
+router.get('/catalogos', listarTodosCatalogosPuertos);
+router.get('/catalogos/:tipo', listarCatalogoPuertos);
+router.post('/catalogos', verificarCatalogosPuertos, crearCatalogoPuertos);
+router.post('/catalogos/seed/defaults', verificarCatalogosPuertos, ejecutarSeedCatalogosPuertos);
+router.put('/catalogos/:id', verificarCatalogosPuertos, actualizarCatalogoPuertos);
+router.delete('/catalogos/:id', verificarCatalogosPuertos, eliminarCatalogoPuertos);
 
 
 
