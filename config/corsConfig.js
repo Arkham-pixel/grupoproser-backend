@@ -90,6 +90,7 @@ export function createCorsOptions() {
     allowedHeaders: [
       'Content-Type',
       'Authorization',
+      'X-Usuario-Login',
       'X-Requested-With',
       'X-CSRF-Token',
       'X-XSRF-Token',

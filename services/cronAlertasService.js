@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { getNextCronRun } from '../utils/cronNextRun.js';
 import { enviarAlertasTodosAjustadores, obtenerAlertasTodosAjustadores } from './alertasService.js';
+import { obtenerProtocoloActivo } from './protocoloConfigService.js';
 
 // Configuración del cron job
 const CRON_SCHEDULE = process.env.ALERTAS_CRON_SCHEDULE || '0 9 * * *'; // 9:00 AM todos los días
@@ -33,6 +34,10 @@ class CronAlertasService {
       console.log(`⏰ Programado para ejecutarse: ${CRON_SCHEDULE} (hora de Colombia)`);
       console.log(`📅 IMPORTANTE: Solo casos agregados desde octubre 2025 recibirán alertas`);
       console.log(`📧 Las alertas se enviarán automáticamente por email a los ajustadores`);
+      
+      obtenerProtocoloActivo()
+        .then((p) => console.log(`📋 Protocolo de tiempos cargado (v${p.version}, ${p.etapas?.length || 0} etapas)`))
+        .catch((err) => console.warn('⚠️ No se pudo precargar protocolo de tiempos:', err.message));
       
       // Programar la tarea
       this.task = cron.schedule(CRON_SCHEDULE, async () => {

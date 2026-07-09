@@ -19,6 +19,7 @@ import {
 import { enviarEmailPrueba } from '../services/emailService.js';
 import { createMulterUpload, attachPersistedFileMiddleware } from '../storage/multerStorageFactory.js';
 import { STORAGE_CATEGORIES, getPublicPathForSingle } from '../services/fileStorageService.js';
+import { poblarUsuarioOpcional } from '../middleware/usuarioOpcional.js';
 
 const router = express.Router();
 
@@ -71,11 +72,11 @@ router.post('/cambiar-estados/finalizados-a-facturado', cambiarEstadosFinalizado
 // Contar casos por aseguradoras BBVA y Zurich
 router.get('/contar-aseguradoras', contarCasosAseguradoras);
 
-router.post('/', crearComplex);
+router.post('/', poblarUsuarioOpcional, crearComplex);
 router.get('/', obtenerTodos);
 router.get('/autofill/:idCaso', obtenerAutofillAjuste);
 router.get('/:id', obtenerPorId);
-router.put('/:id', actualizarComplex);
+router.put('/:id', poblarUsuarioOpcional, actualizarComplex);
 router.delete('/:id', eliminarComplex);
 
 export default router;

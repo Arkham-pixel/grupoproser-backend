@@ -46,5 +46,8 @@
     "otplib": "^13.4.1",
     "qrcode": "^1.5.4",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "exceljs": "^4.4.0"
   }
 }

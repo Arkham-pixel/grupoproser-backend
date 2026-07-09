@@ -7,6 +7,11 @@ import {
   nombreGerente,
   emailGerente,
 } from '../config/gerentesFacturacion.js';
+import {
+  controlHorasTieneDatos,
+  resolverControlHorasDesdeEnvios,
+  buildCamposPersistenciaControlHoras,
+} from '../utils/controlHorasUtils.js';
 
 const TIPOS_ENVIO = new Set(['control_horas', 'gerencia']);
 const MAX_CASOS_BANDEJA = 500;
@@ -97,6 +102,9 @@ export async function registrarEnvioFacturacion(casoId, datos) {
     $set: {
       ultimo_envio_facturacion: registro,
       ...camposResumenPorTipo(datos.tipo, registro),
+      ...(datos.tipo === 'control_horas'
+        ? buildCamposPersistenciaControlHoras(datos.controlHoras, datos.resumenControlHoras)
+        : {}),
     },
   };
 
@@ -477,7 +485,7 @@ export async function listarBandejaFacturacion({
         rolEnvio: envio.rolEnvio || 'principal',
         fchaEnvioControlHoras: caso.fcha_envio_control_horas,
         fchaRecibidoControlHoras: caso.fcha_recibido_control_horas,
-        tieneControlHoras: Boolean(caso.control_horas?.filas?.length),
+        tieneControlHoras: controlHorasTieneDatos(resolverControlHorasDesdeEnvios(caso)),
       });
     });
   }

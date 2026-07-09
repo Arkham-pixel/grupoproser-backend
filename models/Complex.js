@@ -107,6 +107,19 @@ const ComplexSchema = new mongoose.Schema({
   porcRetefuente: Number,
   porcReteica: Number,
   fchaAsgncion: Date,
+  plantillaContactoInicial: {
+    tipoDestinatario: String,
+    ramoManual: String,
+    opcionesInspeccion: [
+      {
+        fecha: String,
+        hora: String,
+      },
+    ],
+    documentosSeleccionados: [String],
+    textoGenerado: String,
+    actualizadoEn: String,
+  },
   envios_facturacion: [mongoose.Schema.Types.Mixed],
   ultimo_envio_facturacion: mongoose.Schema.Types.Mixed,
   historialDocs: [

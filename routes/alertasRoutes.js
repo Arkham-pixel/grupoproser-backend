@@ -6,7 +6,13 @@ import {
   postEnviarAlertasTodosAjustadores,
   getResumenAlertas,
   getAlertasPorPrioridad,
-  getAlertasPorTipo
+  getAlertasPorTipo,
+  getProtocoloSiniestros,
+  putProtocoloSiniestros,
+  postRestaurarProtocoloSiniestros,
+  getMisAlertas,
+  getAlertasCaso,
+  getHistorialProtocolo,
 } from '../controllers/alertasController.js';
 
 const router = express.Router();
@@ -17,6 +23,12 @@ router.get('/resumen', getResumenAlertas);
 
 // GET /api/alertas/todos - Todas las alertas de todos los ajustadores
 router.get('/todos', getAlertasTodosAjustadores);
+
+// GET /api/alertas/mis-casos - Alertas del ajustador logueado (fase 2 in-app)
+router.get('/mis-casos', getMisAlertas);
+
+// GET /api/alertas/caso/:identificador - Alertas de un caso específico
+router.get('/caso/:identificador', getAlertasCaso);
 
 // GET /api/alertas/ajustador/:codigoResponsable - Alertas de un ajustador específico
 router.get('/ajustador/:codigoResponsable', getAlertasAjustador);
@@ -33,6 +45,12 @@ router.post('/enviar/ajustador/:codigoResponsable', postEnviarAlertasEmail);
 
 // POST /api/alertas/enviar/todos - Enviar alertas a todos los ajustadores
 router.post('/enviar/todos', postEnviarAlertasTodosAjustadores);
+
+// 📋 PROTOCOLO DE TIEMPOS (parametrización)
+router.get('/protocolo', getProtocoloSiniestros);
+router.put('/protocolo', putProtocoloSiniestros);
+router.post('/protocolo/restaurar', postRestaurarProtocoloSiniestros);
+router.get('/protocolo/historial', getHistorialProtocolo);
 
 export default router;
 

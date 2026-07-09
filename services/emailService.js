@@ -38,6 +38,85 @@ const obtenerEmailsEncargadosRiesgos = async () => {
   return emailsEncargados;
 };
 
+/** URL y botón HTML para acceso directo al caso en correos */
+function construirEnlaceCaso(datos = {}) {
+  const frontendUrl = resolveFrontendUrl();
+  if (datos.casoId) {
+    return {
+      url: `${frontendUrl}/editar-caso/${datos.casoId}`,
+      texto: datos.numeroCaso ? `Abrir caso ${datos.numeroCaso}` : 'Abrir caso en ARNALD',
+    };
+  }
+  if (datos.numeroCaso && datos.numeroCaso !== 'Sin número') {
+    return {
+      url: `${frontendUrl}/complex/excel?buscar=${encodeURIComponent(datos.numeroCaso)}`,
+      texto: `Buscar caso ${datos.numeroCaso}`,
+    };
+  }
+  return {
+    url: `${frontendUrl}/complex/mis-casos`,
+    texto: 'Ver mis casos',
+  };
+}
+
+function htmlBotonAccesoCaso(datos = {}) {
+  const { url, texto } = construirEnlaceCaso(datos);
+  const etiquetaBoton =
+    datos.numeroCaso && datos.numeroCaso !== 'Sin número'
+      ? `Ir al caso ${datos.numeroCaso}`
+      : 'Ir al caso';
+  return `
+    <div style="background-color:#fef2f2; padding:22px; border-radius:8px; border-left:4px solid #dc2626; margin:25px 0; text-align:center;">
+      <p style="margin:0 0 12px 0; color:#991b1b; font-weight:700; font-size:16px;">Acceso directo al caso</p>
+      <a href="${url}"
+         style="display:inline-block; background-color:#dc2626; color:#ffffff; padding:14px 28px; text-decoration:none; border-radius:8px; font-weight:700; font-size:15px;">
+        ${etiquetaBoton}
+      </a>
+      <p style="margin:14px 0 0 0; color:#7f1d1d; font-size:12px; line-height:1.5;">
+        Ingrese a ARNALD DataFlow para iniciar la gestión según el protocolo (contacto inicial en 12 horas).
+      </p>
+      <p style="margin:12px 0 0 0; color:#7f1d1d; font-size:12px; line-height:1.5; word-break:break-all;">
+        Si el botón no funciona, copie este enlace: <a href="${url}" style="color:#b91c1c;">${url}</a>
+      </p>
+    </div>
+  `;
+}
+
+function htmlSeccionDestinatarios(datos = {}) {
+  const quienAsigna = datos.quienAsigna && datos.quienAsigna !== 'Sistema'
+    ? datos.quienAsigna
+    : (datos.loginQuienAsigna || datos.quienAsigna || 'No identificado');
+  return `
+    <div style="background-color:#f0f9ff; padding:20px; border-radius:8px; margin-bottom:25px;">
+      <h3 style="color:#0369a1; margin:0 0 15px 0; font-size:16px;">Destinatarios de esta notificación</h3>
+      <table style="width:100%; border-collapse:collapse;">
+        <tr>
+          <td style="padding:8px 0; font-weight:bold; color:#374151; width:42%;">Responsable asignado:</td>
+          <td style="padding:8px 0; color:#1f2937;">${datos.nombreResponsable || 'Sin asignar'}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0; font-weight:bold; color:#374151;">Persona que asignó:</td>
+          <td style="padding:8px 0; color:#1f2937;">${quienAsigna}</td>
+        </tr>
+      </table>
+    </div>
+  `;
+}
+
+function formatearFechaCorreo(valor) {
+  if (!valor) return 'No especificada';
+  try {
+    const fecha = new Date(valor);
+    if (Number.isNaN(fecha.getTime())) return String(valor);
+    const dia = String(fecha.getDate()).padStart(2, '0');
+    const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+    const año = fecha.getFullYear();
+    return `${dia}/${mes}/${año}`;
+  } catch {
+    return String(valor);
+  }
+}
+
 // Función para enviar email de notificación de asignación de caso
 export const enviarNotificacionAsignacion = async (datosCaso) => {
   try {
@@ -65,6 +144,21 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
       const emailLimpio = datosCaso.emailResponsable.trim();
       emailsAdicionales.push(emailLimpio);
       console.log('✅ Email del responsable agregado a la lista:', emailLimpio);
+    } else if (datosCaso.codiRespnsble) {
+      try {
+        const usuario = await SecurUser.findOne({
+          $or: [
+            { login: String(datosCaso.codiRespnsble).trim() },
+            { cedula: String(datosCaso.codiRespnsble).trim() },
+          ],
+        });
+        if (usuario?.email?.trim()) {
+          emailsAdicionales.push(usuario.email.trim());
+          console.log('✅ Email del responsable vía SecurUser:', usuario.email.trim());
+        }
+      } catch (error) {
+        console.log('⚠️ No se pudo resolver email del responsable en SecurUser:', error.message);
+      }
     } else {
       console.log('⚠️ ⚠️ ⚠️ NO HAY EMAIL DEL RESPONSABLE ⚠️ ⚠️ ⚠️');
       console.log('⚠️ Valor recibido:', datosCaso.emailResponsable);
@@ -228,22 +322,9 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
     console.log('📧 Nombre final del funcionario:', nombreFuncionario);
     
     // Formatear fecha de asignación (formato: 20/11/2025)
-    let fechaFormateada = 'No especificada';
-    if (datosCaso.fechaAsignacion) {
-      try {
-        const fecha = new Date(datosCaso.fechaAsignacion);
-        if (!isNaN(fecha.getTime())) {
-          const dia = String(fecha.getDate()).padStart(2, '0');
-          const mes = String(fecha.getMonth() + 1).padStart(2, '0');
-          const año = fecha.getFullYear();
-          fechaFormateada = `${dia}/${mes}/${año}`;
-          console.log('✅ Fecha formateada:', fechaFormateada);
-        }
-      } catch (error) {
-        console.log('⚠️ Error formateando fecha:', error.message);
-        fechaFormateada = datosCaso.fechaAsignacion;
-      }
-    }
+    const fechaFormateada = formatearFechaCorreo(datosCaso.fechaAsignacion);
+    const fechaSiniestroFormateada = formatearFechaCorreo(datosCaso.fechaSiniestro);
+    const htmlEnlaceCaso = htmlBotonAccesoCaso(datosCaso);
     
     // Generar HTML según el tipo de caso
     let htmlContent = '';
@@ -350,72 +431,85 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
         </div>
       `;
     } else {
-      // Template original para casos Complex
+      // Template COMPLEX — protocolo fase 1: recepción / asignación al ajustador
       htmlContent = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f8f9fa; padding: 20px;">
           <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
             <div style="text-align: center; margin-bottom: 30px;">
-              <h1 style="color: #2563eb; margin: 0; font-size: 24px;">📋 Caso Asignado</h1>
-              <p style="color: #6b7280; margin: 10px 0 0 0;">Sistema de Gestión de Casos - Grupo Proser</p>
+              <h1 style="color: #dc2626; margin: 0; font-size: 24px;">Nuevo siniestro asignado</h1>
+              <p style="color: #6b7280; margin: 10px 0 0 0;">ARNALD DataFlow · Protocolo de atención de siniestros</p>
+              <p style="color: #991b1b; margin: 12px 0 0 0; font-size: 14px; font-weight: 600;">
+                Fase 1 — Recepción de asignación · Inicie contacto inicial en 12 horas
+              </p>
             </div>
             
+            ${htmlEnlaceCaso}
+
             <div style="background-color: #dbeafe; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
-              <h2 style="color: #1e40af; margin: 0 0 15px 0; font-size: 18px;">📊 Información del Caso</h2>
+              <h2 style="color: #1e40af; margin: 0 0 15px 0; font-size: 18px;">Información del siniestro</h2>
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🔢 Número de Ajuste:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.numeroCaso}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151; width: 42%;">Número de ajuste:</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.numeroCaso || '—'}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📊 Número de Siniestro:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.numeroSiniestro || 'No especificado'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Número de siniestro:</td>
+                  <td style="padding: 8px 0; color: #1f2937; font-weight: 600;">${datosCaso.numeroSiniestro || 'No especificado'}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🔧 Código Workflow:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Fecha del siniestro:</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${fechaSiniestroFormateada}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Ramo / tipo póliza:</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.tipoPoliza || datosCaso.ramo || 'No especificado'}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Código workflow:</td>
                   <td style="padding: 8px 0; color: #1f2937;">${datosCaso.codigoWorkflow || 'No especificado'}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👤 Responsable:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.nombreResponsable || 'Sin asignar'}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🏢 Aseguradora:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Aseguradora:</td>
                   <td style="padding: 8px 0; color: #1f2937;">${nombreAseguradora}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👤 Funcionario de Aseguradora:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${nombreFuncionario}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🏢 Intermediario:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.intermediario || datosCaso.asegurado || 'No especificado'}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👥 Asegurado:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Asegurado / beneficiario:</td>
                   <td style="padding: 8px 0; color: #1f2937;">${datosCaso.aseguradoReal || datosCaso.asgrBenfcro || 'No especificado'}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📊 Estado:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${nombreEstado}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Intermediario:</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.intermediario || datosCaso.asegurado || 'No especificado'}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📅 Fecha de Asignación:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${fechaFormateada}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Funcionario aseguradora:</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${nombreFuncionario}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👨‍💼 Asignado por:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.quienAsigna || 'Sistema'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Ciudad del siniestro:</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.ciudadSiniestro || datosCaso.descripcionCiudad || 'No especificada'}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📋 Número de Póliza:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Número de póliza:</td>
                   <td style="padding: 8px 0; color: #1f2937;">${datosCaso.numeroPoliza || 'No especificado'}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🏙️ Ciudad del Siniestro:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.ciudadSiniestro || 'No especificada'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Estado del caso:</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${nombreEstado}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📝 Descripción:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Ajustador asignado:</td>
+                  <td style="padding: 8px 0; color: #1f2937; font-weight: 600;">${datosCaso.nombreResponsable || 'Sin asignar'}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Fecha de asignación:</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${fechaFormateada}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Asignado por:</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.quienAsigna || 'Sistema'}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151; vertical-align: top;">Descripción:</td>
                   <td style="padding: 8px 0; color: #1f2937;">${datosCaso.descripcionSiniestro || 'No especificada'}</td>
                 </tr>
               </table>
@@ -423,38 +517,41 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
             
             ${datosCaso.observaciones ? `
             <div style="background-color: #fef3c7; padding: 15px; border-radius: 8px; margin-bottom: 25px;">
-              <h3 style="color: #92400e; margin: 0 0 10px 0; font-size: 16px;">📝 Observaciones</h3>
+              <h3 style="color: #92400e; margin: 0 0 10px 0; font-size: 16px;">Observaciones</h3>
               <p style="color: #78350f; margin: 0; line-height: 1.5;">${datosCaso.observaciones}</p>
             </div>
             ` : ''}
             
-            <div style="background-color: #f0f9ff; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
-              <h3 style="color: #0369a1; margin: 0 0 15px 0; font-size: 16px;">👥 Destinatarios de esta notificación:</h3>
-              <ul style="margin: 0; padding-left: 20px; color: #0c4a6e;">
-                <li>Responsable asignado: ${datosCaso.nombreResponsable || 'Sin asignar'}</li>
-                <li>Persona que asignó: ${datosCaso.quienAsigna || 'Sistema'}</li>
-                ${(datosCaso.tipoCaso === 'riesgo' || datosCaso.esCasoRiesgo) ? '<li>Encargados de riesgos: Arnaldo Andrés Tapia Gutierrez, Mario Alberto Pinilla de la Torre</li>' : ''}
-              </ul>
+            <div style="background-color: #f0fdf4; padding: 16px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #16a34a;">
+              <p style="margin:0; color:#166534; font-size:13px; line-height:1.6;">
+                <strong>Próximo paso (protocolo):</strong> contacto con el intermediario y cargue de evidencia en ARNALD
+                dentro de las <strong>12 horas</strong> siguientes a esta asignación.
+              </p>
             </div>
+
+            ${htmlSeccionDestinatarios(datosCaso)}
+            ${htmlEnlaceCaso}
             
             <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
               <p style="color: #6b7280; font-size: 12px; margin: 0;">
-                Este es un mensaje automático del Sistema de Gestión de Casos de Grupo Proser.<br>
-                No responda a este correo. Para consultas, contacte al administrador del sistema.
+                Mensaje automático de ARNALD DataFlow · Grupo Proser<br>
+                No responda a este correo.
               </p>
             </div>
           </div>
         </div>
-      `
+      `;
     };
+    
+    const asuntoComplex = `🆕 Siniestro asignado — Caso ${datosCaso.numeroCaso || 'nuevo'} | Siniestro ${datosCaso.numeroSiniestro || '—'}`;
     
     // Construir objeto mailOptions con todos los datos necesarios
     const mailOptions = {
-      from: `"Grupo Proser - Sistema de Casos" <${process.env.EMAIL_USER}>`,
+      from: `"ARNALD DataFlow" <${process.env.EMAIL_USER}>`,
       to: todosLosEmails.join(', '),
       subject: datosCaso.tipoCaso === 'riesgo' || datosCaso.esCasoRiesgo 
         ? `📋 Caso de Riesgo Asignado - ${datosCaso.numeroCaso || 'Nuevo'}`
-        : `📋 Caso Asignado - ${datosCaso.numeroCaso || 'Nuevo'}`,
+        : asuntoComplex,
       html: htmlContent
     };
     

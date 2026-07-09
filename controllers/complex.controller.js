@@ -26,7 +26,20 @@ import {
   deleteComplexRecordFiles,
   deleteOrphanedStoredFiles,
 } from '../utils/storedFileCleanup.js';
-import { controlHorasTieneDatos } from '../utils/controlHorasUtils.js';
+import {
+  controlHorasTieneDatos,
+  resolverControlHorasDesdeEnvios,
+} from '../utils/controlHorasUtils.js';
+import { resolverUsuarioAsignador } from '../utils/resolverUsuarioAsignador.js';
+import { alinearCamposProtocoloDesdeHistorialDocs } from '../config/ajusteTrazabilidadComplexMap.js';
+
+const CAMPOS_METADATOS_USUARIO = ['usuarioAsignadorLogin', 'usuarioAsignadorNombre', 'loginAsignador', 'nombreAsignador'];
+
+function omitirMetadatosUsuario(body = {}) {
+  const limpio = { ...body };
+  CAMPOS_METADATOS_USUARIO.forEach((campo) => delete limpio[campo]);
+  return limpio;
+}
 
 // Función helper para convertir fechas de string (yyyy-MM-dd) a Date sin problemas de zona horaria
 const convertirFechaLocal = (fechaString) => {
@@ -41,6 +54,13 @@ const convertirFechaLocal = (fechaString) => {
   
   // Si es un string en formato yyyy-MM-dd, crear la fecha en zona horaria local
   const fechaStr = String(fechaString).trim();
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(fechaStr)) {
+    const [datePart, timePart] = fechaStr.split('T');
+    const [año, mes, dia] = datePart.split('-').map(Number);
+    const [hora, minuto] = timePart.split(':').map(Number);
+    return new Date(año, mes - 1, dia, hora || 0, minuto || 0, 0, 0);
+  }
+
   if (/^\d{4}-\d{2}-\d{2}$/.test(fechaStr)) {
     // Parsear año, mes y día
     const [año, mes, dia] = fechaStr.split('-').map(Number);
@@ -76,6 +96,7 @@ const validarCodiEstdoObligatorio = (body, res) => {
 const enriquecerCasoComplexParaFrontend = (caso) => {
   if (!caso) return caso;
   const obj = caso.toObject ? caso.toObject() : { ...caso };
+  const controlHorasResuelto = resolverControlHorasDesdeEnvios(obj);
 
   const fchaControlHoras = obj.fcha_control_horas ?? obj.fchaControlHoras ?? obj.fecha_control_horas ?? null;
   const fchaEnvioControlHoras = obj.fcha_envio_control_horas ?? obj.fchaEnvioControlHoras ?? obj.fecha_envio_control_horas ?? null;
@@ -84,6 +105,7 @@ const enriquecerCasoComplexParaFrontend = (caso) => {
 
   return {
     ...obj,
+    ...(controlHorasTieneDatos(controlHorasResuelto) ? { control_horas: controlHorasResuelto } : {}),
     fcha_control_horas: fchaControlHoras,
     fchaControlHoras: fchaControlHoras,
     fecha_control_horas: fchaControlHoras,
@@ -118,7 +140,9 @@ const convertirFechasEnDatos = (datos) => {
     'fecha_recibido_control_horas': 'fcha_recibido_control_horas', // Fecha de recibido control de horas (Gerencia)
     'fchaSeguimientoEnvioControlHoras': 'fcha_seguimiento_envio_control_horas',
     'fechaSeguimientoEnvioControlHoras': 'fcha_seguimiento_envio_control_horas',
-    'fecha_seguimiento_envio_control_horas': 'fcha_seguimiento_envio_control_horas' // Fecha de seguimiento de envío control de horas
+    'fecha_seguimiento_envio_control_horas': 'fcha_seguimiento_envio_control_horas', // Fecha de seguimiento de envío control de horas
+    'fcha_ult_segui': 'fchaUltSegui',
+    'fcha_act_segui': 'fchaActSegui',
   };
   
   // Aplicar mapeo primero
@@ -453,7 +477,7 @@ export const crearComplex = async (req, res) => {
       console.log('   - intermediario valor:', req.body.nombIntermediario);
     
          // Generar nmroAjste único si está vacío
-     let datosParaGuardar = { ...req.body };
+     let datosParaGuardar = omitirMetadatosUsuario(req.body);
      
      // Convertir todas las fechas a Date local para evitar problemas de zona horaria
      datosParaGuardar = convertirFechasEnDatos(datosParaGuardar);
@@ -778,42 +802,16 @@ export const crearComplex = async (req, res) => {
          console.log('📧 📧 📧 RESUMEN BÚSQUEDA FUNCIONARIO (CREAR) 📧 📧 📧');
          console.log('📧 Email encontrado:', emailFuncionarioAseguradora || 'NO ENCONTRADO');
        
-                        // Obtener email del usuario que asigna el caso
-         let emailQuienAsigna = '';
-         let nombreQuienAsigna = 'Sistema';
-         
-         if (req.usuario && req.usuario.id) {
-           try {
-             const usuarioAsignador = await SecurUser.findById(req.usuario.id);
-             if (usuarioAsignador && usuarioAsignador.email) {
-               emailQuienAsigna = usuarioAsignador.email.trim();
-               nombreQuienAsigna = usuarioAsignador.name || usuarioAsignador.login || 'Usuario';
-               console.log('✅ Email del usuario que asigna obtenido:', emailQuienAsigna);
-               console.log('✅ Nombre del usuario que asigna:', nombreQuienAsigna);
-             }
-           } catch (error) {
-             console.log('⚠️ Error obteniendo email del usuario que asigna:', error.message);
-           }
-         } else if (req.usuario && req.usuario.login) {
-           try {
-             const usuarioAsignador = await SecurUser.findOne({ login: req.usuario.login });
-             if (usuarioAsignador && usuarioAsignador.email) {
-               emailQuienAsigna = usuarioAsignador.email.trim();
-               nombreQuienAsigna = usuarioAsignador.name || usuarioAsignador.login || 'Usuario';
-               console.log('✅ Email del usuario que asigna obtenido por login:', emailQuienAsigna);
-               console.log('✅ Nombre del usuario que asigna:', nombreQuienAsigna);
-             }
-           } catch (error) {
-             console.log('⚠️ Error obteniendo email del usuario que asigna por login:', error.message);
-           }
-         }
-         
-         if (!emailQuienAsigna) {
-           console.log('⚠️ No se pudo obtener el email del usuario que asigna el caso');
-         }
+                        // Obtener usuario que asigna el caso
+         const asignador = await resolverUsuarioAsignador(req, req.body);
+         const emailQuienAsigna = asignador.email;
+         const nombreQuienAsigna = asignador.nombre;
+         console.log('✅ Usuario que asigna:', nombreQuienAsigna, emailQuienAsigna ? `(${emailQuienAsigna})` : '(sin email)');
          
                         // Preparar datos para notificación de asignación
          const datosNotificacion = {
+           tipoCaso: 'complex',
+           casoId: nuevo._id?.toString(),
            numeroCaso: nuevo.nmroAjste,
            numeroSiniestro: nuevo.nmroSinstro || 'No especificado',
            codigoWorkflow: nuevo.codWorkflow || 'No especificado',
@@ -829,19 +827,25 @@ export const crearComplex = async (req, res) => {
            estado: nuevo.codiEstdo || '',
            descripcionEstado: nuevo.descripcionEstado || '',
            fechaAsignacion: nuevo.fchaAsgncion || new Date(),
+           fechaSiniestro: nuevo.fchaSinstro || null,
+           tipoPoliza: nuevo.tipoPoliza || '',
+           codiRespnsble: nuevo.codiRespnsble || '',
            quienAsigna: nombreQuienAsigna,
+           loginQuienAsigna: asignador.login || '',
            emailResponsable: emailResponsable,
            emailQuienAsigna: emailQuienAsigna,
            emailFuncionarioAseguradora: emailFuncionarioAseguradora,
            observaciones: nuevo.obseContIni || nuevo.descSinstro || '',
            numeroPoliza: nuevo.nmroPolza || 'No especificado',
-           ciudadSiniestro: nuevo.ciudadSiniestro || 'No especificada',
+           ciudadSiniestro: nuevo.ciudadSiniestro || nuevo.descripcionCiudad || 'No especificada',
+           descripcionCiudad: nuevo.descripcionCiudad || '',
            descripcionSiniestro: nuevo.descSinstro || 'No especificada'
          };
        
+       if (nuevo.codiRespnsble) {
        console.log('📧 Datos para notificación:', JSON.stringify(datosNotificacion, null, 2));
        
-       // Enviar notificación de asignación
+       // Enviar notificación de asignación (protocolo fase 1)
        const resultadoEmail = await enviarNotificacionAsignacion(datosNotificacion);
        console.log('✅ Notificación de asignación enviada:', resultadoEmail);
        notificacionesResumen = {
@@ -851,6 +855,9 @@ export const crearComplex = async (req, res) => {
            destinatarios: Array.isArray(resultadoEmail.emailsEnviados) ? resultadoEmail.emailsEnviados : []
          }
        };
+       } else {
+         console.log('📧 Caso creado sin ajustador asignado — no se envía correo de asignación');
+       }
        
        // Enviar notificación a aseguradora si hay funcionario asignado
        if (nuevo.funcAsgrdra && emailFuncionarioAseguradora) {
@@ -883,32 +890,10 @@ export const crearComplex = async (req, res) => {
          console.log('📧 ===== ENVIANDO NOTIFICACIÓN AL CREADOR =====');
          
          // Obtener información del usuario que crea el caso
-         let emailCreador = null;
-         let nombreCreador = 'Sistema';
-         
-         if (req.usuario && req.usuario.id) {
-           try {
-             const usuarioCreador = await SecurUser.findById(req.usuario.id);
-             if (usuarioCreador && usuarioCreador.email) {
-               emailCreador = usuarioCreador.email;
-               nombreCreador = usuarioCreador.name || 'Usuario';
-               console.log('✅ Email del creador obtenido:', emailCreador);
-             }
-           } catch (error) {
-             console.log('⚠️ Error obteniendo email del creador:', error.message);
-           }
-         } else if (req.usuario && req.usuario.login) {
-           try {
-             const usuarioCreador = await SecurUser.findOne({ login: req.usuario.login });
-             if (usuarioCreador && usuarioCreador.email) {
-               emailCreador = usuarioCreador.email;
-               nombreCreador = usuarioCreador.name || 'Usuario';
-               console.log('✅ Email del creador obtenido por login:', emailCreador);
-             }
-           } catch (error) {
-             console.log('⚠️ Error obteniendo email del creador por login:', error.message);
-           }
-         }
+         const creador = await resolverUsuarioAsignador(req, req.body);
+         const emailCreador = creador.email || null;
+         const nombreCreador = creador.nombre;
+         console.log('✅ Creador del caso:', nombreCreador, emailCreador ? `(${emailCreador})` : '(sin email)');
          
          if (emailCreador) {
            const datosNotificacionCreador = {
@@ -1366,7 +1351,22 @@ export const obtenerPorId = async (req, res) => {
     }
     const caso = await Complex.findById(id);
     if (!caso) return res.status(404).json({ error: 'Caso no encontrado' });
-    res.json(enriquecerCasoComplexParaFrontend(caso));
+
+    const casoObj = caso.toObject();
+    const controlHorasRecuperado = resolverControlHorasDesdeEnvios(casoObj);
+    if (
+      !controlHorasTieneDatos(casoObj.control_horas) &&
+      controlHorasTieneDatos(controlHorasRecuperado)
+    ) {
+      casoObj.control_horas = controlHorasRecuperado;
+      Complex.findByIdAndUpdate(id, { $set: { control_horas: controlHorasRecuperado } }).catch(
+        (err) => {
+          console.warn('⚠️ [obtenerPorId] No se pudo persistir control_horas recuperado:', err.message);
+        }
+      );
+    }
+
+    res.json(enriquecerCasoComplexParaFrontend(casoObj));
   } catch (error) {
     console.error('❌ Error al obtener el caso por ID:', error);
     res.status(500).json({ error: 'Error al obtener el caso' });
@@ -1488,7 +1488,7 @@ export const actualizarComplex = async (req, res) => {
     }, {}));
 
     // Convertir todas las fechas a Date local para evitar problemas de zona horaria
-    const datosParaActualizar = convertirFechasEnDatos(req.body);
+    const datosParaActualizar = omitirMetadatosUsuario(convertirFechasEnDatos(req.body));
     
     // Log específico para fcha_control_horas
     console.log('📅 [actualizarComplex] Verificando fcha_control_horas:', {
@@ -1589,17 +1589,30 @@ export const actualizarComplex = async (req, res) => {
     const casoAnterior = await Complex.findById(req.params.id);
     if (!casoAnterior) return res.status(404).json({ error: 'Caso no encontrado' });
     
-    // Manejar historialDocs: si viene en el payload, usarlo; si no, preservar el existente
+    // Manejar historialDocs: si viene en el payload, usarlo; si no, preservar el existente.
+    // Si el front envía [] pero el caso ya tenía documentos, preservar (estado truncado del reporte).
+    const historialAnterior = Array.isArray(casoAnterior.historialDocs) ? casoAnterior.historialDocs : [];
+    const historialPayload = datosParaActualizar.historialDocs;
+    const payloadHistorialVacio =
+      Array.isArray(historialPayload) && historialPayload.length === 0;
+
     if (datosParaActualizar.historialDocs === undefined) {
-      if (casoAnterior.historialDocs) {
-      datosParaActualizar.historialDocs = casoAnterior.historialDocs;
-      console.log('💾 [actualizarComplex] Preservando historialDocs existente:', casoAnterior.historialDocs.length, 'documentos');
+      if (historialAnterior.length > 0) {
+        datosParaActualizar.historialDocs = historialAnterior;
+        console.log('💾 [actualizarComplex] Preservando historialDocs existente:', historialAnterior.length, 'documentos');
       } else {
         datosParaActualizar.historialDocs = [];
         console.log('💾 [actualizarComplex] Inicializando historialDocs vacío');
       }
+    } else if (payloadHistorialVacio && historialAnterior.length > 0) {
+      delete datosParaActualizar.historialDocs;
+      console.log(
+        '💾 [actualizarComplex] Ignorando historialDocs vacío del payload; se preservan',
+        historialAnterior.length,
+        'documentos existentes'
+      );
     } else {
-      console.log('💾 [actualizarComplex] Usando historialDocs del payload:', Array.isArray(datosParaActualizar.historialDocs) ? datosParaActualizar.historialDocs.length : 'no es array', 'documentos');
+      console.log('💾 [actualizarComplex] Usando historialDocs del payload:', Array.isArray(historialPayload) ? historialPayload.length : 'no es array', 'documentos');
     }
 
     // Evitar borrar control de horas al guardar otros campos del caso con payload vacío o incompleto
@@ -1646,6 +1659,16 @@ export const actualizarComplex = async (req, res) => {
     // El modelo Complex usa camelCase (vlorServcios, vlorGastos, fchaFactra, fchaUltRevi)
     // EXCEPTO fcha_control_horas que se mantiene en snake_case
     const updateData = { ...datosParaActualizar };
+
+    // Alinear anexos/fechas de protocolo con historialDocs (p. ej. documentos generados desde Ajuste).
+    if (Array.isArray(updateData.historialDocs) && updateData.historialDocs.length > 0) {
+      const alineado = alinearCamposProtocoloDesdeHistorialDocs(
+        updateData,
+        updateData.historialDocs,
+        { soloSiVacio: true }
+      );
+      Object.assign(updateData, alineado);
+    }
     
     // Mapeo de campos de facturación: variantes -> nombres del schema Complex (camelCase)
     const camposFacturacion = {
@@ -1896,8 +1919,8 @@ export const actualizarComplex = async (req, res) => {
            console.log('📧 ⚠️ ASIGNACIÓN DE CASO DETECTADA - Se enviará notificación de asignación');
          }
        
-       if (hayCambiosRelevantes || seAsignoCaso) {
-         console.log('📧 Cambios relevantes detectados, enviando notificaciones...');
+       if (seAsignoCaso) {
+         console.log('📧 Cambio de ajustador detectado, enviando notificación de asignación...');
          
          // Obtener email del responsable desde la base de datos
          let emailResponsable = '';
@@ -2110,40 +2133,16 @@ export const actualizarComplex = async (req, res) => {
           console.log('📧 📧 📧 RESUMEN BÚSQUEDA FUNCIONARIO (ACTUALIZAR) 📧 📧 📧');
           console.log('📧 Email encontrado:', emailFuncionarioAseguradora || 'NO ENCONTRADO');
          
-                              // Obtener email del usuario que asigna el caso
-          let emailQuienAsignaActualizar = '';
-          let nombreQuienAsignaActualizar = 'Sistema';
-          
-          if (req.usuario && req.usuario.id) {
-            try {
-              const usuarioAsignador = await SecurUser.findById(req.usuario.id);
-              if (usuarioAsignador && usuarioAsignador.email) {
-                emailQuienAsignaActualizar = usuarioAsignador.email.trim();
-                nombreQuienAsignaActualizar = usuarioAsignador.name || usuarioAsignador.login || 'Usuario';
-                console.log('✅ Email del usuario que asigna (actualizar) obtenido:', emailQuienAsignaActualizar);
-              }
-            } catch (error) {
-              console.log('⚠️ Error obteniendo email del usuario que asigna (actualizar):', error.message);
-            }
-          } else if (req.usuario && req.usuario.login) {
-            try {
-              const usuarioAsignador = await SecurUser.findOne({ login: req.usuario.login });
-              if (usuarioAsignador && usuarioAsignador.email) {
-                emailQuienAsignaActualizar = usuarioAsignador.email.trim();
-                nombreQuienAsignaActualizar = usuarioAsignador.name || usuarioAsignador.login || 'Usuario';
-                console.log('✅ Email del usuario que asigna (actualizar) obtenido por login:', emailQuienAsignaActualizar);
-              }
-            } catch (error) {
-              console.log('⚠️ Error obteniendo email del usuario que asigna (actualizar) por login:', error.message);
-            }
-          }
-          
-          if (!emailQuienAsignaActualizar) {
-            console.log('⚠️ No se pudo obtener el email del usuario que asigna el caso (actualizar)');
-          }
+                              // Obtener usuario que asigna el caso
+          const asignadorActualizar = await resolverUsuarioAsignador(req, req.body);
+          const emailQuienAsignaActualizar = asignadorActualizar.email;
+          const nombreQuienAsignaActualizar = asignadorActualizar.nombre;
+          console.log('✅ Usuario que asigna (actualizar):', nombreQuienAsignaActualizar, emailQuienAsignaActualizar ? `(${emailQuienAsignaActualizar})` : '(sin email)');
           
                               // Preparar datos para notificación de asignación
            const datosNotificacion = {
+             tipoCaso: 'complex',
+             casoId: casoActualizado._id?.toString(),
              numeroCaso: casoActualizado.nmroAjste,
              numeroSiniestro: casoActualizado.nmroSinstro || 'No especificado',
              codigoWorkflow: casoActualizado.codWorkflow || 'No especificado',
@@ -2159,13 +2158,18 @@ export const actualizarComplex = async (req, res) => {
              estado: casoActualizado.codiEstdo || '',
              descripcionEstado: casoActualizado.descripcionEstado || '',
              fechaAsignacion: casoActualizado.fchaAsgncion || new Date(),
+             fechaSiniestro: casoActualizado.fchaSinstro || null,
+             tipoPoliza: casoActualizado.tipoPoliza || '',
+             codiRespnsble: casoActualizado.codiRespnsble || '',
              quienAsigna: nombreQuienAsignaActualizar,
+             loginQuienAsigna: asignadorActualizar.login || '',
              emailResponsable: emailResponsable, // CRÍTICO: Este campo debe tener el email del responsable
              emailQuienAsigna: emailQuienAsignaActualizar,
              emailFuncionarioAseguradora: emailFuncionarioAseguradora,
              observaciones: casoActualizado.obseContIni || casoActualizado.descSinstro || '',
              numeroPoliza: casoActualizado.nmroPolza || 'No especificado',
-             ciudadSiniestro: casoActualizado.ciudadSiniestro || 'No especificada',
+             ciudadSiniestro: casoActualizado.ciudadSiniestro || casoActualizado.descripcionCiudad || 'No especificada',
+             descripcionCiudad: casoActualizado.descripcionCiudad || '',
              descripcionSiniestro: casoActualizado.descSinstro || 'No especificada'
            };
            
@@ -2214,6 +2218,8 @@ export const actualizarComplex = async (req, res) => {
              // No fallar por error de email a aseguradora
            }
          }
+       } else if (hayCambiosRelevantes) {
+         console.log('📧 Cambios en el caso sin reasignación de ajustador — no se envía correo de asignación');
        } else {
          console.log('📧 No hay cambios relevantes, no se envían notificaciones');
        }

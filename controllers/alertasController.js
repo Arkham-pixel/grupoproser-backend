@@ -2,8 +2,17 @@ import {
   obtenerAlertasAjustador,
   obtenerAlertasTodosAjustadores,
   enviarAlertasEmail,
-  enviarAlertasTodosAjustadores
+  enviarAlertasTodosAjustadores,
+  obtenerMisAlertasPorLogin,
+  obtenerAlertasDeCaso,
 } from '../services/alertasService.js';
+import {
+  obtenerProtocoloActivo,
+  guardarProtocoloPersonalizado,
+  restaurarProtocoloPorDefecto,
+  obtenerHistorialProtocolo,
+} from '../services/protocoloConfigService.js';
+import { obtenerProtocoloPorDefecto } from '../config/protocoloSiniestrosDefaults.js';
 
 // Obtener alertas de un ajustador específico
 export const getAlertasAjustador = async (req, res) => {
@@ -280,6 +289,127 @@ export const getAlertasPorTipo = async (req, res) => {
       success: false,
       message: 'Error interno del servidor',
       error: error.message
+    });
+  }
+};
+
+export const getProtocoloSiniestros = async (req, res) => {
+  try {
+    const protocolo = await obtenerProtocoloActivo();
+    const defaults = obtenerProtocoloPorDefecto();
+    res.json({
+      success: true,
+      data: {
+        activo: protocolo,
+        defaults,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Error obteniendo protocolo:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor',
+      error: error.message,
+    });
+  }
+};
+
+export const putProtocoloSiniestros = async (req, res) => {
+  try {
+    const usuario = req.usuario?.login || req.usuario?.nombre || 'admin';
+    const protocolo = await guardarProtocoloPersonalizado(req.body, usuario);
+    res.json({
+      success: true,
+      message: 'Protocolo actualizado correctamente',
+      data: protocolo,
+    });
+  } catch (error) {
+    console.error('❌ Error guardando protocolo:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor',
+      error: error.message,
+    });
+  }
+};
+
+export const postRestaurarProtocoloSiniestros = async (req, res) => {
+  try {
+    const usuario = req.usuario?.login || req.usuario?.nombre || 'admin';
+    const protocolo = await restaurarProtocoloPorDefecto(usuario);
+    res.json({
+      success: true,
+      message: 'Protocolo restaurado a valores por defecto',
+      data: protocolo,
+    });
+  } catch (error) {
+    console.error('❌ Error restaurando protocolo:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor',
+      error: error.message,
+    });
+  }
+};
+
+export const getMisAlertas = async (req, res) => {
+  try {
+    const login = req.query.login || req.usuario?.login || req.usuario?.cedula;
+    const nombre = req.query.nombre || req.usuario?.name || req.usuario?.nombre;
+
+    if (!login) {
+      return res.status(400).json({
+        success: false,
+        message: 'Se requiere login del usuario',
+      });
+    }
+
+    const alertas = await obtenerMisAlertasPorLogin(login, nombre);
+    res.json({ success: true, data: alertas });
+  } catch (error) {
+    console.error('❌ Error obteniendo mis alertas:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor',
+      error: error.message,
+    });
+  }
+};
+
+export const getAlertasCaso = async (req, res) => {
+  try {
+    const { identificador } = req.params;
+    if (!identificador) {
+      return res.status(400).json({ success: false, message: 'Identificador requerido' });
+    }
+
+    const alertas = await obtenerAlertasDeCaso(identificador);
+    if (!alertas) {
+      return res.status(404).json({ success: false, message: 'Caso no encontrado' });
+    }
+
+    res.json({ success: true, data: alertas });
+  } catch (error) {
+    console.error('❌ Error obteniendo alertas del caso:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor',
+      error: error.message,
+    });
+  }
+};
+
+export const getHistorialProtocolo = async (req, res) => {
+  try {
+    const limite = Math.min(parseInt(req.query.limite, 10) || 20, 50);
+    const historial = await obtenerHistorialProtocolo(limite);
+    res.json({ success: true, data: historial });
+  } catch (error) {
+    console.error('❌ Error obteniendo historial protocolo:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor',
+      error: error.message,
     });
   }
 };

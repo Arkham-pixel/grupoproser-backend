@@ -1,9 +1,19 @@
 import Complex from '../models/Complex.js';
 import Responsable from '../models/Responsable.js';
 import { enviarEmailAlertas } from './emailService.js';
+import { obtenerProtocoloActivo } from './protocoloConfigService.js';
+import { evaluarProtocoloCaso, horasEntre, tieneDocumentoEnHistorialDocs } from './protocoloSiniestrosUtils.js';
+import { CAMPO_ANEXO_A_TIPO_HISTORIAL, alinearCamposProtocoloDesdeHistorialDocs } from '../config/ajusteTrazabilidadComplexMap.js';
 
 // Fecha límite: Solo casos agregados desde octubre de 2025 en adelante recibirán alertas
 const FECHA_LIMITE_ALERTAS = new Date('2025-10-01T00:00:00.000Z');
+
+/** Enriquece el caso en memoria: historialDocs (Ajuste) → anexos/fechas de protocolo. */
+function casoNormalizadoParaProtocolo(caso) {
+  const base = caso?.toObject ? caso.toObject() : { ...(caso || {}) };
+  if (!Array.isArray(base.historialDocs) || base.historialDocs.length === 0) return base;
+  return alinearCamposProtocoloDesdeHistorialDocs(base, base.historialDocs, { soloSiVacio: true });
+}
 
 // Configuración de recordatorios por días de inactividad
 // El sistema envía alertas en estos intervalos:
@@ -46,6 +56,7 @@ const informeFinalCompletoEtapaAjustador = (caso) => {
 // Función para verificar documentos faltantes y subidos en un caso
 // IMPORTANTE: Un documento solo se considera "completo" si tiene documento subido Y fecha asociada
 export const verificarDocumentosFaltantes = (caso) => {
+  const casoEval = casoNormalizadoParaProtocolo(caso);
   const documentosFaltantes = [];
   const documentosSubidos = [];
   const documentosRequeridos = [
@@ -58,7 +69,7 @@ export const verificarDocumentosFaltantes = (caso) => {
     { campo: 'anxoPresentacionCifras', nombre: 'Presentación de Cifras', obligatorio: false, campoFecha: 'fchaPresentacionCifras' },
     { campo: 'anxoEnvioFiniquito', nombre: 'Envío de Finiquito', obligatorio: false, campoFecha: 'fchaEnvioFiniquito' },
     { campo: 'anxoFactra', nombre: 'Factura', obligatorio: false, campoFecha: 'fchaFactra' },
-    { campo: 'anxoHonorarios', nombre: 'Honorarios', obligatorio: false, campoFecha: null } // Honorarios no tiene fecha específica
+    { campo: 'anxoHonorarios', nombre: 'Honorarios', obligatorio: false, campoFecha: null },
   ];
 
   const postInformeSinAlertaAjustador = informeFinalCompletoEtapaAjustador(caso);
@@ -75,10 +86,13 @@ export const verificarDocumentosFaltantes = (caso) => {
       return;
     }
 
-    const tieneDocumento = caso[doc.campo] && caso[doc.campo].trim() !== '';
+    const historialTipo = CAMPO_ANEXO_A_TIPO_HISTORIAL[doc.campo] || null;
+    const tieneDocumento =
+      (casoEval[doc.campo] && casoEval[doc.campo].trim() !== '') ||
+      (historialTipo && tieneDocumentoEnHistorialDocs(casoEval, historialTipo));
     // IMPORTANTE: Si tiene campoFecha, verificar si tiene fecha asignada
     // Si NO tiene campoFecha (como Honorarios), considerar que siempre tiene fecha (no genera alerta)
-    const tieneFecha = doc.campoFecha ? (caso[doc.campoFecha] && caso[doc.campoFecha] !== null && caso[doc.campoFecha] !== '') : true;
+    const tieneFecha = doc.campoFecha ? (casoEval[doc.campoFecha] && casoEval[doc.campoFecha] !== null && casoEval[doc.campoFecha] !== '') : true;
     
     // IMPORTANTE: Un documento se considera "completo" si tiene fecha Y documento
     // Si solo tiene fecha pero no documento, aún puede generar alerta (depende de la configuración)
@@ -127,182 +141,46 @@ export const verificarDocumentosFaltantes = (caso) => {
   };
 };
 
-// Función para calcular tiempos entre documentos según la nueva lógica
-// Retorna alertas específicas para cada tipo de documento basándose en su fecha de referencia
-export const calcularTiemposEntreDocumentos = (caso) => {
-  const alertasTiempo = [];
-  const ahora = new Date();
-  
-  // Función auxiliar para parsear fechas
-  const parsearFecha = (fechaStr) => {
-    if (!fechaStr) return null;
-    if (fechaStr instanceof Date) return fechaStr;
-    if (typeof fechaStr === 'string' && fechaStr.includes('T')) {
-      const [fechaPart] = fechaStr.split('T');
-      const [year, month, day] = fechaPart.split('-');
-      return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-    }
-    if (typeof fechaStr === 'string' && /^\d{4}-\d{2}-\d{2}/.test(fechaStr)) {
-      const [year, month, day] = fechaStr.split('-');
-      return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-    }
-    const fecha = new Date(fechaStr);
-    return isNaN(fecha.getTime()) ? null : fecha;
+/** Fase 1 protocolo: caso recién asignado sin contacto inicial */
+function evaluarAlertaAsignacionReciente(caso) {
+  if (!caso?.codiRespnsble || !caso?.fchaAsgncion) return null;
+  if (caso.fchaContIni) return null;
+
+  const horas = horasEntre(caso.fchaAsgncion, new Date());
+  if (horas == null || horas > 72) return null;
+
+  return {
+    tipo: 'ASIGNACION_RECIBIDA',
+    categoria: 'protocolo',
+    prioridad: horas >= 10 ? 'ALTA' : 'MEDIA',
+    mensaje: `Nuevo siniestro asignado — Caso ${caso.nmroAjste || '—'} · Siniestro ${caso.nmroSinstro || '—'}`,
+    accion: 'Registrar contacto inicial en ARNALD (plazo: 12 h desde asignación)',
+    color: horas >= 10 ? 'red' : 'orange',
   };
+}
 
-  // Función para obtener fecha de referencia según el tipo
-  const obtenerFechaReferencia = (tipo) => {
-    switch (tipo) {
-      case 'contactoInicial':
-      case 'inspeccion':
-        return parsearFecha(caso.fchaAsgncion);
-      case 'solicitudDocs':
-      case 'informePreliminar':
-        return parsearFecha(caso.fchaInspccion);
-      case 'informeFinal':
-        return parsearFecha(caso.fchaInfoPrelm);
-      case 'ultimoDocumento':
-        return parsearFecha(caso.fchaInfoFnal);
-      case 'presentacionCifras':
-      case 'envioFiniquito':
-        return parsearFecha(caso.fchaRepoActi);
-      default:
-        return null;
-    }
-  };
+// Función para calcular alertas de tiempos según el protocolo parametrizado
+export const calcularTiemposEntreDocumentos = (caso, protocolo, alcance = 'todos') => {
+  if (!protocolo) return [];
 
-  // Definición de documentos con sus tiempos límite
-  const documentosConfig = [
-    {
-      tipo: 'contactoInicial',
-      nombre: 'Contacto Inicial',
-      campoFecha: 'fchaContIni',
-      campoDoc: 'anexContIni',
-      tiempoLimiteHoras: 12,
-      tiempoLimiteDias: 0.5
-    },
-    {
-      tipo: 'inspeccion',
-      nombre: 'Inspección',
-      campoFecha: 'fchaInspccion',
-      campoDoc: 'anexActaInspccion',
-      tiempoLimiteHoras: 12,
-      tiempoLimiteDias: 0.5
-    },
-    {
-      tipo: 'solicitudDocs',
-      nombre: 'Solicitud de Documentos',
-      campoFecha: 'fchaSoliDocu',
-      campoDoc: 'anexSolDoc',
-      tiempoLimiteHoras: 24,
-      tiempoLimiteDias: 1
-    },
-    {
-      tipo: 'informePreliminar',
-      nombre: 'Informe Preliminar',
-      campoFecha: 'fchaInfoPrelm',
-      campoDoc: 'anxoInfPrelim',
-      tiempoLimiteHoras: 24,
-      tiempoLimiteDias: 1
-    },
-    {
-      tipo: 'informeFinal',
-      nombre: 'Informe Final',
-      campoFecha: 'fchaInfoFnal',
-      campoDoc: 'anxoInfoFnal',
-      tiempoLimiteHoras: 72,
-      tiempoLimiteDias: 3
-    },
-    {
-      tipo: 'ultimoDocumento',
-      nombre: 'Último Documento',
-      campoFecha: 'fchaRepoActi',
-      campoDoc: 'anxoRepoActi',
-      tiempoLimiteHoras: 72,
-      tiempoLimiteDias: 3
-    },
-    {
-      tipo: 'presentacionCifras',
-      nombre: 'Presentación de Cifras',
-      campoFecha: 'fchaPresentacionCifras',
-      campoDoc: 'anxoPresentacionCifras',
-      tiempoLimiteHoras: 24,
-      tiempoLimiteDias: 1
-    },
-    {
-      tipo: 'envioFiniquito',
-      nombre: 'Envío de Finiquito',
-      campoFecha: 'fchaEnvioFiniquito',
-      campoDoc: 'anxoEnvioFiniquito',
-      tiempoLimiteHoras: 24,
-      tiempoLimiteDias: 1
-    }
-  ];
+  const casoEval = casoNormalizadoParaProtocolo(caso);
+  const alertasProtocolo = evaluarProtocoloCaso(casoEval, protocolo, new Date(), alcance);
 
-  documentosConfig.forEach(doc => {
-    if (informeFinalCompletoEtapaAjustador(caso) && (doc.tipo === 'presentacionCifras' || doc.tipo === 'envioFiniquito')) {
-      return;
-    }
-
-    const fechaReferencia = obtenerFechaReferencia(doc.tipo);
-    if (!fechaReferencia) return; // No hay fecha de referencia, no se puede calcular
-
-    const fechaDocumento = parsearFecha(caso[doc.campoFecha]);
-    const tieneDocumento = caso[doc.campoDoc] && caso[doc.campoDoc].trim() !== '';
-
-    // IMPORTANTE: Si tiene fecha Y documento, no generar alerta (ya está completado)
-    // Las alertas se detienen cuando se suben ambos (fecha y documento)
-    if (fechaDocumento && tieneDocumento) {
-      return; // Completado, no generar alerta
-    }
-
-    // Calcular tiempo transcurrido desde la fecha de referencia
-    const fechaCalculo = ahora; // Siempre calcular desde ahora si no hay fecha de documento
-    const diferenciaTiempo = fechaCalculo.getTime() - fechaReferencia.getTime();
-    const diferenciaHoras = diferenciaTiempo / (1000 * 3600);
-    const diferenciaDias = diferenciaHoras / 24;
-
-    // Calcular retraso
-    const horasRetraso = diferenciaHoras > doc.tiempoLimiteHoras ? diferenciaHoras - doc.tiempoLimiteHoras : 0;
-    const diasRetraso = diferenciaDias > doc.tiempoLimiteDias ? diferenciaDias - doc.tiempoLimiteDias : 0;
-
-    // Si hay retraso o está cerca del límite, generar alerta
-    if (horasRetraso > 0 || diferenciaHoras >= doc.tiempoLimiteHoras * 0.8) {
-      let prioridad = horasRetraso > 0 ? 'ALTA' : 'MEDIA';
-      let mensaje = '';
-      
-      if (horasRetraso > 0) {
-        if (doc.tiempoLimiteHoras <= 24) {
-          mensaje = `🚨 Retraso: ${doc.nombre} debería haberse completado hace ${Math.round(horasRetraso)} horas`;
-        } else {
-          mensaje = `🚨 Retraso: ${doc.nombre} debería haberse completado hace ${Math.round(diasRetraso)} días`;
-        }
-      } else {
-        const horasRestantes = doc.tiempoLimiteHoras - diferenciaHoras;
-        if (doc.tiempoLimiteHoras <= 24) {
-          mensaje = `⏰ Pendiente: ${doc.nombre} debe completarse en ${Math.round(horasRestantes)} horas`;
-        } else {
-          mensaje = `⏰ Pendiente: ${doc.nombre} debe completarse en ${Math.round((doc.tiempoLimiteDias - diferenciaDias) * 24)} horas`;
-        }
-      }
-
-      alertasTiempo.push({
-        tipo: `TIEMPO_${doc.tipo.toUpperCase()}`,
-        nombre: doc.nombre,
-        prioridad,
-        mensaje,
-        accion: `Completar ${doc.nombre} o asignar fecha`,
-        horasTranscurridas: diferenciaHoras,
-        horasLimite: doc.tiempoLimiteHoras,
-        horasRetraso: horasRetraso,
-        diasRetraso: diasRetraso,
-        tieneFecha: !!fechaDocumento,
-        tieneDocumento: tieneDocumento
-      });
-    }
-  });
-
-  return alertasTiempo;
+  return alertasProtocolo.map((alerta) => ({
+    tipo: alerta.tipo,
+    nombre: alerta.nombre,
+    prioridad: alerta.prioridad,
+    mensaje: alerta.prioridad === 'ALTA' ? `🚨 ${alerta.mensaje}` : `⏰ ${alerta.mensaje}`,
+    accion: alerta.accion,
+    horasTranscurridas: alerta.horasTranscurridas || 0,
+    horasLimite: alerta.horasLimite || 0,
+    horasRetraso: alerta.retraso || 0,
+    diasRetraso: alerta.retraso || 0,
+    tieneFecha: false,
+    tieneDocumento: false,
+    etapaId: alerta.etapaId || alerta.seguimientoId,
+    etiquetaLimite: alerta.etiquetaLimite,
+  }));
 };
 
 // Función para calcular días transcurridos desde la última actividad
@@ -403,7 +281,8 @@ export const calcularDiasInactividad = (caso) => {
 };
 
 // Función para generar alertas para un caso específico
-export const generarAlertasCaso = (caso) => {
+export const generarAlertasCaso = (caso, protocolo, opciones = {}) => {
+  const alcance = opciones.alcance || 'todos';
   // Verificar si el caso debe recibir alertas (solo casos desde octubre 2025)
   if (!debeRecibirAlertas(caso)) {
     // Retornar objeto vacío para casos que no deben recibir alertas
@@ -447,26 +326,27 @@ export const generarAlertasCaso = (caso) => {
   const documentosFaltantes = documentosInfo.faltantes;
   const documentosSubidos = documentosInfo.subidos;
   const inactividad = calcularDiasInactividad(caso);
-  const alertasTiempoDocumentos = calcularTiemposEntreDocumentos(caso);
-  
-  const alertas = [];
-  
-  // Agregar alertas de tiempos entre documentos
-  alertasTiempoDocumentos.forEach(alertaTiempo => {
-    alertas.push({
-      tipo: alertaTiempo.tipo,
-      prioridad: alertaTiempo.prioridad,
-      mensaje: alertaTiempo.mensaje,
-      accion: alertaTiempo.accion,
-      color: alertaTiempo.prioridad === 'ALTA' ? 'red' : 'orange',
-      horasTranscurridas: alertaTiempo.horasTranscurridas,
-      horasLimite: alertaTiempo.horasLimite,
-      horasRetraso: alertaTiempo.horasRetraso
-    });
-  });
+  const alertasTiempoDocumentos = calcularTiemposEntreDocumentos(caso, protocolo, alcance);
 
-  // Calcular factor de reducción de intensidad basado en documentos subidos
-  // Si todos los documentos obligatorios están subidos, reducir significativamente la intensidad
+  const alertas = alertasTiempoDocumentos.map((alertaTiempo) => ({
+    tipo: alertaTiempo.tipo,
+    categoria: alertaTiempo.tipo?.startsWith('SEGUIMIENTO_') ? 'seguimiento' : 'protocolo',
+    prioridad: alertaTiempo.prioridad,
+    mensaje: alertaTiempo.mensaje,
+    accion: alertaTiempo.accion,
+    color: alertaTiempo.prioridad === 'ALTA' ? 'red' : 'orange',
+    horasTranscurridas: alertaTiempo.horasTranscurridas,
+    horasLimite: alertaTiempo.horasLimite,
+    horasRetraso: alertaTiempo.horasRetraso,
+    etapaId: alertaTiempo.etapaId,
+    etiquetaLimite: alertaTiempo.etiquetaLimite,
+  }));
+
+  const alertaAsignacion = evaluarAlertaAsignacionReciente(caso);
+  if (alertaAsignacion) {
+    alertas.unshift(alertaAsignacion);
+  }
+
   const porcentajeObligatoriosSubidos = documentosInfo.totalObligatorios > 0 
     ? (documentosInfo.totalObligatoriosSubidos / documentosInfo.totalObligatorios) * 100 
     : 0;
@@ -474,108 +354,7 @@ export const generarAlertasCaso = (caso) => {
     ? (documentosInfo.totalSubidos / documentosInfo.totalRequeridos) * 100
     : 0;
 
-  // Alertas por documentos faltantes (con intensidad reducida si hay documentos subidos)
-  // IMPORTANTE: Solo generar alertas para documentos que NO tienen fecha asignada
-  // Si un documento tiene fecha, se considera completado y NO genera alerta
-  documentosFaltantes.forEach(doc => {
-    // Verificar si tiene fecha asignada (si tiene campoFecha)
-    const tieneFecha = doc.campoFecha && caso[doc.campoFecha] && caso[doc.campoFecha] !== null && caso[doc.campoFecha] !== '';
-    
-    // Si tiene fecha, NO generar alerta (el documento se considera completado)
-    if (tieneFecha) {
-      return; // Saltar este documento, no generar alerta
-    }
-    
-    // Reducir prioridad si hay documentos subidos
-    let prioridad = doc.obligatorio ? 'ALTA' : 'MEDIA';
-    let color = doc.obligatorio ? 'red' : 'orange';
-    
-    // Si hay documentos obligatorios subidos, reducir la intensidad de las alertas
-    if (documentosInfo.totalObligatoriosSubidos > 0) {
-      if (porcentajeObligatoriosSubidos >= 80) {
-        // Si el 80% o más de obligatorios están subidos, reducir prioridad
-        if (prioridad === 'ALTA') prioridad = 'MEDIA';
-        if (color === 'red') color = 'orange';
-      } else if (porcentajeObligatoriosSubidos >= 50) {
-        // Si el 50% o más están subidos, mantener pero con mensaje menos urgente
-        if (prioridad === 'ALTA') prioridad = 'MEDIA';
-      }
-    }
-    
-    if (doc.obligatorio) {
-      alertas.push({
-        tipo: 'DOCUMENTO_OBLIGATORIO',
-        prioridad,
-        mensaje: `⚠️ Falta documento obligatorio: ${doc.nombre}`,
-        accion: `Subir ${doc.nombre} o asignar fecha`,
-        color,
-        intensidadReducida: documentosInfo.totalObligatoriosSubidos > 0
-      });
-    } else {
-      alertas.push({
-        tipo: 'DOCUMENTO_OPCIONAL',
-        prioridad,
-        mensaje: `📄 Documento pendiente: ${doc.nombre}`,
-        accion: `Considerar subir ${doc.nombre} o asignar fecha`,
-        color,
-        intensidadReducida: documentosInfo.totalSubidos > 0
-      });
-    }
-  });
-
-  // Alertas por inactividad según sistema de recordatorios
-  // Solo enviar alerta si debeEnviarAlerta es true (según los umbrales de días)
-  if (inactividad.debeEnviarAlerta) {
-    let mensaje = '';
-    let prioridad = 'MEDIA';
-    let tipo = 'INACTIVIDAD';
-    
-    if (inactividad.nivelRecordatorio === 'CONTINUO') {
-      // Después de 30 días: insistir continuamente
-      mensaje = `🚨 URGENTE: Caso sin actividad por ${inactividad.dias} días. Se requiere atención inmediata.`;
-      prioridad = 'ALTA';
-      tipo = 'INACTIVIDAD_CRITICA_CONTINUA';
-    } else if (inactividad.nivelRecordatorio === 1) {
-      // Primer recordatorio: 5 días
-      mensaje = `⏰ Recordatorio 1: Caso sin actividad por ${inactividad.dias} días`;
-      prioridad = 'MEDIA';
-      tipo = 'INACTIVIDAD_RECORDATORIO_1';
-    } else if (inactividad.nivelRecordatorio === 2) {
-      // Segundo recordatorio: 7 días
-      mensaje = `⚠️ Recordatorio 2: Caso sin actividad por ${inactividad.dias} días`;
-      prioridad = 'MEDIA';
-      tipo = 'INACTIVIDAD_RECORDATORIO_2';
-    } else if (inactividad.nivelRecordatorio === 3) {
-      // Tercer recordatorio: 15 días
-      mensaje = `🔔 Recordatorio 3: Caso sin actividad por ${inactividad.dias} días`;
-      prioridad = 'ALTA';
-      tipo = 'INACTIVIDAD_RECORDATORIO_3';
-    } else if (inactividad.nivelRecordatorio === 4) {
-      // Cuarto recordatorio: 30 días
-      mensaje = `🚨 Recordatorio 4: Caso sin actividad por ${inactividad.dias} días`;
-      prioridad = 'ALTA';
-      tipo = 'INACTIVIDAD_RECORDATORIO_4';
-    } else {
-      // Fallback para casos sin actividad registrada
-      mensaje = `🚨 Caso sin actividad registrada`;
-      prioridad = 'ALTA';
-      tipo = 'INACTIVIDAD_SIN_REGISTRO';
-    }
-    
-    alertas.push({
-      tipo,
-      prioridad,
-      mensaje,
-      accion: inactividad.nivelRecordatorio === 'CONTINUO' 
-        ? 'Actualizar caso inmediatamente - Recordatorio continuo activo'
-        : 'Revisar y actualizar caso',
-      color: inactividad.nivelRecordatorio === 'CONTINUO' || inactividad.nivelRecordatorio >= 3 ? 'red' : 'orange',
-      diasInactividad: inactividad.dias,
-      nivelRecordatorio: inactividad.nivelRecordatorio
-    });
-  }
-
-  // Alertas por fechas vencidas (no insistir al ajustador si ya cerró etapa con informe final completo)
+  // Caso con mucho tiempo abierto (control gerencial)
   const hoy = new Date();
   if (caso.fchaAsgncion && !informeFinalCompletoEtapaAjustador(caso)) {
     const fechaAsignacion = new Date(caso.fchaAsgncion);
@@ -583,10 +362,11 @@ export const generarAlertasCaso = (caso) => {
     if (diasDesdeAsignacion > 60) {
       alertas.push({
         tipo: 'CASO_ANTIGUO',
+        categoria: 'gerencial',
         prioridad: 'ALTA',
-        mensaje: `📅 Caso asignado hace ${diasDesdeAsignacion} días`,
-        accion: 'Revisar estado y prioridad',
-        color: 'red'
+        mensaje: `Caso asignado hace ${diasDesdeAsignacion} días sin cierre operativo`,
+        accion: 'Revisar estado y prioridad del caso',
+        color: 'red',
       });
     }
   }
@@ -656,8 +436,8 @@ export const obtenerAlertasAjustador = async (codigoResponsable) => {
     console.log(`🚫 Casos finalizados excluidos (estados 4, 5, 6)`);
     console.log(`🚫 Casos viejos excluidos (anteriores a octubre 2025): ${todosLosCasos.length - casos.length}`);
     
-    // Generar alertas para cada caso (la función generarAlertasCaso también verifica la fecha como doble verificación)
-    const alertasGeneradas = casos.map(caso => generarAlertasCaso(caso));
+    const protocolo = await obtenerProtocoloActivo();
+    const alertasGeneradas = casos.map((caso) => generarAlertasCaso(caso, protocolo));
     
     // Filtrar solo casos con alertas
     const casosConAlertas = alertasGeneradas.filter(caso => caso.totalAlertas > 0);
@@ -738,6 +518,56 @@ export const obtenerAlertasTodosAjustadores = async () => {
     console.error('❌ Error obteniendo alertas de todos los ajustadores:', error);
     throw error;
   }
+};
+
+/** Evalúa alertas de un caso (para UI en formulario / mis alertas). */
+export const evaluarAlertasDeCaso = async (caso) => {
+  const protocolo = await obtenerProtocoloActivo();
+  return generarAlertasCaso(caso, protocolo);
+};
+
+/** Alertas del ajustador logueado (login = cédula/código en codiRespnsble). */
+export const obtenerMisAlertasPorLogin = async (login, nombreUsuario = '') => {
+  const protocolo = await obtenerProtocoloActivo();
+  const loginNorm = String(login || '').trim();
+  const nombreNorm = String(nombreUsuario || '').trim().toLowerCase();
+
+  const todosLosCasos = await Complex.find({
+    codiEstdo: { $nin: [4, 5, 6] },
+  });
+
+  const casos = todosLosCasos.filter((caso) => {
+    if (!debeRecibirAlertas(caso)) return false;
+    const codigo = String(caso.codiRespnsble || '').trim();
+    if (loginNorm && codigo === loginNorm) return true;
+    const nombreCaso = String(caso.nombreResponsable || caso.responsable || '').trim().toLowerCase();
+    if (nombreNorm && nombreCaso && nombreCaso === nombreNorm) return true;
+    return false;
+  });
+
+  const casosConAlertas = casos
+    .map((caso) => generarAlertasCaso(caso, protocolo, { alcance: 'ajustador' }))
+    .filter((c) => c.totalAlertas > 0)
+    .sort((a, b) => b.prioridadMaxima - a.prioridadMaxima);
+
+  return {
+    login: loginNorm,
+    totalCasos: casos.length,
+    casosConAlertas: casosConAlertas.length,
+    totalAlertas: casosConAlertas.reduce((sum, c) => sum + c.totalAlertas, 0),
+    casos: casosConAlertas,
+  };
+};
+
+/** Alertas de un caso por número de ajuste o _id */
+export const obtenerAlertasDeCaso = async (identificador) => {
+  const protocolo = await obtenerProtocoloActivo();
+  let caso = await Complex.findOne({ nmroAjste: identificador });
+  if (!caso && identificador?.length === 24) {
+    caso = await Complex.findById(identificador);
+  }
+  if (!caso) return null;
+  return generarAlertasCaso(caso, protocolo);
 };
 
 // Función para enviar alertas por email a un ajustador
