@@ -7,6 +7,7 @@ const TIPOS = [
   'tipo_averia',
   'tipo_inspeccion',
   'tipo_transporte',
+  'tipo_mercancia',
   'aseguradora',
   'sucursal',
   'estado_acta',
