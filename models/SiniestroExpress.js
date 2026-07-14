@@ -21,6 +21,8 @@ const SiniestroExpressSchema = new mongoose.Schema({
   fechaCargueFiniquito: Date,
   amparo: { type: String, required: true },
   valorIndemnizacion: Number,
+  /** Estado del liquidador Express (conceptos, deducible, checklist, salvamento) */
+  liquidador: { type: mongoose.Schema.Types.Mixed, default: null },
   observacionesSeguimiento: String,
   anexos: [AnexoSchema],
   aseguradora: { type: String, required: true },

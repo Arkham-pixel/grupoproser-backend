@@ -81,6 +81,20 @@ const serializarSiniestroExpress = (documento) => {
   return obj;
 };
 
+const parseLiquidadorPayload = (valor, fallback = null) => {
+  if (valor === undefined || valor === null || valor === '') return fallback ?? null;
+  if (typeof valor === 'object' && !Array.isArray(valor)) return valor;
+  if (typeof valor === 'string') {
+    try {
+      const parsed = JSON.parse(valor);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    } catch {
+      return fallback ?? null;
+    }
+  }
+  return fallback ?? null;
+};
+
 const parseAnexosExistentes = (valor) => {
   if (valor === undefined || valor === null) return [];
   let lista = valor;
@@ -271,6 +285,7 @@ const buildExpressPayload = (
     data.valorIndemnizacion,
     base.valorIndemnizacion ?? null
   ),
+  liquidador: parseLiquidadorPayload(data.liquidador, base.liquidador ?? null),
   observacionesSeguimiento: toStringOrNull(
     data.observacionesSeguimiento,
     base.observacionesSeguimiento ?? null
@@ -409,6 +424,30 @@ export const listarSiniestrosExpress = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Error al obtener los siniestros express',
+      detalle: error.message,
+    });
+  }
+};
+
+export const obtenerSiniestroExpress = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const documento = await buscarSiniestroExpressPorId(id);
+    if (!documento) {
+      return res.status(404).json({
+        success: false,
+        error: 'Siniestro express no encontrado',
+      });
+    }
+    res.json({
+      success: true,
+      data: serializarSiniestroExpress(documento),
+    });
+  } catch (error) {
+    console.error('❌ Error al obtener siniestro express:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al obtener el siniestro express',
       detalle: error.message,
     });
   }

@@ -31,7 +31,11 @@ import {
   resolverControlHorasDesdeEnvios,
 } from '../utils/controlHorasUtils.js';
 import { resolverUsuarioAsignador } from '../utils/resolverUsuarioAsignador.js';
-import { alinearCamposProtocoloDesdeHistorialDocs } from '../config/ajusteTrazabilidadComplexMap.js';
+import {
+  alinearCamposProtocoloDesdeHistorialDocs,
+  MAPEO_TIPO_HISTORIAL_A_COMPLEX,
+  protegerFechasHitosTrazabilidad,
+} from '../config/ajusteTrazabilidadComplexMap.js';
 
 const CAMPOS_METADATOS_USUARIO = ['usuarioAsignadorLogin', 'usuarioAsignadorNombre', 'loginAsignador', 'nombreAsignador'];
 
@@ -1661,13 +1665,46 @@ export const actualizarComplex = async (req, res) => {
     const updateData = { ...datosParaActualizar };
 
     // Alinear anexos/fechas de protocolo con historialDocs (p. ej. documentos generados desde Ajuste).
+    // Si el payload es un sync parcial (historial + anexos/fechas), NUNCA sobrescribir
+    // fechas de hito que ya existen en el caso: editar el formato no debe mover fchaInspccion etc.
     if (Array.isArray(updateData.historialDocs) && updateData.historialDocs.length > 0) {
+      const keysUpdate = Object.keys(updateData);
+      const esSyncParcialHistorial =
+        keysUpdate.length <= 8 &&
+        keysUpdate.every(
+          (k) =>
+            k === 'historialDocs' ||
+            k.startsWith('anex') ||
+            k.startsWith('anxo') ||
+            k.startsWith('fcha')
+        );
+
+      if (esSyncParcialHistorial) {
+        Object.values(MAPEO_TIPO_HISTORIAL_A_COMPLEX).forEach((cfg) => {
+          if (!cfg?.campoFecha) return;
+          const valorAnterior = casoAnterior?.[cfg.campoFecha];
+          const tieneAnterior =
+            valorAnterior != null && String(valorAnterior).trim() !== '';
+          if (tieneAnterior && Object.prototype.hasOwnProperty.call(updateData, cfg.campoFecha)) {
+            delete updateData[cfg.campoFecha];
+          }
+        });
+      }
+
+      const baseAlineacion = esSyncParcialHistorial
+        ? { ...(casoAnterior.toObject?.() || casoAnterior), ...updateData }
+        : updateData;
       const alineado = alinearCamposProtocoloDesdeHistorialDocs(
-        updateData,
+        baseAlineacion,
         updateData.historialDocs,
-        { soloSiVacio: true }
+        { soloSiVacio: true, alinearFechas: false }
       );
-      Object.assign(updateData, alineado);
+      Object.values(MAPEO_TIPO_HISTORIAL_A_COMPLEX).forEach((cfg) => {
+        if (cfg.campoAnexo && alineado[cfg.campoAnexo] != null) {
+          updateData[cfg.campoAnexo] = alineado[cfg.campoAnexo];
+        }
+        // Fechas de hito: no se alinean desde historialDocs (solo edición manual del caso).
+      });
     }
     
     // Mapeo de campos de facturación: variantes -> nombres del schema Complex (camelCase)
@@ -1826,6 +1863,17 @@ export const actualizarComplex = async (req, res) => {
       console.log('🔧 [actualizarComplex] Actualizando codiRespnsble:', updateData.codiRespnsble);
     }
     
+    // Fechas de hito: una vez puestas NO se modifican por sync de acta/ajuste/historial
+    // ni por autosave sucio. Solo cambian con edición manual explícita en el caso.
+    const updateDataProtegido = protegerFechasHitosTrazabilidad(casoAnterior, updateData, {
+      forzarFechasProtocolo: updateData.forzarFechasProtocolo === true,
+      fechasHitoEditadasManualmente: updateData.fechasHitoEditadasManualmente,
+    });
+    Object.keys(updateData).forEach((k) => {
+      if (!(k in updateDataProtegido)) delete updateData[k];
+    });
+    Object.assign(updateData, updateDataProtegido);
+
     const anteriorObj = casoAnterior.toObject?.() ?? casoAnterior;
     const siguienteObj = { ...anteriorObj, ...updateData };
     await deleteOrphanedStoredFiles(

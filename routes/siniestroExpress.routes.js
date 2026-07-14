@@ -2,6 +2,7 @@ import express from 'express';
 import {
   crearSiniestroExpress,
   listarSiniestrosExpress,
+  obtenerSiniestroExpress,
   actualizarSiniestroExpress,
   eliminarSiniestroExpress,
 } from '../controllers/siniestroExpress.controller.js';
@@ -21,6 +22,7 @@ const uploadExpress = upload.fields([
 ]);
 
 router.get('/', listarSiniestrosExpress);
+router.get('/:id', obtenerSiniestroExpress);
 router.post('/', uploadExpress, persistExpressFiles, crearSiniestroExpress);
 router.put('/:id', uploadExpress, persistExpressFiles, actualizarSiniestroExpress);
 router.delete('/:id', eliminarSiniestroExpress);

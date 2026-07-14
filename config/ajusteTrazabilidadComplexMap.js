@@ -39,6 +39,94 @@ export const MAPEO_TIPO_HISTORIAL_A_COMPLEX = {
   },
 };
 
+/**
+ * Fechas de hito de trazabilidad: una vez guardadas solo pueden cambiarse
+ * con edición manual explícita en el caso Complex (ajustador / admin / quien asigna).
+ */
+export const CAMPOS_FECHA_HITOS_TRAZABILIDAD = [
+  'fchaAsgncion',
+  'fchaContIni',
+  'fchaCoordInspeccion',
+  'fchaProgInspeccion',
+  'fchaInspccion',
+  'fchaSoliDocu',
+  'fchaInfoPrelm',
+  'fchaRepoActi',
+  'fchaInfoFnal',
+  'fchaPresentacionCifras',
+  'fchaAceptacionCifrasAseguradora',
+  'fchaEnvioFiniquito',
+];
+
+function campoTieneValorFecha(valor) {
+  return valor != null && String(valor).trim() !== '';
+}
+
+function normalizarClaveDiaFecha(valor) {
+  if (!campoTieneValorFecha(valor)) return '';
+  const str = String(valor).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
+  const d = valor instanceof Date ? valor : new Date(str);
+  if (Number.isNaN(d.getTime())) return str;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Protege fechas de hito ya persistidas.
+ * Solo permite cambiarlas si vienen en `fechasHitoEditadasManualmente` o `forzarFechasProtocolo`.
+ * Nunca borra una fecha existente con un valor vacío.
+ */
+export function protegerFechasHitosTrazabilidad(casoAnterior, updateData, opciones = {}) {
+  if (!updateData || typeof updateData !== 'object') return updateData || {};
+
+  const forzar = opciones.forzarFechasProtocolo === true || updateData.forzarFechasProtocolo === true;
+  const editadas = new Set(
+    [
+      ...(Array.isArray(opciones.fechasHitoEditadasManualmente)
+        ? opciones.fechasHitoEditadasManualmente
+        : []),
+      ...(Array.isArray(updateData.fechasHitoEditadasManualmente)
+        ? updateData.fechasHitoEditadasManualmente
+        : []),
+    ]
+      .map((c) => String(c || '').trim())
+      .filter(Boolean)
+  );
+
+  const resultado = { ...updateData };
+  delete resultado.fechasHitoEditadasManualmente;
+  delete resultado.forzarFechasProtocolo;
+  delete resultado._origenGuardado;
+
+  CAMPOS_FECHA_HITOS_TRAZABILIDAD.forEach((campo) => {
+    if (!Object.prototype.hasOwnProperty.call(resultado, campo)) return;
+
+    const anterior = casoAnterior?.[campo];
+    const nuevo = resultado[campo];
+    const tieneAnterior = campoTieneValorFecha(anterior);
+
+    if (!tieneAnterior) return; // primera vez: se permite llenar
+
+    if (!campoTieneValorFecha(nuevo)) {
+      // No permitir borrar una fecha de hito ya puesta.
+      delete resultado[campo];
+      return;
+    }
+
+    const mismoDia =
+      normalizarClaveDiaFecha(anterior) === normalizarClaveDiaFecha(nuevo);
+    if (mismoDia) return;
+
+    if (forzar || editadas.has(campo)) return;
+
+    // Cambio automático / spillover (ajuste, historial, autosave sucio): conservar la original.
+    delete resultado[campo];
+  });
+
+  return resultado;
+}
+
+
 /** estado del formulario de Ajuste → tipo en historialDocs */
 export const MAPEO_ESTADO_AJUSTE_A_TIPO_HISTORIAL = {
   actaInspeccion: 'inspeccion',
@@ -100,17 +188,18 @@ function obtenerUltimoDocumentoPorTipo(historialDocs, tipoHistorial) {
 }
 
 /**
- * Rellena anexos y fechas de protocolo desde historialDocs.
- * @param {object} datos - payload o caso a enriquecer
+ * Rellena anexos (y opcionalmente fechas) de protocolo desde historialDocs.
+ * Por defecto SOLO alinea anexos: las fechas de hito no se tocan desde documentos.
+ * @param {object} datos
  * @param {object[]} historialDocs
- * @param {{ forzarTipos?: string[], soloSiVacio?: boolean }} [opciones]
+ * @param {{ forzarTipos?: string[], soloSiVacio?: boolean, alinearFechas?: boolean }} [opciones]
  */
 export function alinearCamposProtocoloDesdeHistorialDocs(
   datos,
   historialDocs,
   opciones = {}
 ) {
-  const { forzarTipos = [], soloSiVacio = true } = opciones;
+  const { forzarTipos = [], soloSiVacio = true, alinearFechas = false } = opciones;
   const resultado = { ...datos };
   const forzarSet = new Set(forzarTipos);
 
@@ -127,7 +216,7 @@ export function alinearCamposProtocoloDesdeHistorialDocs(
       if (puedeEscribir) resultado[cfg.campoAnexo] = nombre;
     }
 
-    if (cfg.campoFecha && fecha) {
+    if (alinearFechas && cfg.campoFecha && fecha) {
       const puedeEscribir = forzar || !soloSiVacio || !campoTieneValor(resultado, cfg.campoFecha);
       if (puedeEscribir) resultado[cfg.campoFecha] = fecha;
     }
@@ -138,20 +227,22 @@ export function alinearCamposProtocoloDesdeHistorialDocs(
 
 /**
  * Construye campos de protocolo para un guardado desde Ajuste (un tipo/versión).
+ * Por defecto NO sobrescribe la fecha del hito si el caso ya la tiene.
  */
 export function buildCamposProtocoloDesdeAjuste({
   tipoHistorial,
   nombreArchivo,
   fechaPreferida,
   fechaFallback,
+  fechaExistenteCaso = '',
+  soloSiVacioFecha = true,
 }) {
   const cfg = MAPEO_TIPO_HISTORIAL_A_COMPLEX[tipoHistorial];
   if (!cfg || !nombreArchivo) return {};
 
-  const fecha = String(fechaPreferida || fechaFallback || '').trim();
   const out = {};
   if (cfg.campoAnexo) out[cfg.campoAnexo] = String(nombreArchivo).trim();
-  if (cfg.campoFecha && fecha) out[cfg.campoFecha] = fecha;
+  // El acta/ajuste no escribe ni mueve fechas de hito; solo el caso Complex a mano.
   return out;
 }
 
@@ -160,4 +251,10 @@ export function resolverFechaFormularioAjuste(datosFormulario, tipoHistorial, fe
   if (!campo || !datosFormulario) return fechaFallback || '';
   const valor = String(datosFormulario[campo] || '').trim();
   return valor || fechaFallback || '';
+}
+
+export function obtenerFechaProtocoloCaso(caso, tipoHistorial) {
+  const cfg = MAPEO_TIPO_HISTORIAL_A_COMPLEX[tipoHistorial];
+  if (!cfg?.campoFecha || !caso) return '';
+  return String(caso[cfg.campoFecha] || '').trim();
 }
