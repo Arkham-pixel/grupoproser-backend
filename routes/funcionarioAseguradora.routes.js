@@ -4,7 +4,8 @@ import {
   obtenerFuncionarioPorId, 
   crearFuncionario, 
   actualizarFuncionario, 
-  eliminarFuncionario 
+  eliminarFuncionario,
+  actualizarEmailFuncionario,
 } from '../controllers/funcionarioAseguradoraController.js';
 import { verificarAdminSoporte } from '../middleware/verificarAdminSoporte.js';
 
@@ -12,6 +13,10 @@ const router = express.Router();
 
 // GET /api/funcionarios-aseguradora - Obtener todos los funcionarios o filtrar por codiAsgrdra (público para lectura)
 router.get('/', obtenerFuncionarios);
+
+// Completar correo del analista desde control de horas (antes de /:id)
+router.post('/actualizar-email', actualizarEmailFuncionario);
+router.patch('/actualizar-email', actualizarEmailFuncionario);
 
 // GET /api/funcionarios-aseguradora/:id - Obtener un funcionario por ID (público para lectura)
 router.get('/:id', obtenerFuncionarioPorId);

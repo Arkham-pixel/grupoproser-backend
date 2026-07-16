@@ -144,3 +144,77 @@ export const eliminarFuncionario = async (req, res) => {
     res.status(500).json({ success: false, error: 'Error al eliminar funcionario', detalle: error.message });
   }
 };
+
+/**
+ * Actualiza solo el correo del analista/contacto de aseguradora.
+ * Usado desde control de horas cuando el catálogo no tiene email.
+ * No requiere rol admin: cualquier usuario autenticado del flujo Complex puede completar el dato.
+ */
+export const actualizarEmailFuncionario = async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim();
+    const codiAsgrdra = String(req.body?.codiAsgrdra || '').trim();
+    const funcAsgrdra = String(req.body?.funcAsgrdra || req.body?.id || '').trim();
+    const nmbrContcto = String(
+      req.body?.nmbrContcto || req.body?.funcAsgrdraNombre || req.body?.nombre || ''
+    ).trim();
+
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ success: false, error: 'Correo electrónico inválido' });
+    }
+
+    let funcionario = null;
+
+    if (funcAsgrdra && /^[a-fA-F0-9]{24}$/.test(funcAsgrdra)) {
+      funcionario = await FuncionarioAseguradora.findById(funcAsgrdra);
+    }
+
+    if (!funcionario && funcAsgrdra && /^\d+$/.test(funcAsgrdra)) {
+      funcionario = await FuncionarioAseguradora.findOne({ id: Number(funcAsgrdra) });
+    }
+
+    if (!funcionario && funcAsgrdra && codiAsgrdra) {
+      funcionario = await FuncionarioAseguradora.findOne({
+        codiAsgrdra,
+        $or: [{ id: funcAsgrdra }, { nmbrContcto: funcAsgrdra }],
+      });
+    }
+
+    if (!funcionario && nmbrContcto && codiAsgrdra) {
+      funcionario = await FuncionarioAseguradora.findOne({
+        codiAsgrdra,
+        nmbrContcto: { $regex: new RegExp(`^${nmbrContcto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+      });
+    }
+
+    if (!funcionario && nmbrContcto) {
+      funcionario = await FuncionarioAseguradora.findOne({
+        nmbrContcto: { $regex: new RegExp(`^${nmbrContcto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+      });
+    }
+
+    if (!funcionario) {
+      return res.status(404).json({
+        success: false,
+        error:
+          'No se encontró el analista en el catálogo. Verifique Datos Generales (funcionario de la aseguradora).',
+      });
+    }
+
+    funcionario.email = email;
+    await funcionario.save();
+
+    return res.json({
+      success: true,
+      data: funcionario,
+      mensaje: 'Correo del analista actualizado en el catálogo',
+    });
+  } catch (error) {
+    console.error('Error al actualizar email de funcionario:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al actualizar el correo del analista',
+      detalle: error.message,
+    });
+  }
+};
