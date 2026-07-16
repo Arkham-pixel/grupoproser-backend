@@ -9,6 +9,7 @@ import {
   notificarHonorarios,
   notificarControlHoras,
   notificarGerencia,
+  solicitarCorreccionControlHoras,
   cambiarEstadosFinalizadosAFacturado,
   contarCasosAseguradoras,
   obtenerAutofillAjuste,
@@ -64,6 +65,7 @@ router.post('/test-email', async (req, res) => {
 
 router.post('/notificaciones/honorarios', notificarHonorarios);
 router.post('/notificaciones/control-horas', notificarControlHoras);
+router.post('/notificaciones/control-horas/correccion', solicitarCorreccionControlHoras);
 router.post('/notificaciones/gerencia', notificarGerencia);
 
 // Cambiar casos FINALIZADOS a FACTURADO (ejecución manual)

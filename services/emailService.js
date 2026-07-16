@@ -1285,6 +1285,85 @@ export const enviarNotificacionControlHoras = async (datos) => {
   }
 };
 
+/**
+ * Avisa al ajustador (responsable del caso) que debe corregir el control de horas
+ * desde ARNALD o reemplazar el archivo adjunto.
+ */
+export const enviarSolicitudCorreccionControlHoras = async (datos) => {
+  try {
+    const emailDestino = String(datos.emailDestino || '').trim();
+    if (!emailDestino || !emailDestino.includes('@')) {
+      return { success: false, message: 'No se encontró correo del ajustador' };
+    }
+
+    const numeroCaso = datos.numeroCaso || datos.nmroAjste || 'Sin número';
+    const numeroSiniestro = datos.numeroSiniestro || datos.nmroSinstro || 'N/A';
+    const nombreAjustador = datos.nombreAjustador || datos.responsable || 'Ajustador';
+    const mensaje =
+      String(datos.mensaje || '').trim() ||
+      'Se detectó un error en el control de horas. Por favor corríjalo.';
+    const solicitadoPor = datos.solicitadoPorNombre || datos.solicitadoPor || 'Gerencia / Facturación';
+    const frontendUrl = resolveFrontendUrl();
+    const enlaceCaso = datos.casoId
+      ? `${frontendUrl}/editar-caso/${datos.casoId}`
+      : frontendUrl;
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #1f2937;">
+        <div style="background:#DC2626; color:#fff; padding:16px 20px; border-radius:8px 8px 0 0;">
+          <h2 style="margin:0; font-size:18px;">Solicitud de corrección — Control de horas</h2>
+        </div>
+        <div style="border:1px solid #e5e7eb; border-top:none; padding:20px; border-radius:0 0 8px 8px;">
+          <p>Hola <strong>${nombreAjustador}</strong>,</p>
+          <p>
+            Se encontró un problema en el <strong>control de horas</strong> del caso
+            <strong>${numeroCaso}</strong> (siniestro <strong>${numeroSiniestro}</strong>).
+          </p>
+          <div style="background:#fff7ed; border-left:4px solid #f59e0b; padding:12px 14px; margin:16px 0;">
+            <p style="margin:0 0 6px; font-weight:bold;">Observación:</p>
+            <p style="margin:0; white-space:pre-wrap;">${mensaje.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+          </div>
+          <p style="margin-bottom:8px;"><strong>Qué debe hacer:</strong></p>
+          <ol style="margin-top:0; padding-left:20px;">
+            <li>Abrir el caso en ARNALD y corregir el control de horas desde Facturación, <em>o</em></li>
+            <li>Reemplazar el archivo Excel/adjunto del control de horas y volver a notificar.</li>
+          </ol>
+          <p style="margin:20px 0;">
+            <a href="${enlaceCaso}"
+               style="display:inline-block; background:#DC2626; color:#fff; text-decoration:none; padding:10px 16px; border-radius:6px; font-weight:600;">
+              Abrir caso en ARNALD
+            </a>
+          </p>
+          <p style="font-size:12px; color:#6b7280; margin-top:24px;">
+            Solicitado por: ${solicitadoPor}
+          </p>
+        </div>
+      </div>
+    `;
+
+    const mailOptions = {
+      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+      to: emailDestino,
+      subject: `Corregir control de horas — Caso ${numeroCaso}`,
+      html,
+    };
+
+    const info = await deliverMail(mailOptions, {
+      tipo: 'correccion_control_horas',
+      casoId: datos.casoId,
+    });
+
+    return {
+      success: true,
+      messageId: info.messageId,
+      destinatarioPrincipal: emailDestino,
+    };
+  } catch (error) {
+    console.error('❌ Error enviando solicitud de corrección de control de horas:', error);
+    throw new Error(`Error enviando solicitud de corrección: ${error.message}`);
+  }
+};
+
 export const enviarNotificacionGerencia = async (datos) => {
   try {
     console.log('📧 ===== INICIANDO ENVÍO DE NOTIFICACIÓN DE GERENCIA =====');
@@ -1829,4 +1908,146 @@ export const enviarAlertaTarea = async (datosTarea) => {
     console.error('❌ Error enviando alerta de tarea:', error);
     throw new Error(`Error enviando alerta de tarea: ${error.message}`);
   }
+};
+
+function formatearFechaCortaCorreo(fecha) {
+  if (!fecha) return 'Sin fecha límite';
+  try {
+    return new Date(fecha).toLocaleDateString('es-CO', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  } catch {
+    return String(fecha);
+  }
+}
+
+/** Notifica a un ajustador interno que le asignaron una subtarea de un caso Complex. */
+export const enviarNotificacionSubtareaInterna = async (datos = {}) => {
+  const email = String(datos.emailDestino || '').trim();
+  if (!email) {
+    return { success: false, message: 'Sin email de destino' };
+  }
+
+  const frontendUrl = resolveFrontendUrl();
+  const urlSubtarea = datos.subtareaId
+    ? `${frontendUrl}/complex/mis-subtareas?abrir=${datos.subtareaId}`
+    : `${frontendUrl}/complex/mis-subtareas`;
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+    to: email,
+    subject: `Subtarea Complex asignada — ${datos.nmroAjste || 'Caso'}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background:#f8f9fa; padding:20px;">
+        <div style="background:#fff; padding:28px; border-radius:10px;">
+          <h1 style="color:#1f2937; font-size:22px; margin:0 0 8px;">Nueva subtarea Complex</h1>
+          <p style="color:#6b7280; margin:0 0 20px;">Te asignaron una subtarea en un caso conjunto.</p>
+          <table style="width:100%; border-collapse:collapse; margin-bottom:20px;">
+            <tr><td style="padding:6px 0; color:#6b7280;">Caso</td><td style="padding:6px 0; font-weight:bold;">${datos.nmroAjste || '—'}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">Subtarea</td><td style="padding:6px 0; font-weight:bold;">${datos.titulo || '—'}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">Asignado por</td><td style="padding:6px 0;">${datos.creadoPorNombre || datos.creadoPorLogin || '—'}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">Fecha límite</td><td style="padding:6px 0;">${formatearFechaCortaCorreo(datos.fechaLimite)}</td></tr>
+          </table>
+          ${datos.descripcion ? `<p style="color:#374151;"><strong>Descripción:</strong><br>${datos.descripcion}</p>` : ''}
+          ${datos.instrucciones ? `<p style="color:#374151;"><strong>Instrucciones:</strong><br>${datos.instrucciones}</p>` : ''}
+          <div style="text-align:center; margin-top:28px;">
+            <a href="${urlSubtarea}" style="display:inline-block; background:#c8102e; color:#fff; text-decoration:none; padding:12px 22px; border-radius:8px; font-weight:bold;">
+              Ir a mi subtarea
+            </a>
+          </div>
+        </div>
+      </div>
+    `,
+  };
+
+  const info = await deliverMail(mailOptions, { tipo: 'subtareaInterna' });
+  return { success: true, messageId: info.messageId };
+};
+
+/** Envía enlace mágico a un ajustador externo para diligenciar una subtarea. */
+export const enviarNotificacionSubtareaExterna = async (datos = {}) => {
+  const email = String(datos.emailDestino || '').trim();
+  const token = String(datos.token || '').trim();
+  if (!email || !token) {
+    return { success: false, message: 'Email o token faltante' };
+  }
+
+  const frontendUrl = resolveFrontendUrl();
+  const urlPublica = `${frontendUrl}/complex/subtarea/${token}`;
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+    to: email,
+    subject: `Solicitud de apoyo — Caso ${datos.nmroAjste || 'Complex'}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background:#f8f9fa; padding:20px;">
+        <div style="background:#fff; padding:28px; border-radius:10px;">
+          <h1 style="color:#1f2937; font-size:22px; margin:0 0 8px;">Grupo Proser — Apoyo en inspección</h1>
+          <p style="color:#6b7280; margin:0 0 20px;">
+            Hola ${datos.nombreDestino || 'ajustador'}, te solicitaron diligenciar información de un caso.
+          </p>
+          <table style="width:100%; border-collapse:collapse; margin-bottom:20px;">
+            <tr><td style="padding:6px 0; color:#6b7280;">Caso</td><td style="padding:6px 0; font-weight:bold;">${datos.nmroAjste || '—'}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">Tarea</td><td style="padding:6px 0; font-weight:bold;">${datos.titulo || '—'}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">Solicita</td><td style="padding:6px 0;">${datos.creadoPorNombre || 'Ajustador Grupo Proser'}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">Fecha límite</td><td style="padding:6px 0;">${formatearFechaCortaCorreo(datos.fechaLimite)}</td></tr>
+          </table>
+          ${datos.descripcion ? `<p style="color:#374151;"><strong>Descripción:</strong><br>${datos.descripcion}</p>` : ''}
+          ${datos.instrucciones ? `<p style="color:#374151;"><strong>Qué debe diligenciar:</strong><br>${datos.instrucciones}</p>` : ''}
+          <div style="text-align:center; margin-top:28px;">
+            <a href="${urlPublica}" style="display:inline-block; background:#c8102e; color:#fff; text-decoration:none; padding:12px 22px; border-radius:8px; font-weight:bold;">
+              Abrir formulario
+            </a>
+          </div>
+          <p style="color:#9ca3af; font-size:12px; margin-top:24px; text-align:center;">
+            Este enlace es personal y puede vencer. No requiere usuario de la plataforma.
+          </p>
+        </div>
+      </div>
+    `,
+  };
+
+  const info = await deliverMail(mailOptions, { tipo: 'subtareaExterna' });
+  return { success: true, messageId: info.messageId, urlPublica };
+};
+
+/** Avisa al creador/responsable cuando el externo o interno completa la subtarea. */
+export const enviarNotificacionSubtareaCompletada = async (datos = {}) => {
+  const email = String(datos.emailDestino || '').trim();
+  if (!email) {
+    return { success: false, message: 'Sin email de destino' };
+  }
+
+  const frontendUrl = resolveFrontendUrl();
+  const urlCaso = datos.casoId
+    ? `${frontendUrl}/complex/excel`
+    : frontendUrl;
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+    to: email,
+    subject: `Subtarea completada — ${datos.nmroAjste || 'Caso Complex'}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background:#f8f9fa; padding:20px;">
+        <div style="background:#fff; padding:28px; border-radius:10px;">
+          <h1 style="color:#059669; font-size:22px; margin:0 0 8px;">Subtarea completada</h1>
+          <p style="color:#374151;">
+            <strong>${datos.nombreCompletoPor || 'El asignado'}</strong> marcó como completada la subtarea
+            <strong>${datos.titulo || ''}</strong> del caso <strong>${datos.nmroAjste || '—'}</strong>.
+          </p>
+          ${datos.observacionesAsignado ? `<p style="color:#6b7280;"><strong>Observaciones:</strong><br>${datos.observacionesAsignado}</p>` : ''}
+          <div style="text-align:center; margin-top:24px;">
+            <a href="${urlCaso}" style="display:inline-block; background:#111827; color:#fff; text-decoration:none; padding:12px 22px; border-radius:8px; font-weight:bold;">
+              Ver en el caso
+            </a>
+          </div>
+        </div>
+      </div>
+    `,
+  };
+
+  const info = await deliverMail(mailOptions, { tipo: 'subtareaCompletada' });
+  return { success: true, messageId: info.messageId };
 }; 

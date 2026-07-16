@@ -7,7 +7,7 @@ import SecurUser from '../models/SecurUser.js';
 import Estado from '../models/Estado.js';
 import FuncionarioAseguradora from '../models/FuncionarioAseguradora.js';
 import Cliente from '../models/Cliente.js';
-import { enviarNotificacionAsignacion, enviarNotificacionAseguradora, enviarNotificacionCreador, enviarNotificacionHonorarios, enviarNotificacionControlHoras, enviarNotificacionGerencia } from '../services/emailService.js';
+import { enviarNotificacionAsignacion, enviarNotificacionAseguradora, enviarNotificacionCreador, enviarNotificacionHonorarios, enviarNotificacionControlHoras, enviarNotificacionGerencia, enviarSolicitudCorreccionControlHoras } from '../services/emailService.js';
 import {
   listarBandejaFacturacion,
   persistirEnvioFacturacionTrasCorreo,
@@ -2609,6 +2609,108 @@ export const notificarControlHoras = async (req, res) => {
   } catch (error) {
     console.error('❌ Error enviando notificación de control de horas:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+async function resolverEmailAjustador(codiRespnsble) {
+  const codigo = String(codiRespnsble || '').trim();
+  if (!codigo) return { email: '', nombre: '' };
+
+  const responsable = await Responsable.findOne({
+    codiRespnsble: codigo,
+  }).lean();
+
+  if (!responsable) {
+    const responsableCi = await Responsable.findOne({
+      codiRespnsble: { $regex: new RegExp(`^${codigo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+    }).lean();
+    if (responsableCi?.email?.trim()) {
+      return {
+        email: responsableCi.email.trim(),
+        nombre: responsableCi.nmbrRespnsble || codigo,
+      };
+    }
+  } else if (responsable.email?.trim()) {
+    return {
+      email: responsable.email.trim(),
+      nombre: responsable.nmbrRespnsble || codigo,
+    };
+  }
+
+  const usuario = await SecurUser.findOne({
+    $or: [{ login: codigo }, { cedula: codigo }],
+  }).lean();
+
+  return {
+    email: usuario?.email?.trim() || '',
+    nombre: usuario?.nombre || usuario?.name || codigo,
+  };
+}
+
+/** Solicita al ajustador corregir el control de horas desde ARNALD o re-subir el archivo. */
+export const solicitarCorreccionControlHoras = async (req, res) => {
+  try {
+    const {
+      casoId,
+      numeroCaso,
+      mensaje,
+      solicitadoPor,
+      solicitadoPorNombre,
+    } = req.body || {};
+
+    if (!casoId && !numeroCaso) {
+      return res.status(400).json({
+        success: false,
+        error: 'Debe indicar el caso (casoId o numeroCaso)',
+      });
+    }
+
+    let caso = null;
+    if (casoId && mongoose.Types.ObjectId.isValid(String(casoId))) {
+      caso = await Complex.findById(casoId).lean();
+      if (!caso) caso = await Siniestro.findById(casoId).lean();
+    }
+    if (!caso && numeroCaso) {
+      caso = await Complex.findOne({ nmroAjste: String(numeroCaso).trim() }).lean();
+      if (!caso) {
+        caso = await Siniestro.findOne({ nmroAjste: String(numeroCaso).trim() }).lean();
+      }
+    }
+
+    if (!caso) {
+      return res.status(404).json({ success: false, error: 'Caso no encontrado' });
+    }
+
+    const { email, nombre } = await resolverEmailAjustador(caso.codiRespnsble);
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error:
+          'El ajustador del caso no tiene correo registrado. Contacte al responsable o actualice su correo en el catálogo.',
+      });
+    }
+
+    const resultado = await enviarSolicitudCorreccionControlHoras({
+      casoId: String(caso._id),
+      numeroCaso: caso.nmroAjste || numeroCaso,
+      numeroSiniestro: caso.nmroSinstro,
+      emailDestino: email,
+      nombreAjustador: nombre,
+      mensaje,
+      solicitadoPor: solicitadoPor || req.headers['x-usuario-login'] || '',
+      solicitadoPorNombre:
+        solicitadoPorNombre || req.headers['x-usuario-nombre'] || solicitadoPor || '',
+    });
+
+    return res.json({
+      success: true,
+      resultado,
+      emailEnviado: email,
+      ajustador: nombre,
+    });
+  } catch (error) {
+    console.error('❌ Error solicitando corrección de control de horas:', error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 };
 

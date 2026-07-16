@@ -97,6 +97,35 @@ export async function registrarEnvioFacturacion(casoId, datos) {
     return { ok: false, motivo: 'datos_invalidos' };
   }
 
+  // Evitar duplicados por doble clic / reenvío inmediato del mismo tipo y gerente
+  const casoActual =
+    (await Complex.findById(casoId).select('envios_facturacion').lean()) ||
+    (await Siniestro.findById(casoId).select('envios_facturacion').lean());
+  const envios = Array.isArray(casoActual?.envios_facturacion) ? casoActual.envios_facturacion : [];
+  const ahora = Date.now();
+  const ventanaMs = 2 * 60 * 1000;
+  const duplicadoReciente = envios.some((envio) => {
+    if (!envio || typeof envio !== 'object') return false;
+    if (String(envio.tipo || '') !== String(registro.tipo || '')) return false;
+    if (String(envio.gerente || '').toLowerCase() !== String(registro.gerente || '').toLowerCase()) {
+      return false;
+    }
+    if (String(envio.rolEnvio || 'principal') !== String(registro.rolEnvio || 'principal')) {
+      return false;
+    }
+    const fecha = envio.fechaEnvio ? new Date(envio.fechaEnvio).getTime() : 0;
+    return Number.isFinite(fecha) && ahora - fecha < ventanaMs;
+  });
+
+  if (duplicadoReciente) {
+    console.warn('⚠️ [facturación] Envío duplicado omitido (mismo tipo/gerente en < 2 min)', {
+      casoId,
+      tipo: registro.tipo,
+      gerente: registro.gerente,
+    });
+    return { ok: true, registro: null, casoId: String(casoId), omitidoDuplicado: true };
+  }
+
   const update = {
     $push: { envios_facturacion: registro },
     $set: {
