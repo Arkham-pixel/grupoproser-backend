@@ -31,6 +31,61 @@ const construirFiltroPorNumeroAjuste = (numeroAjuste) => ({
   ]
 });
 
+/** Extrae nombre de asegurado/tomador aunque venga como objeto. */
+const textoAseguradoHistorial = (...candidatos) => {
+  for (const raw of candidatos) {
+    if (raw == null || raw === '') continue;
+    if (typeof raw === 'string') {
+      const t = raw.trim();
+      if (t && t !== 'N/A' && t !== '[object Object]') return t;
+      continue;
+    }
+    if (typeof raw === 'object') {
+      const t = String(raw.nombre || raw.name || raw.razonSocial || raw.asegurado || '').trim();
+      if (t && t !== 'N/A') return t;
+    }
+  }
+  return '';
+};
+
+const esTipoAjusteHistorial = (tipo) => String(tipo || '').toLowerCase().includes('ajuste');
+
+const enriquecerTituloAjusteConAsegurado = (titulo, asegurado, tipo) => {
+  const tituloBase = String(titulo || '').trim();
+  const aseg = textoAseguradoHistorial(asegurado);
+  if (!aseg || !esTipoAjusteHistorial(tipo)) return tituloBase;
+  if (tituloBase.toLowerCase().includes(aseg.toLowerCase())) return tituloBase;
+  return tituloBase ? `${tituloBase} - ${aseg}` : `Informe de Ajuste - ${aseg}`;
+};
+
+const adjuntarAseguradoEnListado = async (formularios = []) => {
+  if (!Array.isArray(formularios) || formularios.length === 0) return formularios;
+  const ids = formularios.map((f) => f._id).filter(Boolean);
+  if (ids.length === 0) return formularios;
+
+  const extras = await HistorialFormulario.find({ _id: { $in: ids } })
+    .select('asegurado datos.asegurado datos.tomador tipo titulo')
+    .lean();
+  const porId = new Map(extras.map((e) => [String(e._id), e]));
+
+  return formularios.map((f) => {
+    const extra = porId.get(String(f._id));
+    const asegurado = textoAseguradoHistorial(
+      f.asegurado,
+      extra?.asegurado,
+      extra?.datos?.asegurado,
+      extra?.datos?.tomador
+    );
+    const tipo = f.tipo || extra?.tipo;
+    const titulo = enriquecerTituloAjusteConAsegurado(f.titulo || extra?.titulo, asegurado, tipo);
+    return {
+      ...f,
+      asegurado,
+      titulo: titulo || f.titulo
+    };
+  });
+};
+
 const normalizarClaveComparable = (valor) =>
   String(valor || '')
     .normalize('NFD')
@@ -914,7 +969,7 @@ class HistorialController {
       }
 
       // 3. Aplicar nombres encontrados a los formularios
-      const formulariosEnriquecidos = formularios.map(formulario => {
+      let formulariosEnriquecidos = formularios.map(formulario => {
         if (!formulario.nombreUsuario || formulario.nombreUsuario === 'Usuario' || formulario.nombreUsuario === 'unknown') {
           const userId = formulario.userId || formulario.usuario;
           if (userId && userId !== 'unknown') {
@@ -927,6 +982,9 @@ class HistorialController {
         }
         return formulario;
       });
+
+      // 4. Adjuntar asegurado y enriquecer título de ajustes (sin cargar datos completos)
+      formulariosEnriquecidos = await adjuntarAseguradoEnListado(formulariosEnriquecidos);
 
       res.json({
         success: true,
@@ -1349,6 +1407,13 @@ class HistorialController {
       console.log('📝 === FIN OBTENCIÓN DE NOMBRE ===');
       console.log('📝 Nombre final que se guardará:', nombreUsuarioCompleto);
 
+      const aseguradoGuardado = textoAseguradoHistorial(
+        req.body?.asegurado,
+        datos?.asegurado,
+        datos?.tomador
+      );
+      const tituloConAsegurado = enriquecerTituloAjusteConAsegurado(titulo, aseguradoGuardado, tipo);
+
       // Archivo por defecto: un solo timestamp y nombre coherente con la ruta (evita descargas 404 por nombre ≠ archivo en disco).
       const tsArchivo = Date.now();
       const nombreArchivoDefecto = archivo?.nombre || `${tipo}_${tsArchivo}.docx`;
@@ -1360,7 +1425,8 @@ class HistorialController {
       // Crear el formulario
       const nuevoFormulario = new HistorialFormulario({
         tipo,
-        titulo,
+        titulo: tituloConAsegurado || titulo,
+        asegurado: aseguradoGuardado,
         estadoActual: estadoVersionAjuste || datos?.estadoActual || 'inicial',
         // Sistema de carpetas por caso
         casoId,
@@ -1565,6 +1631,27 @@ class HistorialController {
           }
         }
       });
+
+      const aseguradoActualizado = textoAseguradoHistorial(
+        datosActualizacion.asegurado,
+        datosActualizacion.datos?.asegurado,
+        datosActualizacion.datos?.tomador,
+        formulario.asegurado,
+        formulario.datos?.asegurado,
+        formulario.datos?.tomador
+      );
+      if (aseguradoActualizado) {
+        updateFields.asegurado = aseguradoActualizado;
+      }
+      const tipoActual = datosActualizacion.tipo || formulario.tipo;
+      const tituloBase = datosActualizacion.titulo || formulario.titulo;
+      if (esTipoAjusteHistorial(tipoActual)) {
+        updateFields.titulo = enriquecerTituloAjusteConAsegurado(
+          tituloBase,
+          aseguradoActualizado,
+          tipoActual
+        );
+      }
 
       console.log('💾 Ejecutando actualización selectiva en MongoDB...');
       
@@ -1852,6 +1939,10 @@ class HistorialController {
       if (!esAdminOSoporte && userIdUsuario) {
         formularios = formularios.filter(form => form.userId === userIdUsuario);
       }
+
+      formularios = await adjuntarAseguradoEnListado(
+        formularios.map((f) => (typeof f.toObject === 'function' ? f.toObject() : f))
+      );
 
       res.json({
         success: true,

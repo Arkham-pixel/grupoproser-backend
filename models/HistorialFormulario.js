@@ -14,6 +14,14 @@ const historialFormularioSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+
+  // Nombre del asegurado/tomador (para listar/buscar en historial sin cargar datos)
+  asegurado: {
+    type: String,
+    trim: true,
+    default: '',
+    index: true
+  },
   
   // Sistema de carpetas por caso
   casoId: {
@@ -292,7 +300,10 @@ historialFormularioSchema.statics.buscarPorTexto = function(texto) {
   return this.find({
     $or: [
       { titulo: { $regex: texto, $options: 'i' } },
+      { asegurado: { $regex: texto, $options: 'i' } },
       { usuario: { $regex: texto, $options: 'i' } },
+      { 'datos.asegurado': { $regex: texto, $options: 'i' } },
+      { 'datos.tomador': { $regex: texto, $options: 'i' } },
       { 'datos.actaNumero': { $regex: texto, $options: 'i' } },
       { 'datos.numeroAjuste': { $regex: texto, $options: 'i' } },
       { 'datos.casoNumero': { $regex: texto, $options: 'i' } }
