@@ -4,9 +4,11 @@ import FuncionarioAseguradora from '../models/FuncionarioAseguradora.js';
 import Cliente from '../models/Cliente.js';
 import mongoose from 'mongoose';
 import Estado from '../models/Estado.js';
+import { sanearFechasImposibles } from '../utils/sanearFechas.js';
 
 export const crearSiniestro = async (req, res) => {
   try {
+    sanearFechasImposibles(req.body, 'crearSiniestro');
     const nuevoSiniestro = new Siniestro(req.body);
     await nuevoSiniestro.save();
     res.status(201).json(nuevoSiniestro);
@@ -48,6 +50,7 @@ export const obtenerSiniestroPorId = async (req, res) => {
 // Actualizar un siniestro por ID (todos los campos)
 export const actualizarSiniestro = async (req, res) => {
   try {
+    sanearFechasImposibles(req.body, `actualizarSiniestro ${req.params.id}`);
     const siniestro = await Siniestro.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!siniestro) return res.status(404).json({ mensaje: 'No encontrado' });
     res.json(siniestro);

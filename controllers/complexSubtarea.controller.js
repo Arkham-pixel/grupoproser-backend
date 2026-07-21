@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
+import { JWT_SECRET } from '../config/secrets.js';
 import Complex from '../models/Complex.js';
 import ComplexSubtarea from '../models/ComplexSubtarea.js';
 import Responsable from '../models/Responsable.js';
@@ -22,6 +24,42 @@ import {
 const DIAS_TOKEN_DEFAULT = 30;
 const ESTADOS_ASIGNADO = new Set(['pendiente', 'en_progreso', 'completada']);
 const ESTADOS_GESTION = new Set(['pendiente', 'en_progreso', 'completada', 'cancelada']);
+
+/** Etapas cuyo entregable es un formato (informe); exigen adjuntarlo para completar. */
+const ETAPAS_REQUIEREN_FORMATO = new Set([
+  'informePreliminar',
+  'informeFinal',
+  'presentacionCifras',
+]);
+
+function subtareaRequiereFormato(subtarea) {
+  return ETAPAS_REQUIEREN_FORMATO.has(String(subtarea?.etapaTrazabilidad || '').trim());
+}
+
+function tieneFormatoAdjunto(subtarea) {
+  return (subtarea?.archivos || []).some((a) => a.tipoArchivo === 'formato');
+}
+
+/**
+ * Origen del front que hizo la petición (localhost en dev, Arnald en producción),
+ * para que los enlaces de los correos apunten al entorno correcto.
+ */
+function frontendUrlDesdeReq(req) {
+  const candidatos = [req.headers.origin, req.headers.referer];
+  for (const valor of candidatos) {
+    const s = String(valor || '').trim();
+    if (!s) continue;
+    try {
+      const u = new URL(s);
+      if (u.protocol === 'http:' || u.protocol === 'https:') {
+        return `${u.protocol}//${u.host}`;
+      }
+    } catch {
+      /* siguiente candidato */
+    }
+  }
+  return '';
+}
 
 function hashToken(raw) {
   return crypto.createHash('sha256').update(String(raw)).digest('hex');
@@ -169,7 +207,7 @@ async function resolverNombreUsuario(usuario) {
   return login;
 }
 
-async function notificarAsignacion(subtarea, caso, tokenRaw = null) {
+async function notificarAsignacion(subtarea, caso, tokenRaw = null, frontendUrl = '') {
   if (subtarea.tipoAsignado === 'interno') {
     const email =
       subtarea.emailAsignado || (await resolverEmailResponsable(subtarea.codiAsignado));
@@ -185,6 +223,7 @@ async function notificarAsignacion(subtarea, caso, tokenRaw = null) {
       fechaLimite: subtarea.fechaLimite,
       creadoPorNombre: subtarea.creadoPorNombre,
       creadoPorLogin: subtarea.creadoPorLogin,
+      frontendUrl,
     });
   }
 
@@ -203,6 +242,7 @@ async function notificarAsignacion(subtarea, caso, tokenRaw = null) {
     instrucciones: subtarea.instrucciones,
     fechaLimite: subtarea.fechaLimite,
     creadoPorNombre: subtarea.creadoPorNombre,
+    frontendUrl,
   });
 }
 
@@ -244,7 +284,7 @@ function marcarInicioTrabajo(subtarea, cuando = new Date()) {
 }
 
 /** Avisa al asignado (interno o externo) que la subtarea fue reabierta con el motivo. */
-async function notificarReapertura(subtarea, caso, reabiertaPorNombre, motivo) {
+async function notificarReapertura(subtarea, caso, reabiertaPorNombre, motivo, frontendUrl = '') {
   let email = '';
   if (subtarea.tipoAsignado === 'interno') {
     email =
@@ -262,6 +302,7 @@ async function notificarReapertura(subtarea, caso, reabiertaPorNombre, motivo) {
     fechaLimite: subtarea.fechaLimite,
     reabiertaPorNombre,
     motivo,
+    frontendUrl,
   });
 }
 
@@ -517,7 +558,7 @@ export async function crearSubtarea(req, res) {
 
     let notificacion = null;
     try {
-      notificacion = await notificarAsignacion(creada, caso, tokenRaw);
+      notificacion = await notificarAsignacion(creada, caso, tokenRaw, frontendUrlDesdeReq(req));
       creada.notificadoEn = new Date();
       await creada.save();
     } catch (err) {
@@ -594,6 +635,18 @@ export async function actualizarSubtarea(req, res) {
       });
     }
 
+    // Etapas de informe: exigen el formato adjunto antes de cerrar
+    if (
+      estado === 'completada' &&
+      subtareaRequiereFormato(subtarea) &&
+      !tieneFormatoAdjunto(subtarea)
+    ) {
+      return res.status(400).json({
+        error:
+          'Esta etapa exige el formato (informe) antes de completarla: genérelo en el formulario de ajuste; quedará adjunto a la subtarea.',
+      });
+    }
+
     if (gestiona) {
       if (titulo !== undefined) subtarea.titulo = String(titulo).trim() || subtarea.titulo;
       if (descripcion !== undefined) subtarea.descripcion = String(descripcion);
@@ -660,7 +713,8 @@ export async function actualizarSubtarea(req, res) {
           subtarea,
           caso,
           nombreReabre,
-          subtarea.motivoReapertura
+          subtarea.motivoReapertura,
+          frontendUrlDesdeReq(req)
         );
       } catch (err) {
         console.error('⚠️ Error notificando reapertura:', err.message);
@@ -720,7 +774,12 @@ export async function reenviarNotificacion(req, res) {
       await subtarea.save();
     }
 
-    const notificacion = await notificarAsignacion(subtarea, caso, tokenRaw);
+    const notificacion = await notificarAsignacion(
+      subtarea,
+      caso,
+      tokenRaw,
+      frontendUrlDesdeReq(req)
+    );
     subtarea.notificadoEn = new Date();
     await subtarea.save();
 
@@ -797,6 +856,8 @@ function payloadPublico(subtarea, caso) {
     descripcion: subtarea.descripcion,
     instrucciones: subtarea.instrucciones,
     estado: subtarea.estado,
+    etapaTrazabilidad: subtarea.etapaTrazabilidad || '',
+    requiereFormato: subtareaRequiereFormato(subtarea),
     fechaLimite: subtarea.fechaLimite,
     observacionesAsignado: subtarea.observacionesAsignado,
     archivos: (subtarea.archivos || []).map((a) => ({
@@ -854,6 +915,16 @@ export async function actualizarPublica(req, res) {
       if (!ESTADOS_ASIGNADO.has(estado)) {
         return res.status(400).json({ error: 'Estado no permitido' });
       }
+      if (
+        estado === 'completada' &&
+        subtareaRequiereFormato(subtarea) &&
+        !tieneFormatoAdjunto(subtarea)
+      ) {
+        return res.status(400).json({
+          error:
+            'Debe diligenciar y guardar el formulario de ajuste (informe) antes de marcar la tarea como completada.',
+        });
+      }
       aplicarCambioEstado(
         subtarea,
         estado,
@@ -889,6 +960,65 @@ export async function actualizarPublica(req, res) {
     return res.json(payloadPublico(subtarea, caso));
   } catch (error) {
     console.error('❌ actualizarPublica:', error);
+    return res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * Sesión limitada para que el asignado externo diligencie el formulario de
+ * ajuste real de la plataforma. Emite un JWT con rol "externo" atado a la
+ * subtarea; el middleware restringirExterno limita qué APIs puede usar.
+ */
+export async function crearSesionAjusteExterna(req, res) {
+  try {
+    const found = await encontrarPorToken(req.params.token);
+    if (!found) return res.status(404).json({ error: 'Enlace inválido o inexistente' });
+    if (found.expirada) return res.status(410).json({ error: 'El enlace ha vencido' });
+    const subtarea = found.subtarea;
+    if (subtarea.estado === 'cancelada') {
+      return res.status(410).json({ error: 'Subtarea cancelada' });
+    }
+    if (subtarea.tipoAsignado !== 'externo') {
+      return res.status(403).json({ error: 'Enlace no válido para esta subtarea' });
+    }
+
+    const caso = await cargarCaso(subtarea.casoId);
+    if (!caso) return res.status(404).json({ error: 'Caso no encontrado' });
+
+    const nombre = subtarea.nombreExterno || subtarea.emailExterno || 'Externo';
+    const sesion = jwt.sign(
+      {
+        id: `externo-subtarea-${subtarea._id}`,
+        login: `externo:${subtarea._id}`,
+        role: 'externo',
+        externo: true,
+        subtareaId: String(subtarea._id),
+        casoId: String(caso._id),
+        nmroAjste: caso.nmroAjste || subtarea.nmroAjste || '',
+        nombre,
+      },
+      JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+
+    if (subtarea.estado === 'pendiente') {
+      aplicarCambioEstado(subtarea, 'en_progreso', nombre, 'Abrió el formulario de ajuste');
+      await subtarea.save();
+    }
+
+    return res.json({
+      token: sesion,
+      nombre,
+      subtarea: {
+        id: String(subtarea._id),
+        titulo: subtarea.titulo,
+        etapaTrazabilidad: subtarea.etapaTrazabilidad || '',
+        estado: subtarea.estado,
+      },
+      caso,
+    });
+  } catch (error) {
+    console.error('❌ crearSesionAjusteExterna:', error);
     return res.status(500).json({ error: error.message });
   }
 }

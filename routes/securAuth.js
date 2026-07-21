@@ -1,5 +1,6 @@
 // routes/securAuth.js
 import express from "express";
+import mongoose from "mongoose";
 import SecurUser from "../models/SecurUser.js";
 import SesionUsuario from "../models/SesionUsuario.js";
 import bcrypt from "bcryptjs";
@@ -2461,6 +2462,12 @@ router.post("/logout", async (req, res) => {
       }
     }
     
+    // Sesiones externas (enlace de subtarea) no se registran en SesionUsuario
+    // y su id no es un ObjectId; no hay nada que cerrar en BD.
+    if (decoded?.externo || !mongoose.Types.ObjectId.isValid(String(decoded?.id || ''))) {
+      return res.json({ message: "Sesión cerrada" });
+    }
+
     // Buscar la sesión activa más reciente del usuario
     const sesionActiva = await SesionUsuario.findOne({
       usuarioId: decoded.id,

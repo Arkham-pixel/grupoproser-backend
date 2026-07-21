@@ -30,6 +30,12 @@ export const GERENTES_FACTURACION = {
 /** Supervisor: puede ver la bandeja de todos los jefes (no es jefe). */
 export const LOGIN_SUPERVISOR_BANDEJA = '1065012991';
 
+/** Usuarios con acceso de lectura a la bandeja de todos los jefes. */
+export const LOGINS_SUPERVISORES_BANDEJA = [
+  LOGIN_SUPERVISOR_BANDEJA,
+  '1140829957', // Arnaldo Andrés Tapia Gutierrez
+];
+
 const LOGIN_A_GERENTE = Object.values(GERENTES_FACTURACION).reduce((acc, g) => {
   g.logins.forEach((login) => {
     acc[String(login).trim()] = g.clave;
@@ -58,10 +64,10 @@ export function nombreGerente(clave) {
 }
 
 export function esSupervisorBandejaFacturacion(login) {
-  return String(login || '').trim() === LOGIN_SUPERVISOR_BANDEJA;
+  return LOGINS_SUPERVISORES_BANDEJA.includes(String(login || '').trim());
 }
 
-/** Solo jefes de facturación y el supervisor (Oscar Atencio). */
+/** Jefes de facturación y supervisores con acceso de lectura. */
 export function usuarioPuedeVerBandejaFacturacion({ login }) {
   if (esSupervisorBandejaFacturacion(login)) return true;
   return Boolean(resolverGerenteDesdeLogin(login));
@@ -74,7 +80,7 @@ export function puedeElegirGerenteEnBandeja(login) {
 
 /** Solo Oscar: corregir destinatario o quitar un registro de envío (no borra el caso). */
 export function puedeAdministrarBandejaFacturacion(login) {
-  return esSupervisorBandejaFacturacion(login);
+  return String(login || '').trim() === LOGIN_SUPERVISOR_BANDEJA;
 }
 
 export function emailGerente(clave) {

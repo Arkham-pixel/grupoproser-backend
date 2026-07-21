@@ -18,6 +18,11 @@ const camposArchivoRiesgo = RIESGO_ATTACHMENT_FIELDS;
 
 const esValorVacio = (valor) => valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
 
+// Un campo se considera "no enviado" solo si viene undefined/null.
+// Si el cliente envía una cadena vacía, significa que quiere BORRAR el valor,
+// por lo que NO se debe usar el fallback (el valor viejo de la BD).
+const noFueEnviado = (valor) => valor === undefined || valor === null;
+
 const obtenerNumero = (valor, fallback = 0) => {
   if (esValorVacio(valor)) return fallback;
   const numero = Number(valor);
@@ -25,13 +30,15 @@ const obtenerNumero = (valor, fallback = 0) => {
 };
 
 const obtenerFecha = (valor, fallback = null) => {
-  if (esValorVacio(valor)) return fallback ?? null;
+  if (noFueEnviado(valor)) return fallback ?? null;
+  if (valor === '' || valor === 'null' || valor === 'undefined') return null;
   const fecha = new Date(valor);
   return Number.isNaN(fecha.getTime()) ? fallback ?? null : fecha;
 };
 
 const obtenerCadena = (valor, fallback = '') => {
-  if (esValorVacio(valor)) return fallback ?? '';
+  if (noFueEnviado(valor)) return fallback ?? '';
+  if (valor === 'null' || valor === 'undefined') return '';
   return String(valor);
 };
 

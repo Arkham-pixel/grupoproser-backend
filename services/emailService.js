@@ -1923,6 +1923,17 @@ function formatearFechaCortaCorreo(fecha) {
   }
 }
 
+/**
+ * URL del front para correos de subtareas: usa el origen desde el que se hizo la
+ * acción (localhost en desarrollo, Arnald en producción); si no viene, resuelve
+ * por configuración del servidor.
+ */
+function frontendUrlSubtareas(datos = {}) {
+  const directo = String(datos.frontendUrl || '').trim().replace(/\/+$/, '');
+  if (directo && /^https?:\/\//i.test(directo)) return directo;
+  return resolveFrontendUrl();
+}
+
 /** Notifica a un ajustador interno que le asignaron una subtarea de un caso Complex. */
 export const enviarNotificacionSubtareaInterna = async (datos = {}) => {
   const email = String(datos.emailDestino || '').trim();
@@ -1930,7 +1941,7 @@ export const enviarNotificacionSubtareaInterna = async (datos = {}) => {
     return { success: false, message: 'Sin email de destino' };
   }
 
-  const frontendUrl = resolveFrontendUrl();
+  const frontendUrl = frontendUrlSubtareas(datos);
   const urlSubtarea = datos.subtareaId
     ? `${frontendUrl}/complex/mis-subtareas?abrir=${datos.subtareaId}`
     : `${frontendUrl}/complex/mis-subtareas`;
@@ -1974,7 +1985,7 @@ export const enviarNotificacionSubtareaExterna = async (datos = {}) => {
     return { success: false, message: 'Email o token faltante' };
   }
 
-  const frontendUrl = resolveFrontendUrl();
+  const frontendUrl = frontendUrlSubtareas(datos);
   const urlPublica = `${frontendUrl}/complex/subtarea/${token}`;
 
   const mailOptions = {
@@ -2059,7 +2070,7 @@ export const enviarNotificacionSubtareaReabierta = async (datos = {}) => {
     return { success: false, message: 'Sin email de destino' };
   }
 
-  const frontendUrl = resolveFrontendUrl();
+  const frontendUrl = frontendUrlSubtareas(datos);
   const urlSubtarea = datos.subtareaId
     ? `${frontendUrl}/complex/mis-subtareas?abrir=${datos.subtareaId}`
     : `${frontendUrl}/complex/mis-subtareas`;

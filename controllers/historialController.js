@@ -1,6 +1,7 @@
 import HistorialFormulario from '../models/HistorialFormulario.js';
 import SecurUser from '../models/SecurUser.js';
 import Complex from '../models/Complex.js';
+import ComplexSubtarea from '../models/ComplexSubtarea.js';
 import CasoComplex from '../models/CasoComplex.js';
 import Responsable from '../models/Responsable.js';
 import { UPLOADS_ROOT } from '../config/uploadsRoot.js';
@@ -1032,6 +1033,47 @@ class HistorialController {
         });
       }
 
+      // Sesión externa (enlace de subtarea): solo formularios del caso asignado
+      if (usuarioActual?.externo) {
+        const norm = (v) => String(v || '').trim().toUpperCase().replace(/\s+/g, '');
+        const numCasoJwt = norm(usuarioActual.nmroAjste);
+        const casoIdJwt = String(usuarioActual.casoId || '').trim();
+        const subtareaIdJwt = String(usuarioActual.subtareaId || '').trim();
+        const datos = formulario.datos || {};
+
+        // El numeroCaso/casoId del registro pueden ser genéricos (RPT-..., CASO_...),
+        // así que también se compara contra los datos del formulario y el dueño.
+        const numerosFormulario = [
+          formulario.numeroCaso,
+          datos.numeroCaso,
+          datos.numeroAjuste,
+          datos.nmroAjste,
+          datos.numeroSiniestro,
+        ].map(norm).filter(Boolean);
+        const casoIdsFormulario = [
+          formulario.casoId,
+          datos?.metadata?.complexId,
+        ].map((v) => String(v || '').trim()).filter(Boolean);
+        const propietarios = [formulario.userId, formulario.usuario]
+          .map((v) => String(v || '').trim())
+          .filter(Boolean);
+        const esPropietarioExterno =
+          subtareaIdJwt &&
+          propietarios.some(
+            (p) => p === `externo-subtarea-${subtareaIdJwt}` || p === `externo:${subtareaIdJwt}`
+          );
+
+        const esDeSuCaso =
+          (numCasoJwt && numerosFormulario.includes(numCasoJwt)) ||
+          (casoIdJwt && casoIdsFormulario.includes(casoIdJwt)) ||
+          esPropietarioExterno;
+        if (!esDeSuCaso) {
+          return res.status(403).json({
+            success: false,
+            error: 'No tienes permisos para ver este formulario'
+          });
+        }
+      } else
       // Verificar permisos:
       // 1) dueño del formulario
       // 2) admin/soporte
@@ -1404,6 +1446,11 @@ class HistorialController {
         nombreUsuarioCompleto = 'Usuario';
       }
       
+      // Sesión externa: usar el nombre del asignado externo que viaja en el JWT
+      if (req.user?.externo && String(req.user?.nombre || '').trim()) {
+        nombreUsuarioCompleto = String(req.user.nombre).trim();
+      }
+
       console.log('📝 === FIN OBTENCIÓN DE NOMBRE ===');
       console.log('📝 Nombre final que se guardará:', nombreUsuarioCompleto);
 
@@ -2384,6 +2431,33 @@ class HistorialController {
       await formulario.save();
 
       console.log('✅ Archivo Word guardado exitosamente:', formulario.archivo);
+
+      // Sesión externa (enlace de subtarea): el Word del ajuste queda adjunto
+      // automáticamente a la subtarea como formato (entregable obligatorio).
+      if (req.user?.externo && req.user?.subtareaId) {
+        try {
+          const subtarea = await ComplexSubtarea.findById(req.user.subtareaId);
+          if (subtarea && !['cancelada'].includes(subtarea.estado)) {
+            const marcador = `ajuste-formulario-${formulario._id}`;
+            subtarea.archivos = (subtarea.archivos || []).filter(
+              (a) => a.filename !== marcador
+            );
+            subtarea.archivos.push({
+              nombre: formulario.archivo.nombre,
+              url: formulario.archivo.ruta,
+              filename: marcador,
+              tipoArchivo: 'formato',
+              subidoPor: req.user?.nombre || subtarea.nombreExterno || 'externo',
+              subidoPorTipo: 'externo',
+              fechaSubida: new Date(),
+            });
+            await subtarea.save();
+            console.log('✅ Formato del ajuste adjuntado a la subtarea externa:', subtarea._id.toString());
+          }
+        } catch (subErr) {
+          console.warn('⚠️ No se pudo adjuntar el formato a la subtarea externa:', subErr.message);
+        }
+      }
 
       res.json({
         success: true,

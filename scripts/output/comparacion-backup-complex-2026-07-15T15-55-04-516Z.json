@@ -1,0 +1,601 @@
+{
+  "generadoEn": "2026-07-15T15:55:04.513Z",
+  "liveTotal": 1044,
+  "liveUnicos": 1043,
+  "subtareas": {
+    "total": 1,
+    "porEstado": [
+      {
+        "_id": "completada",
+        "n": 1
+      }
+    ]
+  },
+  "resultados": [
+    {
+      "backup": "C:\\Users\\GP-TI\\Downloads\\gsk3c_appsiniestro.json",
+      "ok": true,
+      "mtime": "2026-01-14T19:28:54.814Z",
+      "size": 1329713,
+      "database": "u226064189_appcontrolbck",
+      "table": "gsk3c_appsiniestro",
+      "backupRows": 696,
+      "backupUnicos": 696,
+      "sinNmro": 0,
+      "liveUnicos": 1043,
+      "nSoloEnBackup_faltanEnMongo": 2,
+      "nSoloEnMongo_noEstabanEnBackup": 349,
+      "nFechasPerdidasEnMongo": 0,
+      "nFechasDiferentes": 10,
+      "nIdentidadPerdida": 0,
+      "sampleSoloBackup": [
+        "20233061",
+        "20233091"
+      ],
+      "sampleSoloLive": [
+        "23",
+        "25",
+        "26",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "2025-11-36",
+        "2025-11-38",
+        "2025-11-39",
+        "2025-11-41",
+        "2025-11-43",
+        "2025-12-44",
+        "2025-12-45",
+        "2025-12-46",
+        "2025-12-47",
+        "2025-12-48",
+        "2025-12-49",
+        "2025-12-50",
+        "2025-12-51",
+        "2025-12-52",
+        "2025-12-53",
+        "2025-12-54",
+        "2025-12-55",
+        "2025-12-56",
+        "2025-12-57"
+      ],
+      "samplePerdidas": [],
+      "sampleDiff": [
+        {
+          "nmroAjste": "20230510",
+          "campo": "fchaSinstro",
+          "backup": "2023-06-22",
+          "live": "2022-06-22"
+        },
+        {
+          "nmroAjste": "20230731",
+          "campo": "fchaAsgncion",
+          "backup": "2024-03-10",
+          "live": "2024-06-18"
+        },
+        {
+          "nmroAjste": "20230782",
+          "campo": "fchaSoliDocu",
+          "backup": "2024-07-03",
+          "live": "2024-07-02"
+        },
+        {
+          "nmroAjste": "20230810",
+          "campo": "fchaContIni",
+          "backup": "2024-08-13",
+          "live": "2024-08-12"
+        },
+        {
+          "nmroAjste": "20230811",
+          "campo": "fchaSinstro",
+          "backup": "2024-01-30",
+          "live": "2024-01-31"
+        },
+        {
+          "nmroAjste": "20230827",
+          "campo": "fchaRepoActi",
+          "backup": "2025-02-18",
+          "live": "2025-02-20"
+        },
+        {
+          "nmroAjste": "20233014",
+          "campo": "fchaInfoPrelm",
+          "backup": "2025-05-27",
+          "live": "2025-05-15"
+        },
+        {
+          "nmroAjste": "20233026",
+          "campo": "fchaContIni",
+          "backup": "2025-05-29",
+          "live": "2025-05-22"
+        },
+        {
+          "nmroAjste": "20233039",
+          "campo": "fchaRepoActi",
+          "backup": "2025-06-26",
+          "live": "2025-06-25"
+        },
+        {
+          "nmroAjste": "20233072",
+          "campo": "fchaSoliDocu",
+          "backup": "2025-07-08",
+          "live": "2025-07-18"
+        }
+      ]
+    },
+    {
+      "backup": "C:\\Users\\GP-TI\\Downloads\\gsk3c_appsiniestro (1).json",
+      "ok": true,
+      "mtime": "2026-01-14T19:55:02.543Z",
+      "size": 1539039,
+      "database": "u226064189_appcontrol",
+      "table": "gsk3c_appsiniestro",
+      "backupRows": 813,
+      "backupUnicos": 813,
+      "sinNmro": 0,
+      "liveUnicos": 1043,
+      "nSoloEnBackup_faltanEnMongo": 3,
+      "nSoloEnMongo_noEstabanEnBackup": 233,
+      "nFechasPerdidasEnMongo": 3,
+      "nFechasDiferentes": 11,
+      "nIdentidadPerdida": 0,
+      "sampleSoloBackup": [
+        "20233061",
+        "20233091",
+        "20233209"
+      ],
+      "sampleSoloLive": [
+        "23",
+        "25",
+        "26",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "2025-11-36",
+        "2025-11-38",
+        "2025-11-39",
+        "2025-11-41",
+        "2025-11-43",
+        "2025-12-44",
+        "2025-12-45",
+        "2025-12-46",
+        "2025-12-47",
+        "2025-12-48",
+        "2025-12-49",
+        "2025-12-50",
+        "2025-12-51",
+        "2025-12-52",
+        "2025-12-53",
+        "2025-12-54",
+        "2025-12-55",
+        "2025-12-56",
+        "2025-12-57"
+      ],
+      "samplePerdidas": [
+        {
+          "nmroAjste": "20233025",
+          "campo": "fchaContIni",
+          "backup": "2025-04-15"
+        },
+        {
+          "nmroAjste": "20233025",
+          "campo": "fchaSoliDocu",
+          "backup": "2025-04-21"
+        },
+        {
+          "nmroAjste": "20233025",
+          "campo": "fchaInfoPrelm",
+          "backup": "2025-10-30"
+        }
+      ],
+      "sampleDiff": [
+        {
+          "nmroAjste": "20230510",
+          "campo": "fchaSinstro",
+          "backup": "2023-06-22",
+          "live": "2022-06-22"
+        },
+        {
+          "nmroAjste": "20230731",
+          "campo": "fchaAsgncion",
+          "backup": "2024-03-10",
+          "live": "2024-06-18"
+        },
+        {
+          "nmroAjste": "20230782",
+          "campo": "fchaSoliDocu",
+          "backup": "2024-07-03",
+          "live": "2024-07-02"
+        },
+        {
+          "nmroAjste": "20230810",
+          "campo": "fchaContIni",
+          "backup": "2024-08-13",
+          "live": "2024-08-12"
+        },
+        {
+          "nmroAjste": "20233014",
+          "campo": "fchaInfoPrelm",
+          "backup": "2025-05-27",
+          "live": "2025-05-15"
+        },
+        {
+          "nmroAjste": "20233026",
+          "campo": "fchaContIni",
+          "backup": "2025-05-29",
+          "live": "2025-05-22"
+        },
+        {
+          "nmroAjste": "20233108",
+          "campo": "fchaInfoPrelm",
+          "backup": "2025-07-25",
+          "live": "2025-07-21"
+        },
+        {
+          "nmroAjste": "20233185",
+          "campo": "fchaContIni",
+          "backup": "2025-10-13",
+          "live": "2025-10-10"
+        },
+        {
+          "nmroAjste": "20233192",
+          "campo": "fchaContIni",
+          "backup": "2025-10-17",
+          "live": "2025-10-15"
+        },
+        {
+          "nmroAjste": "20233192",
+          "campo": "fchaSoliDocu",
+          "backup": "2025-10-17",
+          "live": "2025-10-16"
+        },
+        {
+          "nmroAjste": "20233192",
+          "campo": "fchaInfoPrelm",
+          "backup": "2025-10-18",
+          "live": "2025-10-17"
+        }
+      ]
+    },
+    {
+      "backup": "C:\\Users\\GP-TI\\Downloads\\gsk3c_appsiniestro.csv",
+      "ok": true,
+      "mtime": "2026-01-14T19:52:17.217Z",
+      "size": 685513,
+      "format": "csv",
+      "backupRows": 993,
+      "backupUnicos": 992,
+      "sinNmro": 0,
+      "liveUnicos": 1043,
+      "nSoloEnBackup_faltanEnMongo": 182,
+      "nSoloEnMongo_noEstabanEnBackup": 233,
+      "nFechasPerdidasEnMongo": 3,
+      "nFechasDiferentes": 11,
+      "nIdentidadPerdida": 0,
+      "sampleSoloBackup": [
+        "procesos de cremación de restos en el horno crematorio IMAD de la ciudad de Cartagena y mientras esto ocurría",
+        "Se le informó que se le enviaría solicitud de documentos y qué",
+        "S le solicitó desistimiento telefónicamente y vía correo electrónico pero",
+        "en total normalidad",
+        "se estaba abriendo el establecimiento y se acercan con arma de fuego y ingresaron a hurtar mercancía y dvr con dinero en  efectivo por 1.000.000.00,11001000,NULL,4,NULL,,,,NULL,,,,NULL,,,NULL,,,NULL,,,2025-09-01,2025-09-01,0,FINALIZADO,0,0,0,Coca Nivia Luz Dari,NULL,0,0,0,0,0,0,NULL,,NULL,NULL,NULL,NULL,,0,0,0,0,0.1900,0.1500,0.1100,0.006900",
+        "09/05/2023 SE BLOQUEO EL EQUIPO",
+        "Se anexa Acta de inspección",
+        "En reunión sostenida con la aseguradora",
+        "Se envía informes a Iskharly para que sean cargados en el aplicativo de la aseguradora con sus anexos e informar a esta (Aseguradora)",
+        "Reclamo aseguradora No. 95644 / WF-183979.",
+        "Analista a cargo: Mauricio Ramírez Rodríguez.",
+        "Intermediario: Jorge Alberto Vargas Heinz.,2147483647,2147483647,2147483647,,NULL,0,964796,0,0,0,0,NULL,,NULL,NULL,NULL,NULL,,0,0,0,0,0.0000,0.0000,0.0000,0.000000",
+        "2023",
+        ",2023-07-11,,SOLICITUD DE DOCUMENTOS - 11-07-2023.pdf,Enviado al asegurado",
+        ",,2025-06-18,,,2025-06-19,2025-06-19,0,Informe Final enviado.,30000000,0,0,Multinacional Ltda Asesores De Seuros,NULL,0,0,0,0,0,0,NULL,,NULL,NULL,NULL,NULL,,0,0,0,0,0.0000,0.0000,0.0000,0.000000",
+        ",2023-07-13,,Correo de Proserpuertos - SOLICITUD DOCUMENTOS - STRO 15102304085 - POLIZA 1510000392601 - OSIRIS ELENA RUIZ PADILLA(1).pdf,,2023-07-19,,INFORME PRELIMINAR STRO No. 15102304085(1).pdf,2023-08-01,,INFORME FINAL STRO No. 15102304085(1).pdf,NULL,,Correo de Proserpuertos - PRESENTACION DE CIFRAS - STRO 15102304085 - POLIZA 1510000392601 - OSIRIS ELENA RUIZ PADILLA(1).pdf,2023-08-09,2023-08-09,0,Caso finalizado ,15000000,12396500,11156850,,2023-08-04,0,1898700,0,309059,0,0,NULL,,NULL,NULL,NULL,NULL,,0,0,0,0,0.0000,0.0000,0.0000,0.000000",
+        ",,No aplica",
+        ",NULL,,,No aplica",
+        ",NULL,No aplica",
+        ",,2023-07-23,No aplica",
+        ",0,0,0,,NULL,0,468384,0,468384,557376,492505,NULL,,NULL,NULL,NULL,NULL,,88992,13348,51522,3231,0.1900,0.1500,0.1100,0.006900",
+        "Igualmente",
+        ",NULL,No aplica. Se generará Informe Único. Se le informó a la aseguradora",
+        "Ciudad de los hechos: Cartagena (Bolívar).,13001000,2023-08-16,4,2023-08-14,Se conversa telefónicamente con el intermediario y",
+        "Ciudad de los hechos: Barranquilla (Atlántico).,08001001,2023-08-14,4,2023-08-11,Contacto inicial de Iskharly",
+        ",INFORME_FINAL_-_14-11-2023.pdf,NULL,,,2023-11-14,2023-11-14,0,Informe Final enviado en fecha 14/11/2023,32000000,33324869,0,,NULL,0,711775,0,0,0,0,NULL,,NULL,NULL,NULL,NULL,,0,0,0,0,0.0000,0.0000,0.0000,0.000000",
+        "10. DESCRIPCIÓN DE LOS HECHOS: Indica la administradora del edificio asegurado",
+        "Documento del asegurado: 9014773849",
+        "Correo Electrónico : kinesiogym16@hotmail.com",
+        "Celular: 3012851077"
+      ],
+      "sampleSoloLive": [
+        "23",
+        "25",
+        "26",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "2025-11-36",
+        "2025-11-38",
+        "2025-11-39",
+        "2025-11-41",
+        "2025-11-43",
+        "2025-12-44",
+        "2025-12-45",
+        "2025-12-46",
+        "2025-12-47",
+        "2025-12-48",
+        "2025-12-49",
+        "2025-12-50",
+        "2025-12-51",
+        "2025-12-52",
+        "2025-12-53",
+        "2025-12-54",
+        "2025-12-55",
+        "2025-12-56",
+        "2025-12-57"
+      ],
+      "samplePerdidas": [
+        {
+          "nmroAjste": "20233025",
+          "campo": "fchaContIni",
+          "backup": "2025-04-15"
+        },
+        {
+          "nmroAjste": "20233025",
+          "campo": "fchaSoliDocu",
+          "backup": "2025-04-21"
+        },
+        {
+          "nmroAjste": "20233025",
+          "campo": "fchaInfoPrelm",
+          "backup": "2025-10-30"
+        }
+      ],
+      "sampleDiff": [
+        {
+          "nmroAjste": "20230510",
+          "campo": "fchaSinstro",
+          "backup": "2023-06-22",
+          "live": "2022-06-22"
+        },
+        {
+          "nmroAjste": "20230731",
+          "campo": "fchaAsgncion",
+          "backup": "2024-03-10",
+          "live": "2024-06-18"
+        },
+        {
+          "nmroAjste": "20230782",
+          "campo": "fchaSoliDocu",
+          "backup": "2024-07-03",
+          "live": "2024-07-02"
+        },
+        {
+          "nmroAjste": "20230810",
+          "campo": "fchaContIni",
+          "backup": "2024-08-13",
+          "live": "2024-08-12"
+        },
+        {
+          "nmroAjste": "20233014",
+          "campo": "fchaInfoPrelm",
+          "backup": "2025-05-27",
+          "live": "2025-05-15"
+        },
+        {
+          "nmroAjste": "20233026",
+          "campo": "fchaContIni",
+          "backup": "2025-05-29",
+          "live": "2025-05-22"
+        },
+        {
+          "nmroAjste": "20233108",
+          "campo": "fchaInfoPrelm",
+          "backup": "2025-07-25",
+          "live": "2025-07-21"
+        },
+        {
+          "nmroAjste": "20233185",
+          "campo": "fchaContIni",
+          "backup": "2025-10-13",
+          "live": "2025-10-10"
+        },
+        {
+          "nmroAjste": "20233192",
+          "campo": "fchaContIni",
+          "backup": "2025-10-17",
+          "live": "2025-10-15"
+        },
+        {
+          "nmroAjste": "20233192",
+          "campo": "fchaSoliDocu",
+          "backup": "2025-10-17",
+          "live": "2025-10-16"
+        },
+        {
+          "nmroAjste": "20233192",
+          "campo": "fchaInfoPrelm",
+          "backup": "2025-10-18",
+          "live": "2025-10-17"
+        }
+      ]
+    },
+    {
+      "backup": "C:\\Users\\GP-TI\\Downloads\\gsk3c_appsiniestro (1).csv",
+      "ok": true,
+      "mtime": "2026-01-14T19:53:36.211Z",
+      "size": 679766,
+      "format": "csv",
+      "backupRows": 993,
+      "backupUnicos": 992,
+      "sinNmro": 0,
+      "liveUnicos": 1043,
+      "nSoloEnBackup_faltanEnMongo": 182,
+      "nSoloEnMongo_noEstabanEnBackup": 233,
+      "nFechasPerdidasEnMongo": 3,
+      "nFechasDiferentes": 11,
+      "nIdentidadPerdida": 0,
+      "sampleSoloBackup": [
+        "procesos de cremaci�n de restos en el horno crematorio IMAD de la ciudad de Cartagena y mientras esto ocurr�a, en la cuidad se estaban presentando fuertes lluvias. Hacia las 12:30 PM se produce una descarga el�ctrica atmosf�rica en la zona, la cual produce el apagado del horno del crematorio.;13001000;NULL;4;NULL;;;;NULL;;;;NULL;;;NULL;;;NULL;;;2023-07-31;2023-07-31;0;;0;0;0;;NULL;0;0;0;0;0;0;NULL;;NULL;NULL;NULL;NULL;;0;0;0;0;0.0000;0.0000;0.0000;0.000000",
+        "Se le inform� que se le enviar�a solicitud de documentos y qu�, en nuestra visita a la ciudad de Cartagena (Bol�var) se le contactar� para coordinar la inspecci�n. ;;Pendiente para la pr�xima visita a la ciudad de Cartagena (Bol�var).;2023-04-29;;SOLICITUD DE DOCUMENTOS - 29-04-2023.pdf;Enviado al asegurado, v�a correo electr�nico, con copia al intermediario y a la aseguradora.;2023-04-29;Enviado a la aseguradora, v�a correo electr�nico, en fecha 30/04/2023 y se carga en el aplicativo de la aseguradora en la misma fecha.;INFORME PRELIMINAR - 29-04-2023(1).pdf;2023-05-24;Enviado a la aseguradora v�a correo electr�nico con sus respectivos anexos adjuntos y cargo en el aplicativo de la aseguradora. Fecha de recibido de los �ltimos documentos: 23/05/2023.;INFORME FINAL - 24-05-2023(2).pdf;NULL;;;2023-11-24;2023-11-24;0;Informe Final enviado en fecha 24/05/2023.;30000000;44648800;15231734;;NULL;0;747551;0;0;0;0;NULL;;NULL;NULL;NULL;NULL;;0;0;0;0;0.0000;0.0000;0.0000;0.000000",
+        "S le solicit� desistimiento telef�nicamente y v�a correo electr�nico pero, si no se recibe, se generar� informa �nico recomendado objetar la reclamaci�n.;Correo electr�nico asegurado - 04-05-2023(1).pdf;No aplica.;2023-05-04;;Correo electr�nico asegurado - 04-05-2023(1).pdf;Se solicit� en fecha 04/05/2023, verbalmente y v�a correo electr�nico, desistimiento al no haber cobertura en la p�liza suscrita la reclamaci�n. ;NULL;No aplica.;;2023-05-10;Informe �nico donde se recomienda objetar la reclamaci�n al no tener esta cobertura en la p�liza suscrita. Se env�o a Iskharly v�a correo electr�nico para que sea cargado en el aplicativo de la aseguradora.;INFORME �NICO - 10-05-2023(1).pdf;NULL;;;2023-11-24;2023-11-24;0;Informe �nico enviado en fecha 10/05/2023.;0;0;0;;NULL;0;802364;0;0;0;0;NULL;;NULL;NULL;NULL;NULL;;0;0;0;0;0.1900;0.1500;0.1100;0.006900",
+        "en total normalidad, despu�s de diez minutos la planta se enciende y se apaga sola,;85225009;2023-05-19;4;2023-05-17;Contactamos a la administradora del Conjunto Residencial asegurado y se coordin� llevar a cabo verificaci�n de los da�os a la planta el�ctrica objeto del reclamo el viernes 19 de mayo de 2023, a eso de las 9am ;;Se realiz� la inspecci�n de los da�os a la planta el�ctrica de emergencia objeto del reclamo ;NULL;;;;2023-05-25;No hubo informe preliminar. ;;2023-05-26;Con fecha 25 de mayo presentamos a ZURICH informe de ajuste. El 26 de mayo recibimos instrucciones para presentaci�n de cifras a la Copropiedad asegurada, labor que llevamos a cabo ese mismo d�a a trav�s del Intermediario VOVE SEGURO, el cual no ha sido firmado todav�a;WF178449  STRO 92161  EDIFICIO MULTIFAMILIAR ZAPHIRO - U(1).pdf;NULL;;WF178449  STRO 92161  EDIFICIO MULTIFAMILIAR ZAPHIRO - U.pdf;2024-01-29;2024-01-29;0;FINALIZADO;0;0;0;;NULL;0;998267;0;998267;998267;998267;NULL;;NULL;NULL;NULL;NULL;;0;0;0;0;0.0000;0.0000;0.0000;0.000000",
+        "se estaba abriendo el establecimiento y se acercan con arma de fuego y ingresaron a hurtar mercanc�a y dvr con dinero en  efectivo por 1.000.000.00;11001000;NULL;4;NULL;;;;NULL;;;;NULL;;;NULL;;;NULL;;;2025-09-01;2025-09-01;0;FINALIZADO;0;0;0;Coca Nivia Luz Dari;NULL;0;0;0;0;0;0;NULL;;NULL;NULL;NULL;NULL;;0;0;0;0;0.1900;0.1500;0.1100;0.006900",
+        "09/05/2023 SE BLOQUEO EL EQUIPO, NO REPSONDIO A NADA;08001001;2023-05-26;4;2023-05-25;Contacto inicial el jueves 25 de mayo.;;Inspecci�n coordinada para el viernes 26 de mayo;NULL;;;;NULL;;;2023-06-05;SE envia informe de inspecci�n;INFORME INSPECCI�N DE SINIESTRO QUIRUIMPLANTES.pdf;NULL;;;2023-06-30;2023-06-30;0;;6000000;330000000;6000000;;NULL;0;370395;0;0;0;0;NULL;;NULL;NULL;NULL;NULL;;0;0;0;0;0.0000;0.0000;0.0000;0.000000",
+        "Se anexa Acta de inspecci�n , la cual describe los hallazgos. ;2023-07-04;ACTA PARROQUIA DE LA SAGRADA EUCARISTIA.pdf;Correo de Proserpuertos - SBS -SOLICITUD DE DOCUMENTOS CASO - 914580 - PARROQUIA DE LA SAGRADA EUCARISTIA - 005-529-1000082_.pdf;Se comparte solicitud de documentos la cliente, adjunto certificaci�n. ;2023-07-05;Se comparte informe preliminar del caso con la compa��a ;INFORME PRELIMINAR STRO No. 005-529-1000032.pdf;NULL;;INFORME FINAL  STRO No. 005-529-1000032.pdf;NULL;;RECIBO DE INDEMNIZACION STRO 005-529-1000082.pdf;2025-01-27;2025-01-27;360;;0;0;0;Maria Victoria Mar�n;NULL;0;1397680;0;78962;0;0;NULL;;NULL;NULL;NULL;NULL;;0;0;0;0;0.0000;0.0000;0.0000;0.000000",
+        "En reuni�n sostenida con la aseguradora, solicit� que se enviara informe por TRDM y como RC. Se carga inicialmente, Informe Final general y, en seguimiento, se carga informes individuales de RC y TRDM.",
+        "Se env�a informes a Iskharly para que sean cargados en el aplicativo de la aseguradora con sus anexos e informar a esta (Aseguradora), de ello.;INFORME_FINAL_-_08-08-2023(3).pdf;NULL;;;2023-08-09;2023-08-09;0;Fecha real del siniestro: 17/06/2023.",
+        "Reclamo aseguradora No. 95644 / WF-183979.",
+        "Analista a cargo: Mauricio Ram�rez Rodr�guez.",
+        "Intermediario: Jorge Alberto Vargas Heinz.;2147483647;2147483647;2147483647;;NULL;0;964796;0;0;0;0;NULL;;NULL;NULL;NULL;NULL;;0;0;0;0;0.0000;0.0000;0.0000;0.000000",
+        "2023, se produjo un baj�n de luz;08001001;NULL;4;NULL;;;;NULL;;;;NULL;;;NULL;Se atendi� esta asignaci�n y se realiz� informe de ajuste, y firma de finiquitos autorizados por Zurich;WF_183462  STRO 95309  - L�CTEOS Y REFRESCOS DE LA COSTA SAS - U.pdf;NULL;;;2024-01-22;2024-01-22;0;FINALIZADO ;0;0;0;;NULL;0;1165060;0;0;0;0;NULL;;NULL;NULL;NULL;NULL;;0;0;0;0;0.0000;0.0000;0.0000;0.000000",
+        ";2023-07-11;;SOLICITUD DE DOCUMENTOS - 11-07-2023.pdf;Enviado al asegurado, v�a correo electr�nico, con copia al intermediario.;2023-07-11;Enviado a la aseguradora, v�a correo electr�nico, con sus respectivos anexos adjuntos.;INFORME PRELIMINAR - 11-07-2023.pdf;2025-06-19;Enviado a la aseguradora, v�a correo electr�nico, con sus respectivos anexos adjuntos. Se recomend� objetar por prescripci�n.",
+        ";;2025-06-18;;;2025-06-19;2025-06-19;0;Informe Final enviado.;30000000;0;0;Multinacional Ltda Asesores De Seuros;NULL;0;0;0;0;0;0;NULL;;NULL;NULL;NULL;NULL;;0;0;0;0;0.0000;0.0000;0.0000;0.000000",
+        ";2023-07-13;;Correo de Proserpuertos - SOLICITUD DOCUMENTOS - STRO 15102304085 - POLIZA 1510000392601 - OSIRIS ELENA RUIZ PADILLA(1).pdf;;2023-07-19;;INFORME PRELIMINAR STRO No. 15102304085(1).pdf;2023-08-01;;INFORME FINAL STRO No. 15102304085(1).pdf;NULL;;Correo de Proserpuertos - PRESENTACION DE CIFRAS - STRO 15102304085 - POLIZA 1510000392601 - OSIRIS ELENA RUIZ PADILLA(1).pdf;2023-08-09;2023-08-09;0;Caso finalizado ;15000000;12396500;11156850;;2023-08-04;0;1898700;0;309059;0;0;NULL;;NULL;NULL;NULL;NULL;;0;0;0;0;0.0000;0.0000;0.0000;0.000000",
+        ";;No aplica, reclamo sin cobertura. Saqueo a Maquinaria Usada excluida en la p�liza. Se gener� Informe �nico recomendando objetar la reclamaci�n.",
+        ";NULL;;;No aplica, reclamo sin cobertura. Saqueo a Maquinaria Usada excluida en la p�liza. Se gener� Informe �nico recomendando objetar la reclamaci�n.",
+        ";NULL;No aplica, reclamo sin cobertura. Saqueo a Maquinaria Usada excluida en la p�liza. Se gener� Informe �nico recomendando objetar la reclamaci�n.",
+        ";;2023-07-23;No aplica, reclamo sin cobertura. Saqueo a Maquinaria Usada excluida en la p�liza. Se gener� Informe �nico recomendando objetar la reclamaci�n. Enviado Informe �nico a la aseguradora con sus respectivos anexos adjuntos, v�a correo electr�nico.;INFORME �NICO - 22-07-2023.pdf;NULL;;;2023-07-24;2023-07-24;0;Reclamo sin cobertura. Saqueo a Maquinaria Usada excluida en la p�liza. Se gener� Informe �nico recomendando objetar la reclamaci�n.",
+        ";0;0;0;;NULL;0;468384;0;468384;557376;492505;NULL;;NULL;NULL;NULL;NULL;;88992;13348;51522;3231;0.1900;0.1500;0.1100;0.006900",
+        "Igualmente, se solicit� al intermediario coordinar reuni�n con el asegurado para entender el reclamo y poder solicitar la documentaci�n requerida para continuar con el an�lisis de la reclamaci�n.;;Coordinada por Iskharly Tapia en Funza (Cundinamarca);2023-08-03;2023-07-26 _ IMPOFER - INFORME DE INSPECCI�N(1).docx;SOLICITUD DE DOCUMENTOS - 03-08-2023.pdf;Enviado al asegurado, v�a correo electr�nico, a trav�s del intermediario.",
+        ";NULL;No aplica. Se generar� Informe �nico. Se le inform� a la aseguradora, v�a correo electr�nico, en fecha 03/08/2023.;;2023-09-06;Se env�a a la aseguradora con sus respectivos anexos adjuntos, v�a correo electr�nico. �ltimo documento recibido: 06/09/2023.;INFORME �NICO - 06-09-2023 - CON ANEXOS.pdf;NULL;;;2023-09-06;2023-09-06;0;A la espera del env�o de las condiciones particulares por parte de la aseguradora y de la coordinaci�n de la reuni�n por parte del intermediario con el asegurado.;12000000;11776109;7799820;;NULL;0;4871590;0;0;0;0;NULL;;NULL;NULL;NULL;NULL;;0;0;0;0;0.0000;0.0000;0.0000;0.000000",
+        "Ciudad de los hechos: Cartagena (Bol�var).;13001000;2023-08-16;4;2023-08-14;Se conversa telef�nicamente con el intermediario y, posteriormente con el asegurado, para coordinar nuestra visita de inspecci�n, quedando esta programada para el d�a mi�rcoles 16/08/2023 en la ciudad de Cartagena (Bol�var).;;Da�os en sucursal del Banco de Bogot� por filtraciones de agua desde el piso superior (Piso 2) donde funciona el asegurado. Da�os en cielo raso y equipos electr�nicos varios. Las filtraciones provienen de los ba�os de empleados.;2023-08-24;;SOLICITUD DE DOCUMENTOS - 24-08-2023(1).pdf;Enviado al asegurado, v�a correo electr�nico, a trav�s del intermediario. La comunicaci�n incluye los documentos que el tercero reclamante deber� aportar.;2023-09-19;Enviado a la aseguradora, v�a correo electr�nico, con sus respectivos anexos adjuntos y se carga en el aplicativo de la aseguradora.;INFORME PRELIMINAR - 19-09-2023.pdf;2025-07-25;Enviado a la aseguradora, v�a correo electr�nico, con sus respectivos anexos adjuntos y cargados en el aplicativo de la aseguradora. Se recomend� objetar por prescripci�n de la acci�n directa del asegurado ante la aseguradora.;Informe Final - 25-07-2025(1).pdf;2025-07-24;;;2025-07-25;2025-07-25;0;Informe Final enviado.;100000000;0;0;Protecxa Consultores En Riesgos Y Seguro;NULL;0;1380920;0;0;0;0;NULL;;NULL;NULL;NULL;NULL;;0;0;0;0;0.0000;0.0000;0.0000;0.000000",
+        "Ciudad de los hechos: Barranquilla (Atl�ntico).;08001001;2023-08-14;4;2023-08-11;Contacto inicial de Iskharly, v�a telef�nica, con el asegurado. conversaci�n telef�nica posterior con el asegurado coordinando inspecci�n para el d�a 14/08/2023 en horas de la tarde.;;Da�o en cable de potencia de bomba sumergible que amerita su cambio.;2023-08-16;;SOLICITUD DE DOCUMENTOS - 16-08-2023(2).pdf;Enviado al asegurado, v�a correo electr�nico, con copia al intermediario.;NULL;No aplica.;;2023-08-19;Terminado con Informe �nico. �ltimo documento recibido en fecha 17/08/2023. Enviado a la aseguradora, v�a correo electr�nico, con sus respectivos anexos adjuntos.;INFORME �NICO - 19-08-2023(1).pdf;NULL;;;2023-12-07;2023-12-07;0;Informe Final enviado.;23000000;18595224;16275224;;NULL;0;709841;0;0;0;0;NULL;;NULL;NULL;NULL;NULL;;0;0;0;0;0.0000;0.0000;0.0000;0.000000",
+        ";INFORME_FINAL_-_14-11-2023.pdf;NULL;;;2023-11-14;2023-11-14;0;Informe Final enviado en fecha 14/11/2023;32000000;33324869;0;;NULL;0;711775;0;0;0;0;NULL;;NULL;NULL;NULL;NULL;;0;0;0;0;0.0000;0.0000;0.0000;0.000000",
+        "10. DESCRIPCI�N DE LOS HECHOS: Indica la administradora del edificio asegurado, que: �siendo el d�a 12 de agosto del presente a�o a las 2:55 de la madrugada se present� en el edificio Sagitario una explosi�n que ocasion� un incendio en la zona de parqueaderos que se encuentra al lado de la planta de emergencia�;13001000;NULL;4;NULL;;;;2023-08-18;;WF-189817  - EDIFICIO SAGITARIO  -  Solicitud Documentos.pdf;;2023-08-22;;W-189817 - EDIFICIO SAGITARIO - P.pdf;NULL;;;NULL;;;2024-07-02;2024-07-02;0;FINALIZADO;0;0;0;;NULL;0;0;0;0;0;0;NULL;;NULL;NULL;NULL;NULL;;0;0;0;0;0.0000;0.0000;0.0000;0.000000",
+        "Documento del asegurado: 9014773849",
+        "Correo Electr�nico : kinesiogym16@hotmail.com",
+        "Celular: 3012851077"
+      ],
+      "sampleSoloLive": [
+        "23",
+        "25",
+        "26",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "2025-11-36",
+        "2025-11-38",
+        "2025-11-39",
+        "2025-11-41",
+        "2025-11-43",
+        "2025-12-44",
+        "2025-12-45",
+        "2025-12-46",
+        "2025-12-47",
+        "2025-12-48",
+        "2025-12-49",
+        "2025-12-50",
+        "2025-12-51",
+        "2025-12-52",
+        "2025-12-53",
+        "2025-12-54",
+        "2025-12-55",
+        "2025-12-56",
+        "2025-12-57"
+      ],
+      "samplePerdidas": [
+        {
+          "nmroAjste": "20233025",
+          "campo": "fchaContIni",
+          "backup": "2025-04-15"
+        },
+        {
+          "nmroAjste": "20233025",
+          "campo": "fchaSoliDocu",
+          "backup": "2025-04-21"
+        },
+        {
+          "nmroAjste": "20233025",
+          "campo": "fchaInfoPrelm",
+          "backup": "2025-10-30"
+        }
+      ],
+      "sampleDiff": [
+        {
+          "nmroAjste": "20230510",
+          "campo": "fchaSinstro",
+          "backup": "2023-06-22",
+          "live": "2022-06-22"
+        },
+        {
+          "nmroAjste": "20230731",
+          "campo": "fchaAsgncion",
+          "backup": "2024-03-10",
+          "live": "2024-06-18"
+        },
+        {
+          "nmroAjste": "20230782",
+          "campo": "fchaSoliDocu",
+          "backup": "2024-07-03",
+          "live": "2024-07-02"
+        },
+        {
+          "nmroAjste": "20230810",
+          "campo": "fchaContIni",
+          "backup": "2024-08-13",
+          "live": "2024-08-12"
+        },
+        {
+          "nmroAjste": "20233014",
+          "campo": "fchaInfoPrelm",
+          "backup": "2025-05-27",
+          "live": "2025-05-15"
+        },
+        {
+          "nmroAjste": "20233026",
+          "campo": "fchaContIni",
+          "backup": "2025-05-29",
+          "live": "2025-05-22"
+        },
+        {
+          "nmroAjste": "20233108",
+          "campo": "fchaInfoPrelm",
+          "backup": "2025-07-25",
+          "live": "2025-07-21"
+        },
+        {
+          "nmroAjste": "20233185",
+          "campo": "fchaContIni",
+          "backup": "2025-10-13",
+          "live": "2025-10-10"
+        },
+        {
+          "nmroAjste": "20233192",
+          "campo": "fchaContIni",
+          "backup": "2025-10-17",
+          "live": "2025-10-15"
+        },
+        {
+          "nmroAjste": "20233192",
+          "campo": "fchaSoliDocu",
+          "backup": "2025-10-17",
+          "live": "2025-10-16"
+        },
+        {
+          "nmroAjste": "20233192",
+          "campo": "fchaInfoPrelm",
+          "backup": "2025-10-18",
+          "live": "2025-10-17"
+        }
+      ]
+    }
+  ]
+}

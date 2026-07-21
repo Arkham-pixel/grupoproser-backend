@@ -8,6 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import { corsMiddleware } from "./config/corsConfig.js";
 import { helmetMiddleware, loginRateLimitMiddleware } from "./config/httpSecurity.js";
+import { restringirExterno } from "./middleware/restringirExterno.js";
 import { resolveFrontendUrl } from "./config/platformUrls.js";
 
 import authRoutes from "./routes/auth.js";
@@ -35,6 +36,7 @@ import matrizRiesgoRoutes from './routes/matrizRiesgoRoutes.js';
 import intermediarioRoutes from './routes/intermediario.routes.js';
 import expressCatalogoRoutes from './routes/expressCatalogo.routes.js';
 import siniestroExpressRoutes from './routes/siniestroExpress.routes.js';
+import equidadFdmRoutes from './routes/equidadFdm.routes.js';
 import chatgptRoutes from './routes/chatgpt.routes.js';
 import inspeccionPropiedadesRoutes from './routes/inspeccionPropiedades.routes.js';
 import puertosRoutes from './routes/puertos.routes.js';
@@ -146,6 +148,9 @@ app.get('/reset-password/:token', (req, res) => {
   res.redirect(302, `${frontendUrl}/reset-password/${req.params.token}`);
 });
 
+// Sesiones externas (enlace de subtarea): solo pueden usar APIs del formulario de ajuste
+app.use(restringirExterno);
+
 app.use("/api/auth", authRoutes);
 app.use("/api/secur-auth", securAuthRoutes);
 console.log('✅ Ruta /api/secur-auth montada');
@@ -183,6 +188,7 @@ try {
 }
 app.use('/api/express-catalogos', expressCatalogoRoutes);
 app.use('/api/siniestros-express', siniestroExpressRoutes);
+app.use('/api/equidad-fdm', equidadFdmRoutes);
 app.use('/api/chatgpt', chatgptRoutes);
 app.use('/api/inspeccion-propiedades', inspeccionPropiedadesRoutes);
 app.use('/api/puertos', puertosRoutes);

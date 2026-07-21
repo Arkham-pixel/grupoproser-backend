@@ -1,0 +1,254 @@
+{
+  "generadoEn": "2026-07-15T15:53:39.894Z",
+  "collection": "gsk3cAppsiniestro",
+  "total": 1044,
+  "conNmro": 1043,
+  "sinNmro": 1,
+  "duplicadosGrupos": 0,
+  "actividad": {
+    "creados7d": 0,
+    "upd7d": 0
+  },
+  "sospechososFechasConDocsSinHitosVacios": 90,
+  "controlHorasFechaSinFilas": 6,
+  "sizeBytes": 2555598,
+  "storageSize": 1343488,
+  "backupishCollections": [
+    "gsk3cAppsiniestro",
+    "gsk3cAppsiniestroExpress",
+    "gsk3cAppsubtareaComplex",
+    "protocolo_siniestros_config",
+    "protocolo_siniestros_historial",
+    "securGroupsAppsOld",
+    "securUsersOld"
+  ],
+  "allCollectionsCount": 45,
+  "cobertura": {
+    "nmroAjste": {
+      "filled": 1043,
+      "empty": 1,
+      "pct": 99.9
+    },
+    "nmroSinstro": {
+      "filled": 1040,
+      "empty": 4,
+      "pct": 99.6
+    },
+    "codiRespnsble": {
+      "filled": 1043,
+      "empty": 1,
+      "pct": 99.9
+    },
+    "codiAsgrdra": {
+      "filled": 1043,
+      "empty": 1,
+      "pct": 99.9
+    },
+    "asgrBenfcro": {
+      "filled": 1043,
+      "empty": 1,
+      "pct": 99.9
+    },
+    "ciudadSiniestro": {
+      "filled": 1030,
+      "empty": 14,
+      "pct": 98.7
+    },
+    "codiEstdo": {
+      "filled": 1044,
+      "empty": 0,
+      "pct": 100
+    },
+    "fchaAsgncion": {
+      "filled": 1043,
+      "empty": 1,
+      "pct": 99.9
+    },
+    "fchaSinstro": {
+      "filled": 975,
+      "empty": 69,
+      "pct": 93.4
+    },
+    "fchaContIni": {
+      "filled": 581,
+      "empty": 463,
+      "pct": 55.7
+    },
+    "fchaInspccion": {
+      "filled": 423,
+      "empty": 621,
+      "pct": 40.5
+    },
+    "fchaSoliDocu": {
+      "filled": 497,
+      "empty": 547,
+      "pct": 47.6
+    },
+    "fchaInfoPrelm": {
+      "filled": 417,
+      "empty": 627,
+      "pct": 39.9
+    },
+    "fchaInfoFnal": {
+      "filled": 508,
+      "empty": 536,
+      "pct": 48.7
+    },
+    "fchaRepoActi": {
+      "filled": 220,
+      "empty": 824,
+      "pct": 21.1
+    },
+    "fchaPresentacionCifras": {
+      "filled": 39,
+      "empty": 1005,
+      "pct": 3.7
+    },
+    "fchaEnvioFiniquito": {
+      "filled": 13,
+      "empty": 1031,
+      "pct": 1.2
+    },
+    "fcha_control_horas": {
+      "filled": 28,
+      "empty": 1016,
+      "pct": 2.7
+    },
+    "historialDocs": {
+      "filled": 217,
+      "empty": 827,
+      "pct": 20.8
+    },
+    "control_horas": {
+      "filled": 26,
+      "empty": 1018,
+      "pct": 2.5
+    }
+  },
+  "comparaciones": [
+    {
+      "backup": "C:\\Users\\GP-TI\\Downloads\\gsk3c_appsiniestro.json",
+      "ok": true,
+      "mtime": "2026-01-14T19:28:54.814Z",
+      "sizeBytes": 1329713,
+      "backupTotal": 3,
+      "backupUnicos": 0,
+      "backupSinNmro": 3,
+      "liveTotal": 1044,
+      "liveUnicos": 1043,
+      "nSoloEnBackup_casosFaltanEnLive": 0,
+      "nSoloEnLive_casosNuevosVsBackup": 1043,
+      "nFechasPerdidasEnLive": 0,
+      "nFechasDiferentes": 0,
+      "nCamposIdentidadPerdidos": 0,
+      "sampleSoloBackup": [],
+      "sampleSoloLive": [
+        "23",
+        "25",
+        "26",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "2025-11-36",
+        "2025-11-38",
+        "2025-11-39",
+        "2025-11-41",
+        "2025-11-43",
+        "2025-12-44",
+        "2025-12-45",
+        "2025-12-46",
+        "2025-12-47",
+        "2025-12-48",
+        "2025-12-49",
+        "2025-12-50",
+        "2025-12-51",
+        "2025-12-52",
+        "2025-12-53",
+        "2025-12-54",
+        "2025-12-55",
+        "2025-12-56",
+        "2025-12-57",
+        "2025-12-58",
+        "2025-12-59",
+        "2025-12-60",
+        "2025-12-61",
+        "2025-12-62",
+        "2025-12-63",
+        "2025-12-64",
+        "2025-12-65",
+        "2026-01-66",
+        "2026-01-67",
+        "…"
+      ],
+      "sampleFechas": [],
+      "sampleIdentidad": []
+    },
+    {
+      "backup": "C:\\Users\\GP-TI\\Downloads\\gsk3c_appsiniestro (1).json",
+      "ok": true,
+      "mtime": "2026-01-14T19:55:02.543Z",
+      "sizeBytes": 1539039,
+      "backupTotal": 3,
+      "backupUnicos": 0,
+      "backupSinNmro": 3,
+      "liveTotal": 1044,
+      "liveUnicos": 1043,
+      "nSoloEnBackup_casosFaltanEnLive": 0,
+      "nSoloEnLive_casosNuevosVsBackup": 1043,
+      "nFechasPerdidasEnLive": 0,
+      "nFechasDiferentes": 0,
+      "nCamposIdentidadPerdidos": 0,
+      "sampleSoloBackup": [],
+      "sampleSoloLive": [
+        "23",
+        "25",
+        "26",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "2025-11-36",
+        "2025-11-38",
+        "2025-11-39",
+        "2025-11-41",
+        "2025-11-43",
+        "2025-12-44",
+        "2025-12-45",
+        "2025-12-46",
+        "2025-12-47",
+        "2025-12-48",
+        "2025-12-49",
+        "2025-12-50",
+        "2025-12-51",
+        "2025-12-52",
+        "2025-12-53",
+        "2025-12-54",
+        "2025-12-55",
+        "2025-12-56",
+        "2025-12-57",
+        "2025-12-58",
+        "2025-12-59",
+        "2025-12-60",
+        "2025-12-61",
+        "2025-12-62",
+        "2025-12-63",
+        "2025-12-64",
+        "2025-12-65",
+        "2026-01-66",
+        "2026-01-67",
+        "…"
+      ],
+      "sampleFechas": [],
+      "sampleIdentidad": []
+    }
+  ]
+}

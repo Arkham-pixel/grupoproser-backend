@@ -31,6 +31,7 @@ import {
   resolverControlHorasDesdeEnvios,
 } from '../utils/controlHorasUtils.js';
 import { resolverUsuarioAsignador } from '../utils/resolverUsuarioAsignador.js';
+import { sanearFechasImposibles } from '../utils/sanearFechas.js';
 import {
   alinearCamposProtocoloDesdeHistorialDocs,
   MAPEO_TIPO_HISTORIAL_A_COMPLEX,
@@ -604,6 +605,9 @@ export const crearComplex = async (req, res) => {
       return;
     }
     datosParaGuardar.codiEstdo = extraerCodiEstdoDeBody(datosParaGuardar);
+
+    // No permitir fechas imposibles (p. ej. año 1902 por serial de Excel)
+    sanearFechasImposibles(datosParaGuardar, `crearComplex ${datosParaGuardar.nmroAjste || ''}`);
 
     const nuevo = new Complex(datosParaGuardar);
     
@@ -1873,6 +1877,9 @@ export const actualizarComplex = async (req, res) => {
       if (!(k in updateDataProtegido)) delete updateData[k];
     });
     Object.assign(updateData, updateDataProtegido);
+
+    // No permitir fechas imposibles (p. ej. año 1902 por serial de Excel)
+    sanearFechasImposibles(updateData, `actualizarComplex ${casoAnterior.nmroAjste || req.params.id}`);
 
     const anteriorObj = casoAnterior.toObject?.() ?? casoAnterior;
     const siguienteObj = { ...anteriorObj, ...updateData };

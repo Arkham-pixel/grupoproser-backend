@@ -10,6 +10,7 @@ import {
   obtenerPublica,
   actualizarPublica,
   subirArchivoPublico,
+  crearSesionAjusteExterna,
   resumenCaso,
   obtenerUna,
 } from '../controllers/complexSubtarea.controller.js';
@@ -27,6 +28,7 @@ const persistComplexFile = attachPersistedFileMiddleware({
 // Públicas (sin JWT)
 router.get('/public/:token', obtenerPublica);
 router.patch('/public/:token', actualizarPublica);
+router.post('/public/:token/sesion-ajuste', crearSesionAjusteExterna);
 router.post(
   '/public/:token/archivos',
   upload.single('file'),
