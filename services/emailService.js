@@ -2050,4 +2050,53 @@ export const enviarNotificacionSubtareaCompletada = async (datos = {}) => {
 
   const info = await deliverMail(mailOptions, { tipo: 'subtareaCompletada' });
   return { success: true, messageId: info.messageId };
-}; 
+};
+
+/** Avisa al asignado que su subtarea fue reabierta, con el motivo del gestor. */
+export const enviarNotificacionSubtareaReabierta = async (datos = {}) => {
+  const email = String(datos.emailDestino || '').trim();
+  if (!email) {
+    return { success: false, message: 'Sin email de destino' };
+  }
+
+  const frontendUrl = resolveFrontendUrl();
+  const urlSubtarea = datos.subtareaId
+    ? `${frontendUrl}/complex/mis-subtareas?abrir=${datos.subtareaId}`
+    : `${frontendUrl}/complex/mis-subtareas`;
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+    to: email,
+    subject: `Subtarea reabierta — ${datos.nmroAjste || 'Caso Complex'}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background:#f8f9fa; padding:20px;">
+        <div style="background:#fff; padding:28px; border-radius:10px;">
+          <h1 style="color:#b45309; font-size:22px; margin:0 0 8px;">Subtarea reabierta</h1>
+          <p style="color:#374151;">
+            <strong>${datos.reabiertaPorNombre || 'El responsable del caso'}</strong> reabrió la subtarea
+            <strong>${datos.titulo || ''}</strong> del caso <strong>${datos.nmroAjste || '—'}</strong>.
+            Vuelve a estar pendiente en tu bandeja.
+          </p>
+          <div style="background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; padding:14px 16px; margin:18px 0;">
+            <p style="color:#92400e; margin:0; font-size:13px; font-weight:bold; text-transform:uppercase;">Motivo de la reapertura</p>
+            <p style="color:#78350f; margin:6px 0 0; white-space:pre-wrap;">${datos.motivo || '—'}</p>
+          </div>
+          <table style="width:100%; border-collapse:collapse; margin-bottom:20px;">
+            <tr><td style="padding:6px 0; color:#6b7280;">Caso</td><td style="padding:6px 0; font-weight:bold;">${datos.nmroAjste || '—'}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">Subtarea</td><td style="padding:6px 0; font-weight:bold;">${datos.titulo || '—'}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">Reabierta por</td><td style="padding:6px 0; font-weight:bold;">${datos.reabiertaPorNombre || '—'}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">Fecha límite</td><td style="padding:6px 0;">${formatearFechaCortaCorreo(datos.fechaLimite)}</td></tr>
+          </table>
+          <div style="text-align:center; margin-top:28px;">
+            <a href="${urlSubtarea}" style="display:inline-block; background:#c8102e; color:#fff; text-decoration:none; padding:12px 22px; border-radius:8px; font-weight:bold;">
+              Ir a mi subtarea
+            </a>
+          </div>
+        </div>
+      </div>
+    `,
+  };
+
+  const info = await deliverMail(mailOptions, { tipo: 'subtareaReabierta' });
+  return { success: true, messageId: info.messageId };
+};

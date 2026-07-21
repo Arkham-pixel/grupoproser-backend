@@ -91,6 +91,8 @@ export function createCorsOptions() {
       'Content-Type',
       'Authorization',
       'X-Usuario-Login',
+      'X-Usuario-Nombre',
+      'X-Usuario-Rol',
       'X-Requested-With',
       'X-CSRF-Token',
       'X-XSRF-Token',
