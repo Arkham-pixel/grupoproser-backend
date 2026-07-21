@@ -7,6 +7,7 @@ import {
   eliminarIntermediario 
 } from '../controllers/intermediarioController.js';
 import { verificarAdminSoporte } from '../middleware/verificarAdminSoporte.js';
+import { verificarToken } from '../middleware/verificarToken.js';
 
 const router = express.Router();
 
@@ -32,15 +33,13 @@ router.get('/', obtenerIntermediarios);
 // GET /api/intermediarios/:id - Obtener un intermediario por ID (público para lectura)
 router.get('/:id', obtenerIntermediarioPorId);
 
-// Rutas protegidas para admin/soporte
-// POST /api/intermediarios - Crear nuevo intermediario
-router.post('/', verificarAdminSoporte, crearIntermediario);
+// POST /api/intermediarios - Crear (cualquier usuario autenticado; p. ej. Carga Express)
+router.post('/', verificarToken, crearIntermediario);
 
-// PUT /api/intermediarios/:id - Actualizar intermediario
+// PUT /api/intermediarios/:id - Actualizar intermediario (admin/soporte)
 router.put('/:id', verificarAdminSoporte, actualizarIntermediario);
 
-// DELETE /api/intermediarios/:id - Eliminar intermediario
+// DELETE /api/intermediarios/:id - Eliminar intermediario (admin/soporte)
 router.delete('/:id', verificarAdminSoporte, eliminarIntermediario);
 
 export default router;
-

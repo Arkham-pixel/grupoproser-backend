@@ -1,5 +1,23 @@
 import Intermediario from '../models/Intermediario.js';
 
+const normalizarNombre = (nombre) =>
+  String(nombre || '')
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+
+async function generarCodigoIntermediario() {
+  const existentes = await Intermediario.find({}, { codigo: 1 }).lean();
+  let max = 100000;
+  for (const item of existentes) {
+    const n = parseInt(String(item.codigo || '').replace(/\D/g, ''), 10);
+    if (!Number.isNaN(n) && n > max) max = n;
+  }
+  return String(max + 1);
+}
+
 // Obtener todos los intermediarios
 export const obtenerIntermediarios = async (req, res) => {
   try {
@@ -29,28 +47,49 @@ export const obtenerIntermediarioPorId = async (req, res) => {
 // Crear un nuevo intermediario
 export const crearIntermediario = async (req, res) => {
   try {
-    const datosIntermediario = req.body;
-    
-    // Validar campos requeridos
-    if (!datosIntermediario.nombre || !datosIntermediario.codigo) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Los campos nombre y codigo son requeridos' 
+    const datosIntermediario = { ...req.body };
+    const nombre = String(datosIntermediario.nombre || '').trim();
+
+    if (!nombre) {
+      return res.status(400).json({
+        success: false,
+        error: 'El campo nombre es requerido',
       });
     }
 
-    // Verificar si ya existe un intermediario con el mismo código
+    datosIntermediario.nombre = nombre;
+
+    // Evitar duplicados por nombre (mismo banco)
+    const mismoNombre = await Intermediario.find({}).lean();
+    const nombreNorm = normalizarNombre(nombre);
+    const duplicado = mismoNombre.find((i) => normalizarNombre(i.nombre) === nombreNorm);
+    if (duplicado) {
+      return res.status(400).json({
+        success: false,
+        error: 'Ya existe un intermediario con este nombre',
+        data: duplicado,
+      });
+    }
+
+    if (!datosIntermediario.codigo) {
+      datosIntermediario.codigo = await generarCodigoIntermediario();
+    }
+
     const intermediarioExistente = await Intermediario.findOne({ codigo: datosIntermediario.codigo });
     if (intermediarioExistente) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Ya existe un intermediario con este código' 
+      return res.status(400).json({
+        success: false,
+        error: 'Ya existe un intermediario con este código',
       });
+    }
+
+    if (datosIntermediario.estado == null) {
+      datosIntermediario.estado = 1;
     }
 
     const nuevoIntermediario = new Intermediario(datosIntermediario);
     await nuevoIntermediario.save();
-    
+
     res.status(201).json({ success: true, data: nuevoIntermediario, mensaje: 'Intermediario creado exitosamente' });
   } catch (error) {
     console.error('Error al crear intermediario:', error);
@@ -111,4 +150,3 @@ export const eliminarIntermediario = async (req, res) => {
     res.status(500).json({ success: false, error: 'Error al eliminar intermediario', detalle: error.message });
   }
 };
-

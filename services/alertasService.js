@@ -8,11 +8,80 @@ import { CAMPO_ANEXO_A_TIPO_HISTORIAL, alinearCamposProtocoloDesdeHistorialDocs 
 // Fecha límite: Solo casos agregados desde octubre de 2025 en adelante recibirán alertas
 const FECHA_LIMITE_ALERTAS = new Date('2025-10-01T00:00:00.000Z');
 
+/**
+ * Estados sin seguimiento por correo/UI de alertas.
+ * codiEstdo en Complex es String; se incluyen también números por seguridad de query.
+ * 4 FINALIZADO · 5 DESISTIDO · 6 LIQUIDAR SINIESTRO · 11 OBJETADO · 14 ANULADO · 17 FACTURADO
+ */
+export const CODIGOS_ESTADO_SIN_ALERTAS = ['4', '5', '6', '11', '14', '17', 4, 5, 6, 11, 14, 17];
+
+const FILTRO_CASOS_ACTIVOS_ALERTAS = {
+  codiEstdo: { $nin: CODIGOS_ESTADO_SIN_ALERTAS },
+};
+
 /** Enriquece el caso en memoria: historialDocs (Ajuste) → anexos/fechas de protocolo. */
 function casoNormalizadoParaProtocolo(caso) {
   const base = caso?.toObject ? caso.toObject() : { ...(caso || {}) };
   if (!Array.isArray(base.historialDocs) || base.historialDocs.length === 0) return base;
   return alinearCamposProtocoloDesdeHistorialDocs(base, base.historialDocs, { soloSiVacio: true });
+}
+
+/** Caso cerrado / no operable: no debe generar ni enviar alertas. */
+export function casoExcluidoDeAlertas(caso) {
+  const codigo = String(caso?.codiEstdo ?? '').trim();
+  if (!codigo) return false;
+  if (['4', '5', '6', '11', '14', '17'].includes(codigo)) return true;
+  const desc = String(
+    caso?.descEstdo || caso?.descripcionEstado || caso?.nombreEstado || ''
+  )
+    .trim()
+    .toUpperCase();
+  if (!desc) return false;
+  return (
+    desc.includes('FACTURADO') ||
+    desc.includes('FINALIZADO') ||
+    desc.includes('DESISTIDO') ||
+    desc.includes('OBJETADO') ||
+    desc.includes('ANULADO') ||
+    desc.includes('LIQUIDAR SINIESTRO')
+  );
+}
+
+function respuestaSinAlertas(caso) {
+  return {
+    casoId: caso?._id,
+    numeroAjuste: caso?.nmroAjste,
+    numeroSiniestro: caso?.nmroSinstro,
+    aseguradora: caso?.codiAsgrdra,
+    asegurado: caso?.asgrBenfcro,
+    estado: caso?.codiEstdo,
+    fechaAsignacion: caso?.fchaAsgncion,
+    documentosFaltantes: [],
+    documentosSubidos: [],
+    documentosInfo: {
+      faltantes: [],
+      subidos: [],
+      totalRequeridos: 0,
+      totalObligatorios: 0,
+      totalSubidos: 0,
+      totalObligatoriosSubidos: 0,
+      totalFaltantes: 0,
+      totalObligatoriosFaltantes: 0,
+    },
+    intensidadAdicional: {
+      documentosSubidos: [],
+      totalDocumentosSubidos: 0,
+      totalDocumentosObligatoriosSubidos: 0,
+      porcentajeObligatoriosSubidos: 0,
+      porcentajeTotalSubidos: 0,
+      mensaje: 'Sin documentos verificados',
+      reduceIntensidad: false,
+    },
+    inactividad: { dias: null, actividad: 'Sin verificación', estado: 'NORMAL' },
+    alertas: [],
+    totalAlertas: 0,
+    prioridadMaxima: 0,
+  };
 }
 
 // Configuración de recordatorios por días de inactividad
@@ -283,43 +352,9 @@ export const calcularDiasInactividad = (caso) => {
 // Función para generar alertas para un caso específico
 export const generarAlertasCaso = (caso, protocolo, opciones = {}) => {
   const alcance = opciones.alcance || 'todos';
-  // Verificar si el caso debe recibir alertas (solo casos desde octubre 2025)
-  if (!debeRecibirAlertas(caso)) {
-    // Retornar objeto vacío para casos que no deben recibir alertas
-    return {
-      casoId: caso._id,
-      numeroAjuste: caso.nmroAjste,
-      numeroSiniestro: caso.nmroSinstro,
-      aseguradora: caso.codiAsgrdra,
-      asegurado: caso.asgrBenfcro,
-      estado: caso.codiEstdo,
-      fechaAsignacion: caso.fchaAsgncion,
-      documentosFaltantes: [],
-      documentosSubidos: [],
-      documentosInfo: {
-        faltantes: [],
-        subidos: [],
-        totalRequeridos: 0,
-        totalObligatorios: 0,
-        totalSubidos: 0,
-        totalObligatoriosSubidos: 0,
-        totalFaltantes: 0,
-        totalObligatoriosFaltantes: 0
-      },
-      intensidadAdicional: {
-        documentosSubidos: [],
-        totalDocumentosSubidos: 0,
-        totalDocumentosObligatoriosSubidos: 0,
-        porcentajeObligatoriosSubidos: 0,
-        porcentajeTotalSubidos: 0,
-        mensaje: 'Sin documentos verificados',
-        reduceIntensidad: false
-      },
-      inactividad: { dias: null, actividad: 'Sin verificación', estado: 'NORMAL' },
-      alertas: [],
-      totalAlertas: 0,
-      prioridadMaxima: 0
-    };
+  // Solo casos desde octubre 2025; excluir facturados / cerrados / anulados
+  if (!debeRecibirAlertas(caso) || casoExcluidoDeAlertas(caso)) {
+    return respuestaSinAlertas(caso);
   }
   
   const documentosInfo = verificarDocumentosFaltantes(caso);
@@ -419,21 +454,21 @@ export const obtenerAlertasAjustador = async (codigoResponsable) => {
     console.log('🔍 Obteniendo alertas para ajustador:', codigoResponsable);
     console.log(`📅 Filtro de fecha: Solo casos desde ${FECHA_LIMITE_ALERTAS.toLocaleDateString('es-CO')} recibirán alertas`);
     
-    // Obtener solo casos NO finalizados del ajustador
-    // Estados finalizados: 4 (FINALIZADO), 5 (CANCELADO), 6 (ARCHIVADO)
-    // Solo enviar alertas para casos que requieren seguimiento
-    const todosLosCasos = await Complex.find({ 
+    // Excluir cerrados: FINALIZADO, DESISTIDO, LIQUIDAR, ANULADO, FACTURADO
+    const todosLosCasos = await Complex.find({
       codiRespnsble: codigoResponsable,
-      codiEstdo: { $nin: [4, 5, 6] } // Excluir estados finalizados
+      ...FILTRO_CASOS_ACTIVOS_ALERTAS,
     });
     
     // IMPORTANTE: Filtrar solo casos creados desde octubre 2025
     // Los casos viejos no deben recibir alertas
-    const casos = todosLosCasos.filter(caso => debeRecibirAlertas(caso));
+    const casos = todosLosCasos.filter(
+      (caso) => debeRecibirAlertas(caso) && !casoExcluidoDeAlertas(caso)
+    );
     
     console.log(`📊 Casos activos encontrados para ${codigoResponsable}: ${todosLosCasos.length}`);
     console.log(`📅 Casos elegibles para alertas (desde octubre 2025): ${casos.length}`);
-    console.log(`🚫 Casos finalizados excluidos (estados 4, 5, 6)`);
+    console.log(`🚫 Excluidos estados sin alerta: 4, 5, 6, 11, 14, 17 (OBJETADO/FACTURADO)`);
     console.log(`🚫 Casos viejos excluidos (anteriores a octubre 2025): ${todosLosCasos.length - casos.length}`);
     
     const protocolo = await obtenerProtocoloActivo();
@@ -473,14 +508,14 @@ export const obtenerAlertasTodosAjustadores = async () => {
     console.log('🔍 Obteniendo alertas de todos los ajustadores...');
     console.log(`📅 Filtro de fecha: Solo casos desde ${FECHA_LIMITE_ALERTAS.toLocaleDateString('es-CO')} recibirán alertas`);
     
-    // Obtener todos los casos activos (no finalizados)
-    const todosLosCasos = await Complex.find({ 
-      codiEstdo: { $nin: [4, 5, 6] } // Solo casos NO finalizados
-    });
+    // Casos activos (sin FACTURADO / ANULADO / FINALIZADO / DESISTIDO / LIQUIDAR)
+    const todosLosCasos = await Complex.find(FILTRO_CASOS_ACTIVOS_ALERTAS);
     
     // IMPORTANTE: Filtrar solo casos creados desde octubre 2025
     // Los casos viejos no deben recibir alertas
-    const casosElegibles = todosLosCasos.filter(caso => debeRecibirAlertas(caso));
+    const casosElegibles = todosLosCasos.filter(
+      (caso) => debeRecibirAlertas(caso) && !casoExcluidoDeAlertas(caso)
+    );
     
     // Obtener responsables únicos solo de casos elegibles
     const casos = [...new Set(casosElegibles.map(caso => caso.codiRespnsble).filter(Boolean))];
@@ -532,12 +567,10 @@ export const obtenerMisAlertasPorLogin = async (login, nombreUsuario = '') => {
   const loginNorm = String(login || '').trim();
   const nombreNorm = String(nombreUsuario || '').trim().toLowerCase();
 
-  const todosLosCasos = await Complex.find({
-    codiEstdo: { $nin: [4, 5, 6] },
-  });
+  const todosLosCasos = await Complex.find(FILTRO_CASOS_ACTIVOS_ALERTAS);
 
   const casos = todosLosCasos.filter((caso) => {
-    if (!debeRecibirAlertas(caso)) return false;
+    if (!debeRecibirAlertas(caso) || casoExcluidoDeAlertas(caso)) return false;
     const codigo = String(caso.codiRespnsble || '').trim();
     if (loginNorm && codigo === loginNorm) return true;
     const nombreCaso = String(caso.nombreResponsable || caso.responsable || '').trim().toLowerCase();
