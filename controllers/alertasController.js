@@ -81,11 +81,14 @@ export const postEnviarAlertasEmail = async (req, res) => {
 
     console.log('📧 Enviando alertas por email a:', codigoResponsable);
     
-    const resultado = await enviarAlertasEmail(codigoResponsable);
+    // Envío manual desde UI/API: no aplica el intervalo de 30 días
+    const resultado = await enviarAlertasEmail(codigoResponsable, { forzar: true });
     
     res.json({
       success: true,
-      message: 'Alertas enviadas exitosamente',
+      message: resultado.omitido
+        ? resultado.message
+        : 'Alertas enviadas exitosamente',
       data: resultado
     });
     

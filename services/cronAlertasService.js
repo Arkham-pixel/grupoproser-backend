@@ -52,7 +52,7 @@ class CronAlertasService {
       
       console.log('✅ Servicio de cron de alertas iniciado correctamente');
       console.log(`📅 Próxima ejecución: ${this.nextExecution}`);
-      console.log(`🔄 El sistema enviará alertas automáticamente todos los días`);
+      console.log(`🔄 Cron diario: evalúa alertas; correo de recordatorio cada 30 días por ajustador`);
       
     } catch (error) {
       console.error('❌ Error iniciando cron de alertas:', error);

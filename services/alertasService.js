@@ -1,4 +1,5 @@
 import Complex from '../models/Complex.js';
+import Estado from '../models/Estado.js';
 import Responsable from '../models/Responsable.js';
 import { enviarEmailAlertas } from './emailService.js';
 import { obtenerProtocoloActivo } from './protocoloConfigService.js';
@@ -18,6 +19,38 @@ export const CODIGOS_ESTADO_SIN_ALERTAS = ['4', '5', '6', '11', '14', '17', 4, 5
 const FILTRO_CASOS_ACTIVOS_ALERTAS = {
   codiEstdo: { $nin: CODIGOS_ESTADO_SIN_ALERTAS },
 };
+
+/** Catálogo código → descripción (Complex guarda solo codiEstdo). */
+async function cargarMapaEstados() {
+  const estados = await Estado.find()
+    .select('codiEstdo codiEstado descEstdo descEstado descripcion')
+    .lean();
+  const mapa = {};
+  for (const e of estados) {
+    const cod = e.codiEstdo ?? e.codiEstado;
+    const desc = String(e.descEstdo ?? e.descEstado ?? e.descripcion ?? '').trim();
+    if (cod == null || cod === '' || !desc) continue;
+    const claves = new Set([String(cod).trim()]);
+    const num = Number(cod);
+    if (!Number.isNaN(num)) claves.add(String(num));
+    for (const k of claves) {
+      if (k && k !== 'NaN') mapa[k] = desc;
+    }
+  }
+  return mapa;
+}
+
+function resolverEstadoAlerta(caso, mapaEstados = {}) {
+  const codigo = String(caso?.codiEstdo ?? '').trim();
+  if (!codigo) {
+    return { estadoCodigo: null, estado: 'N/A' };
+  }
+  const nombre =
+    mapaEstados[codigo] ||
+    mapaEstados[String(Number(codigo))] ||
+    codigo;
+  return { estadoCodigo: codigo, estado: nombre };
+}
 
 /** Enriquece el caso en memoria: historialDocs (Ajuste) → anexos/fechas de protocolo. */
 function casoNormalizadoParaProtocolo(caso) {
@@ -47,14 +80,16 @@ export function casoExcluidoDeAlertas(caso) {
   );
 }
 
-function respuestaSinAlertas(caso) {
+function respuestaSinAlertas(caso, mapaEstados = {}) {
+  const { estadoCodigo, estado } = resolverEstadoAlerta(caso, mapaEstados);
   return {
     casoId: caso?._id,
     numeroAjuste: caso?.nmroAjste,
     numeroSiniestro: caso?.nmroSinstro,
     aseguradora: caso?.codiAsgrdra,
     asegurado: caso?.asgrBenfcro,
-    estado: caso?.codiEstdo,
+    estadoCodigo,
+    estado,
     fechaAsignacion: caso?.fchaAsgncion,
     documentosFaltantes: [],
     documentosSubidos: [],
@@ -84,14 +119,26 @@ function respuestaSinAlertas(caso) {
   };
 }
 
-// Configuración de recordatorios por días de inactividad
-// El sistema envía alertas en estos intervalos:
-// - 5 días: Primera alerta
-// - 7 días: Segunda alerta
-// - 15 días: Tercera alerta
-// - 30 días: Cuarta alerta
-// - Después de 30 días: Insistir con alertas continuamente hasta que el caso se cierre
-const DIAS_RECORDATORIOS = [5, 7, 15, 30];
+// Recordatorios por inactividad en hitos: 5, 7, 15 y luego cada 30 días.
+/** Intervalo entre correos automáticos de alertas Complex una vez hay vencimientos. */
+export const DIAS_ENTRE_RECORDATORIOS_EMAIL = 30;
+
+function diasCalendarioEntreFechas(desde, hasta = new Date()) {
+  if (!desde) return null;
+  const a = new Date(desde);
+  const b = new Date(hasta);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return null;
+  return Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+/** ¿Corresponde enviar correo automático? (cada 30 días desde el último envío). */
+export function debeEnviarRecordatorioEmail(responsable, ahora = new Date()) {
+  const ultima = responsable?.fchaUltimoRecordatorioAlertas;
+  if (!ultima) return true;
+  const dias = diasCalendarioEntreFechas(ultima, ahora);
+  if (dias == null) return true;
+  return dias >= DIAS_ENTRE_RECORDATORIOS_EMAIL;
+}
 
 // Función para verificar si un caso debe recibir alertas (solo casos desde octubre 2025)
 const debeRecibirAlertas = (caso) => {
@@ -267,9 +314,10 @@ export const calcularDiasInactividad = (caso) => {
   }
 
   // Mapeo de fechas a sus documentos asociados
+  // Inspección cuenta con fecha sola; el acta es entregable aparte.
   const fechasConDocumentos = [
     { campo: 'fchaContIni', nombre: 'Contacto Inicial', campoDoc: 'anexContIni' },
-    { campo: 'fchaInspccion', nombre: 'Inspección', campoDoc: 'anexActaInspccion' },
+    { campo: 'fchaInspccion', nombre: 'Inspección', campoDoc: null },
     { campo: 'fchaSoliDocu', nombre: 'Solicitud de Documentos', campoDoc: 'anexSolDoc' },
     { campo: 'fchaInfoPrelm', nombre: 'Informe Preliminar', campoDoc: 'anxoInfPrelim' },
     { campo: 'fchaInfoFnal', nombre: 'Informe Final', campoDoc: 'anxoInfoFnal' },
@@ -311,25 +359,19 @@ export const calcularDiasInactividad = (caso) => {
   let debeEnviarAlerta = false;
   let nivelRecordatorio = null;
   
-  if (diasTranscurridos > 30) {
-    // Después de 30 días, siempre enviar alerta (insistir continuamente)
-    // Esto se ejecuta cada vez que el cron corre hasta que el caso se cierre
-    debeEnviarAlerta = true;
-    nivelRecordatorio = 'CONTINUO';
-  } else if (diasTranscurridos === 30) {
-    // Exactamente 30 días: Cuarto recordatorio
-    debeEnviarAlerta = true;
-    nivelRecordatorio = 4;
+  if (diasTranscurridos >= 30) {
+    // Desde el día 30: recordatorio cada 30 días (30, 60, 90...), no diario
+    if (diasTranscurridos % 30 === 0) {
+      debeEnviarAlerta = true;
+      nivelRecordatorio = diasTranscurridos === 30 ? 4 : 'CADA_30';
+    }
   } else if (diasTranscurridos === 15) {
-    // Exactamente 15 días: Tercer recordatorio
     debeEnviarAlerta = true;
     nivelRecordatorio = 3;
   } else if (diasTranscurridos === 7) {
-    // Exactamente 7 días: Segundo recordatorio
     debeEnviarAlerta = true;
     nivelRecordatorio = 2;
   } else if (diasTranscurridos === 5) {
-    // Exactamente 5 días: Primer recordatorio
     debeEnviarAlerta = true;
     nivelRecordatorio = 1;
   }
@@ -352,9 +394,10 @@ export const calcularDiasInactividad = (caso) => {
 // Función para generar alertas para un caso específico
 export const generarAlertasCaso = (caso, protocolo, opciones = {}) => {
   const alcance = opciones.alcance || 'todos';
+  const mapaEstados = opciones.mapaEstados || {};
   // Solo casos desde octubre 2025; excluir facturados / cerrados / anulados
   if (!debeRecibirAlertas(caso) || casoExcluidoDeAlertas(caso)) {
-    return respuestaSinAlertas(caso);
+    return respuestaSinAlertas(caso, mapaEstados);
   }
   
   const documentosInfo = verificarDocumentosFaltantes(caso);
@@ -429,13 +472,16 @@ export const generarAlertasCaso = (caso, protocolo, opciones = {}) => {
     prioridadMaxima = Math.max(1, prioridadMaxima - 1);
   }
 
+  const { estadoCodigo, estado } = resolverEstadoAlerta(caso, mapaEstados);
+
   return {
     casoId: caso._id,
     numeroAjuste: caso.nmroAjste,
     numeroSiniestro: caso.nmroSinstro,
     aseguradora: caso.codiAsgrdra,
     asegurado: caso.asgrBenfcro,
-    estado: caso.codiEstdo,
+    estadoCodigo,
+    estado,
     fechaAsignacion: caso.fchaAsgncion,
     documentosFaltantes,
     documentosSubidos,
@@ -472,7 +518,10 @@ export const obtenerAlertasAjustador = async (codigoResponsable) => {
     console.log(`🚫 Casos viejos excluidos (anteriores a octubre 2025): ${todosLosCasos.length - casos.length}`);
     
     const protocolo = await obtenerProtocoloActivo();
-    const alertasGeneradas = casos.map((caso) => generarAlertasCaso(caso, protocolo));
+    const mapaEstados = await cargarMapaEstados();
+    const alertasGeneradas = casos.map((caso) =>
+      generarAlertasCaso(caso, protocolo, { mapaEstados })
+    );
     
     // Filtrar solo casos con alertas
     const casosConAlertas = alertasGeneradas.filter(caso => caso.totalAlertas > 0);
@@ -558,12 +607,14 @@ export const obtenerAlertasTodosAjustadores = async () => {
 /** Evalúa alertas de un caso (para UI en formulario / mis alertas). */
 export const evaluarAlertasDeCaso = async (caso) => {
   const protocolo = await obtenerProtocoloActivo();
-  return generarAlertasCaso(caso, protocolo);
+  const mapaEstados = await cargarMapaEstados();
+  return generarAlertasCaso(caso, protocolo, { mapaEstados });
 };
 
 /** Alertas del ajustador logueado (login = cédula/código en codiRespnsble). */
 export const obtenerMisAlertasPorLogin = async (login, nombreUsuario = '') => {
   const protocolo = await obtenerProtocoloActivo();
+  const mapaEstados = await cargarMapaEstados();
   const loginNorm = String(login || '').trim();
   const nombreNorm = String(nombreUsuario || '').trim().toLowerCase();
 
@@ -579,7 +630,7 @@ export const obtenerMisAlertasPorLogin = async (login, nombreUsuario = '') => {
   });
 
   const casosConAlertas = casos
-    .map((caso) => generarAlertasCaso(caso, protocolo, { alcance: 'ajustador' }))
+    .map((caso) => generarAlertasCaso(caso, protocolo, { alcance: 'ajustador', mapaEstados }))
     .filter((c) => c.totalAlertas > 0)
     .sort((a, b) => b.prioridadMaxima - a.prioridadMaxima);
 
@@ -595,25 +646,28 @@ export const obtenerMisAlertasPorLogin = async (login, nombreUsuario = '') => {
 /** Alertas de un caso por número de ajuste o _id */
 export const obtenerAlertasDeCaso = async (identificador) => {
   const protocolo = await obtenerProtocoloActivo();
+  const mapaEstados = await cargarMapaEstados();
   let caso = await Complex.findOne({ nmroAjste: identificador });
   if (!caso && identificador?.length === 24) {
     caso = await Complex.findById(identificador);
   }
   if (!caso) return null;
-  return generarAlertasCaso(caso, protocolo);
+  return generarAlertasCaso(caso, protocolo, { mapaEstados });
 };
 
 // Función para enviar alertas por email a un ajustador
-export const enviarAlertasEmail = async (codigoResponsable) => {
+// opciones.forzar = true → envío manual (pruebas / botón UI), ignora intervalo de 30 días
+export const enviarAlertasEmail = async (codigoResponsable, opciones = {}) => {
   try {
-    console.log('📧 Enviando alertas por email a:', codigoResponsable);
+    const forzar = opciones.forzar === true;
+    console.log('📧 Enviando alertas por email a:', codigoResponsable, forzar ? '(forzado)' : '');
     
     // Obtener alertas del ajustador
     const alertas = await obtenerAlertasAjustador(codigoResponsable);
     
     if (alertas.casosConAlertas === 0) {
       console.log('✅ No hay alertas para enviar');
-      return { success: true, message: 'No hay alertas para enviar' };
+      return { success: true, message: 'No hay alertas para enviar', omitido: false };
     }
     
     // Obtener información del responsable
@@ -621,6 +675,19 @@ export const enviarAlertasEmail = async (codigoResponsable) => {
     if (!responsable || !responsable.email) {
       console.log('❌ No se encontró email del responsable');
       return { success: false, message: 'Email del responsable no encontrado' };
+    }
+
+    if (!forzar && !debeEnviarRecordatorioEmail(responsable)) {
+      const diasDesde = diasCalendarioEntreFechas(responsable.fchaUltimoRecordatorioAlertas);
+      console.log(
+        `⏭️ Omitiendo correo a ${codigoResponsable}: último recordatorio hace ${diasDesde} día(s) (mínimo ${DIAS_ENTRE_RECORDATORIOS_EMAIL})`
+      );
+      return {
+        success: true,
+        omitido: true,
+        message: `Recordatorio omitido: se reenvía cada ${DIAS_ENTRE_RECORDATORIOS_EMAIL} días`,
+        diasDesdeUltimo: diasDesde,
+      };
     }
     
     // Preparar datos para el email
@@ -641,9 +708,16 @@ export const enviarAlertasEmail = async (codigoResponsable) => {
     
     // Enviar email
     const resultado = await enviarEmailAlertas(datosEmail);
+
+    if (resultado?.success !== false) {
+      await Responsable.updateOne(
+        { _id: responsable._id },
+        { $set: { fchaUltimoRecordatorioAlertas: new Date() } }
+      );
+    }
     
     console.log('✅ Alertas enviadas por email:', resultado);
-    return { success: true, resultado };
+    return { success: true, omitido: false, resultado };
     
   } catch (error) {
     console.error('❌ Error enviando alertas por email:', error);
@@ -651,8 +725,8 @@ export const enviarAlertasEmail = async (codigoResponsable) => {
   }
 };
 
-// Función para enviar alertas a todos los ajustadores
-export const enviarAlertasTodosAjustadores = async () => {
+// Función para enviar alertas a todos los ajustadores (cron automático: respeta cada 30 días)
+export const enviarAlertasTodosAjustadores = async (opciones = {}) => {
   try {
     console.log('📧 Enviando alertas a todos los ajustadores...');
     
@@ -661,10 +735,11 @@ export const enviarAlertasTodosAjustadores = async () => {
     
     for (const ajustador of alertasGenerales.ajustadores) {
       try {
-        const resultado = await enviarAlertasEmail(ajustador.ajustador);
+        const resultado = await enviarAlertasEmail(ajustador.ajustador, opciones);
         resultados.push({
           ajustador: ajustador.ajustador,
           success: resultado.success,
+          omitido: Boolean(resultado.omitido),
           message: resultado.message
         });
       } catch (error) {
@@ -672,6 +747,7 @@ export const enviarAlertasTodosAjustadores = async () => {
         resultados.push({
           ajustador: ajustador.ajustador,
           success: false,
+          omitido: false,
           message: error.message
         });
       }
@@ -680,7 +756,8 @@ export const enviarAlertasTodosAjustadores = async () => {
     console.log('✅ Proceso de envío de alertas completado');
     return {
       success: true,
-      totalEnviados: resultados.filter(r => r.success).length,
+      totalEnviados: resultados.filter(r => r.success && !r.omitido).length,
+      totalOmitidos: resultados.filter(r => r.omitido).length,
       totalErrores: resultados.filter(r => !r.success).length,
       resultados
     };

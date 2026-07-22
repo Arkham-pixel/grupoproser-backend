@@ -24,6 +24,10 @@ const ComplexSchema = new mongoose.Schema({
   nombreCiudad: String, // Solo nombre del municipio
   departamentoCiudad: String, // Nombre del departamento
   fchaInspccion: Date,
+  /** true = inspección no procede; no genera alertas de inspección ni de acta */
+  inspeccionNoAplica: { type: Boolean, default: false },
+  /** true = hubo inspección pero no se elabora acta */
+  actaInspeccionNoAplica: { type: Boolean, default: false },
   codiEstdo: String,
   descripcionEstado: String,
   observacionesPendientes: String,

@@ -153,6 +153,29 @@ function casoTieneDocumentoEtapa(caso, etapa) {
   return tieneDocumentoEnHistorialDocs(caso, tipoHistorial);
 }
 
+/** Inspección y acta pueden omitirse cuando el ajustador deja constancia. */
+function etapaOmitidaPorNoAplica(caso, etapa) {
+  if (!etapa?.id) return false;
+  if (caso?.inspeccionNoAplica === true || caso?.inspeccionNoAplica === 'true') {
+    if (etapa.id === 'inspeccion' || etapa.id === 'actaInspeccion') return true;
+  }
+  if (caso?.actaInspeccionNoAplica === true || caso?.actaInspeccionNoAplica === 'true') {
+    if (etapa.id === 'actaInspeccion') return true;
+  }
+  return false;
+}
+
+/**
+ * La inspección de campo se completa con la fecha del hito.
+ * El acta es etapa aparte (y puede marcarse no aplica).
+ * El resto sigue exigiendo documento si el protocolo lo define.
+ */
+function etapaRequiereDocumento(etapa) {
+  if (!etapa?.campoDoc) return false;
+  if (etapa.id === 'inspeccion') return false;
+  return true;
+}
+
 function etapaCompletaPorCriterio(caso, etapa) {
   switch (etapa.criterioCompletitud) {
     case 'codiRespnsble':
@@ -172,13 +195,53 @@ function etapaCompletaPorCriterio(caso, etapa) {
 }
 
 export function etapaEstaCompleta(caso, etapa) {
+  if (etapaOmitidaPorNoAplica(caso, etapa)) return true;
+
   const porCriterio = etapaCompletaPorCriterio(caso, etapa);
   if (porCriterio != null) return porCriterio;
 
   if (!etapa.campoFecha) return false;
   const tieneFecha = campoTieneValor(caso, etapa.campoFecha);
-  if (!etapa.campoDoc) return tieneFecha;
-  return tieneFecha && casoTieneDocumentoEtapa(caso, etapa);
+  if (!tieneFecha) return false;
+  if (!etapaRequiereDocumento(etapa)) return true;
+  return casoTieneDocumentoEtapa(caso, etapa);
+}
+
+/**
+ * Avance de una etapa posterior: basta con la fecha del hito
+ * (en varios casos solo radican fecha y no adjuntan soporte).
+ */
+function etapaTieneAvanceRegistrado(caso, etapa) {
+  if (!etapa) return false;
+  if (etapaOmitidaPorNoAplica(caso, etapa)) return true;
+  if (etapaEstaCompleta(caso, etapa)) return true;
+  if (etapa.campoFecha && campoTieneValor(caso, etapa.campoFecha)) return true;
+  return false;
+}
+
+/**
+ * Si el caso ya avanzó a una etapa posterior (aunque solo tenga fecha),
+ * no se alertan hitos anteriores (contacto, acta, inspección, etc.).
+ */
+function etapaSuperadaPorAvance(caso, etapa, protocolo) {
+  if (!etapa?.id) return false;
+  const fases = Number(etapa.fase);
+  if (!Number.isFinite(fases)) return false;
+
+  const etapas = protocolo?.etapas || [];
+  return etapas.some((otra) => {
+    if (!otra || otra.id === etapa.id) return false;
+    const faseOtra = Number(otra.fase);
+    if (!Number.isFinite(faseOtra) || faseOtra <= fases) return false;
+    if (otra.dependenciaExterna) return false;
+    if (otra.alertaVencimiento === false && !otra.campoFecha) return false;
+    return etapaTieneAvanceRegistrado(caso, otra);
+  });
+}
+
+function etapaTieneFechaHito(caso, etapa) {
+  if (!etapa?.campoFecha) return false;
+  return campoTieneValor(caso, etapa.campoFecha);
 }
 
 function etapaAplicaAlcance(etapa, alcance = 'todos') {
@@ -262,11 +325,36 @@ export function evaluarEsperaExterna(caso, espera, ahora = new Date(), protocolo
 export function evaluarEtapaProtocolo(caso, etapa, ahora = new Date(), alcance = 'todos', protocolo = null) {
   if (!etapa?.limite || etapa.alertaVencimiento === false) return null;
   if (!etapaAplicaAlcance(etapa, alcance)) return null;
+  if (etapaOmitidaPorNoAplica(caso, etapa)) return null;
+  if (etapaSuperadaPorAvance(caso, etapa, protocolo)) return null;
 
   const fechaReferencia = resolverFechaReferenciaEtapa(caso, etapa);
   if (!fechaReferencia) return null;
 
   if (etapaEstaCompleta(caso, etapa)) return null;
+
+  // Fecha ya radicada pero falta anexo: no inventar "miles de horas de retraso".
+  // El plazo de tiempo se midió al registrar el hito; lo pendiente es el soporte.
+  if (etapaTieneFechaHito(caso, etapa) && etapaRequiereDocumento(etapa)) {
+    return {
+      etapaId: etapa.id,
+      nombre: etapa.nombre,
+      fase: etapa.fase,
+      prioridad: 'MEDIA',
+      mensaje: `Falta soporte documental de ${etapa.nombre} (fecha ya registrada)`,
+      transcurrido: 0,
+      limite: 0,
+      retraso: 0,
+      horasLimite: limiteAHoras(etapa.limite),
+      horasTranscurridas: 0,
+      etiquetaLimite: etiquetaLimite(etapa.limite),
+      tipo: `FALTA_SOPORTE_${String(etapa.id).toUpperCase()}`,
+      accion:
+        etapa.id === 'actaInspeccion'
+          ? 'Adjuntar el acta o marcar «Acta no aplica» en trazabilidad'
+          : `Adjuntar soporte de ${etapa.nombre}`,
+    };
+  }
 
   const transcurrido = medirTranscurrido(fechaReferencia, ahora, etapa.limite.unidad);
   const limite = medirLimite(etapa.limite);
