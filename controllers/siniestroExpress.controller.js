@@ -23,8 +23,8 @@ const borrarArchivoFisicoExpress = async (url) => {
   await deleteStoredFile(url).catch(() => {});
 };
 
-const esValorVacio = (valor) =>
-  valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
+const esClearExplicito = (valor) =>
+  valor === null || valor === '' || valor === 'null' || valor === 'undefined';
 
 const parseDate = (value) => {
   if (!value) return null;
@@ -38,26 +38,48 @@ const parseDate = (value) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+/**
+ * Acepta enteros/decimales y formatos es-CO: 1.234.567 | 1.234.567,89 | 1234567,5 | 1234567.5
+ */
 const parseNumber = (value) => {
   if (value === undefined || value === null || value === '') return null;
-  const number = Number(value);
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+
+  let s = String(value).trim().replace(/\s/g, '');
+  if (!s) return null;
+
+  if (s.includes(',') && s.includes('.')) {
+    // Miles con punto y decimal con coma: 1.234.567,89
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else if (s.includes(',')) {
+    // Solo coma → decimal
+    s = s.replace(',', '.');
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(s)) {
+    // Solo puntos en patrón de miles: 1.234.567
+    s = s.replace(/\./g, '');
+  }
+
+  const number = Number(s);
   return Number.isNaN(number) ? null : number;
 };
 
 const parseDateFlexible = (value, fallback = null) => {
-  if (esValorVacio(value)) return fallback ?? null;
+  if (value === undefined) return fallback ?? null;
+  if (esClearExplicito(value)) return null;
   const parsed = parseDate(value);
   return parsed ?? fallback ?? null;
 };
 
 const parseNumberFlexible = (value, fallback = null) => {
-  if (esValorVacio(value)) return fallback ?? null;
+  if (value === undefined) return fallback ?? null;
+  if (esClearExplicito(value)) return null;
   const parsed = parseNumber(value);
   return parsed ?? fallback ?? null;
 };
 
 const toStringOrNull = (value, fallback = null) => {
-  if (esValorVacio(value)) return fallback ?? null;
+  if (value === undefined) return fallback ?? null;
+  if (esClearExplicito(value)) return null;
   return String(value).trim();
 };
 
@@ -249,8 +271,20 @@ const buscarSiniestroExpressPorId = async (idParam) => {
   return null;
 };
 
-const validarSalvamentoAplica = (valor) => {
-  const v = toStringOrNull(valor);
+const normalizarSalvamentoAplicaValor = (valor, fallback = 'no_aplica') => {
+  const raw = Array.isArray(valor) ? valor[valor.length - 1] : valor;
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  const v = String(raw).trim().toLowerCase().replace(/\s+/g, '_');
+  if (['aplica', 'si', 'sí', 'yes'].includes(v)) return 'aplica';
+  if (['no_aplica', 'noaplica', 'no', 'n/a', 'no_aplica.'].includes(v)) return 'no_aplica';
+  const texto = String(raw).trim().toLowerCase();
+  if (texto === 'aplica') return 'aplica';
+  if (texto === 'no aplica') return 'no_aplica';
+  return fallback;
+};
+
+const validarSalvamentoAplica = (valor, { estricto = true } = {}) => {
+  const v = normalizarSalvamentoAplicaValor(valor, estricto ? null : 'no_aplica');
   if (!v || (v !== 'aplica' && v !== 'no_aplica')) {
     return 'debe indicar si el salvamento aplica o no aplica';
   }
@@ -325,7 +359,10 @@ const buildExpressPayload = (
   ),
   reserva: parseNumberFlexible(data.reserva, base.reserva ?? null),
   estadoProceso: toStringOrNull(data.estadoProceso, base.estadoProceso ?? null),
-  salvamentoAplica: toStringOrNull(data.salvamentoAplica, base.salvamentoAplica ?? null),
+  salvamentoAplica: normalizarSalvamentoAplicaValor(
+    data.salvamentoAplica,
+    normalizarSalvamentoAplicaValor(base.salvamentoAplica, 'no_aplica')
+  ),
   valorSalvamento: parseNumberFlexible(data.valorSalvamento, base.valorSalvamento ?? null),
 });
 
@@ -505,14 +542,35 @@ export const actualizarSiniestroExpress = async (req, res) => {
         )
       )
     );
+
+    // Si el PUT no trae liquidador (p. ej. edición del formulario), no pisar el guardado.
+    if (!Object.prototype.hasOwnProperty.call(req.body, 'liquidador')) {
+      payload.liquidador = registroActual.liquidador ?? base.liquidador ?? null;
+    } else {
+      // Forzar el valor parseado (FormData envía JSON string)
+      payload.liquidador = parseLiquidadorPayload(
+        req.body.liquidador,
+        registroActual.liquidador ?? null
+      );
+    }
+
     await asegurarConsecutivo(payload, base);
 
-    const errorSalvamento = validarSalvamentoAplica(payload.salvamentoAplica);
-    if (errorSalvamento) {
-      return res.status(400).json({
-        success: false,
-        error: `Salvamento: ${errorSalvamento}.`,
-      });
+    // Al guardar liquidador, salvamento del caso es independiente: normalizar/default, no bloquear.
+    const guardandoLiquidador = Object.prototype.hasOwnProperty.call(req.body, 'liquidador');
+    if (guardandoLiquidador) {
+      payload.salvamentoAplica = normalizarSalvamentoAplicaValor(
+        payload.salvamentoAplica,
+        'no_aplica'
+      );
+    } else {
+      const errorSalvamento = validarSalvamentoAplica(payload.salvamentoAplica);
+      if (errorSalvamento) {
+        return res.status(400).json({
+          success: false,
+          error: `Salvamento: ${errorSalvamento}.`,
+        });
+      }
     }
 
     const camposRequeridos = [
