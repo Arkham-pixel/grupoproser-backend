@@ -44,6 +44,15 @@ const ComplexSubtareaSchema = new mongoose.Schema(
     titulo: { type: String, required: true, trim: true },
     /** Clave de bandeja de trazabilidad (contactoInicial, inspeccion, ...) */
     etapaTrazabilidad: { type: String, default: '', index: true },
+    /**
+     * Flujo visita cuando etapa = coordinacionInspeccion:
+     * coordinacion → inspeccion → decidir → (opcional) preliminar.
+     */
+    flujoVisitaFase: {
+      type: String,
+      enum: ['', 'coordinacion', 'inspeccion', 'decidir', 'preliminar'],
+      default: '',
+    },
     /** Id de etapa del protocolo de tiempos */
     etapaProtocoloId: { type: String, default: '' },
     descripcion: { type: String, default: '' },
@@ -67,6 +76,20 @@ const ComplexSubtareaSchema = new mongoose.Schema(
       index: true,
     },
     fechaLimite: { type: Date },
+    /**
+     * Fecha del hito de protocolo reportada por el asignado (interno/externo).
+     * Compatibilidad: primera fecha de fechasProtocolo.
+     */
+    fechaProtocolo: { type: Date },
+    /**
+     * Fechas de la etapa alineadas con trazabilidad
+     * (ej. coordinación: fchaCoordInspeccion + fchaProgInspeccion).
+     */
+    fechasProtocolo: {
+      type: Map,
+      of: Date,
+      default: undefined,
+    },
     /** Primera vez que el asignado abre o trabaja la subtarea */
     fechaInicioTrabajo: { type: Date },
     fechaCompletada: { type: Date },

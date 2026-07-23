@@ -12,6 +12,7 @@ const PREFIJOS_PERMITIDOS_EXTERNO = [
   '/api/complex/',
   '/api/storage',
   '/api/secur-auth/logout',
+  '/api/secur-auth/verificar-sesion',
   '/uploads',
 ];
 

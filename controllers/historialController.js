@@ -11,6 +11,11 @@ import {
   deleteHistorialFormularioFiles,
   deleteOrphanedStoredFiles,
 } from '../utils/storedFileCleanup.js';
+import {
+  MAPEO_TIPO_HISTORIAL_A_COMPLEX,
+  tipoHistorialDesdeEstadoAjuste,
+  buildCamposProtocoloDesdeAjuste,
+} from '../config/ajusteTrazabilidadComplexMap.js';
 import mongoose from 'mongoose';
 import fs from 'fs/promises';
 import fsSync from 'fs';
@@ -22,15 +27,123 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+const esClaveReporteTemporal = (valor) =>
+  String(valor || '')
+    .trim()
+    .toUpperCase()
+    .startsWith('RPT-');
+
+/** Prefiere el nmroAjste real del caso; ignora RPT-/CASO_ generados. */
+const resolverNumeroAjusteCanonico = (...candidatos) => {
+  const limpiar = (v) => String(v || '').trim();
+  const validos = candidatos.map(limpiar).filter((v) => v && v.toUpperCase() !== 'N/A');
+  const real = validos.find((v) => !esClaveReporteTemporal(v));
+  return real || validos[0] || '';
+};
+
+const numeroAjusteDesdeFormulario = (formulario, extraDatos = null) => {
+  const datos = extraDatos || formulario?.datos || {};
+  return resolverNumeroAjusteCanonico(
+    datos?.metadata?.numeroAjuste,
+    datos?.numeroAjuste,
+    datos?.nmroAjste,
+    datos?.numeroCaso,
+    formulario?.trazabilidadSecuencia?.numeroAjuste,
+    formulario?.numeroCaso
+  );
+};
+
+const complexIdDesdeFormulario = (formulario, extraDatos = null) => {
+  const datos = extraDatos || formulario?.datos || {};
+  const candidatos = [
+    datos?.metadata?.complexId,
+    datos?.casoId,
+    formulario?.casoId,
+  ];
+  for (const c of candidatos) {
+    const id = String(c || '').trim();
+    if (esObjectIdMongo(id)) return id;
+  }
+  return '';
+};
+
 const construirFiltroPorNumeroAjuste = (numeroAjuste) => ({
   eliminado: { $ne: true },
   $or: [
     { numeroCaso: numeroAjuste },
     { 'datos.numeroCaso': numeroAjuste },
     { 'datos.numeroAjuste': numeroAjuste },
-    { 'trazabilidadSecuencia.numeroAjuste': numeroAjuste }
-  ]
+    { 'datos.metadata.numeroAjuste': numeroAjuste },
+    { 'datos.nmroAjste': numeroAjuste },
+    { 'trazabilidadSecuencia.numeroAjuste': numeroAjuste },
+  ],
 });
+
+/** Si el root quedó en RPT- pero hay número real en datos/secuencia, lo corrige. */
+async function normalizarVinculoAjusteEnFormulario(formulario, opts = {}) {
+  if (!formulario) return false;
+  const datos = opts.datos || formulario.datos || {};
+  const numeroCanonico = resolverNumeroAjusteCanonico(
+    opts.nmroAjste,
+    datos?.metadata?.numeroAjuste,
+    datos?.numeroAjuste,
+    datos?.nmroAjste,
+    datos?.numeroCaso,
+    formulario?.trazabilidadSecuencia?.numeroAjuste,
+    formulario?.numeroCaso
+  );
+  const complexIdReal =
+    (opts.casoId && esObjectIdMongo(opts.casoId) ? String(opts.casoId).trim() : '') ||
+    complexIdDesdeFormulario(formulario, datos);
+
+  let cambio = false;
+  if (numeroCanonico && !esClaveReporteTemporal(numeroCanonico)) {
+    if (String(formulario.numeroCaso || '').trim() !== numeroCanonico) {
+      formulario.numeroCaso = numeroCanonico;
+      cambio = true;
+    }
+    if (!datos.numeroCaso || esClaveReporteTemporal(datos.numeroCaso)) {
+      datos.numeroCaso = numeroCanonico;
+      cambio = true;
+    }
+    datos.metadata = {
+      ...(datos.metadata || {}),
+      numeroAjuste: numeroCanonico,
+    };
+    if (!formulario.trazabilidadSecuencia) {
+      formulario.trazabilidadSecuencia = { numeroAjuste: numeroCanonico, pasos: {} };
+      cambio = true;
+    } else if (formulario.trazabilidadSecuencia.numeroAjuste !== numeroCanonico) {
+      formulario.trazabilidadSecuencia.numeroAjuste = numeroCanonico;
+      cambio = true;
+    }
+  }
+  if (complexIdReal) {
+    if (String(formulario.casoId || '').trim() !== complexIdReal) {
+      formulario.casoId = complexIdReal;
+      cambio = true;
+    }
+    if (String(datos.casoId || '').trim() !== complexIdReal) {
+      datos.casoId = complexIdReal;
+      cambio = true;
+    }
+    if (String(datos?.metadata?.complexId || '').trim() !== complexIdReal) {
+      datos.metadata = {
+        ...(datos.metadata || {}),
+        complexId: complexIdReal,
+      };
+      cambio = true;
+    }
+  }
+  if (cambio) {
+    formulario.datos = datos;
+    if (typeof formulario.markModified === 'function') {
+      formulario.markModified('datos');
+      formulario.markModified('trazabilidadSecuencia');
+    }
+  }
+  return cambio;
+}
 
 /** Extrae nombre de asegurado/tomador aunque venga como objeto. */
 const textoAseguradoHistorial = (...candidatos) => {
@@ -50,6 +163,127 @@ const textoAseguradoHistorial = (...candidatos) => {
 };
 
 const esTipoAjusteHistorial = (tipo) => String(tipo || '').toLowerCase().includes('ajuste');
+
+const esObjectIdMongo = (valor) =>
+  /^[a-fA-F0-9]{24}$/.test(String(valor || '').trim());
+
+const MAPA_ETAPA_SUBTAREA_A_TIPO_HISTORIAL = {
+  inspeccion: 'inspeccion',
+  informePreliminar: 'informePreliminar',
+  ultimoDocumento: 'ultimoDocumento',
+  reporteActividades: 'ultimoDocumento',
+  informeFinal: 'informeFinal',
+  presentacionCifras: 'informeFinal',
+};
+
+/**
+ * Escribe el Word del ajuste en historialDocs tipado del caso Complex
+ * (lo que lee Trazabilidad) y actualiza el anexo de protocolo.
+ * Se usa sobre todo para sesión externa, donde el sync del frontend
+ * suele fallar o quedar omitido.
+ */
+async function sincronizarAjusteEnTrazabilidadComplex({
+  formulario,
+  archivo,
+  usuario,
+  subtarea = null,
+}) {
+  if (!formulario || !archivo?.ruta || !archivo?.nombre) return false;
+
+  const complexId = String(
+    usuario?.casoId ||
+      formulario?.datos?.metadata?.complexId ||
+      (esObjectIdMongo(formulario?.casoId) ? formulario.casoId : '') ||
+      subtarea?.casoId ||
+      ''
+  ).trim();
+  if (!esObjectIdMongo(complexId)) return false;
+
+  const estadoAjuste = String(
+    formulario.estadoActual || formulario?.datos?.estadoActual || ''
+  ).trim();
+  const etapaSubtarea = String(subtarea?.etapaTrazabilidad || '').trim();
+  const tipoDoc =
+    MAPA_ETAPA_SUBTAREA_A_TIPO_HISTORIAL[etapaSubtarea] ||
+    tipoHistorialDesdeEstadoAjuste(estadoAjuste);
+
+  const casoDoc = await Complex.findById(complexId);
+  if (!casoDoc) return false;
+
+  const ahora = new Date();
+  const fechaISO = ahora.toISOString();
+  const fechaLocal = fechaISO.slice(0, 10);
+  const formularioId = String(formulario._id);
+  const historial = Array.isArray(casoDoc.historialDocs) ? [...casoDoc.historialDocs] : [];
+
+  let docPrevio = null;
+  const historialFiltrado = historial.filter((doc) => {
+    if (!doc) return false;
+    const docTipo = String(doc.tipo || doc.categoria || '');
+    const docFormularioId = String(doc.formularioId || '');
+    if (docTipo === tipoDoc && docFormularioId && docFormularioId === formularioId) {
+      if (!docPrevio) docPrevio = doc;
+      return false;
+    }
+    return true;
+  });
+
+  const cfg = MAPEO_TIPO_HISTORIAL_A_COMPLEX[tipoDoc];
+  const fechaProtocoloCaso = cfg?.campoFecha
+    ? String(casoDoc[cfg.campoFecha] || '').trim()
+    : '';
+  const fechaOriginal =
+    docPrevio?.fechaCreacion ||
+    docPrevio?.fecha ||
+    fechaProtocoloCaso ||
+    fechaLocal;
+
+  const docNuevo = {
+    tipo: tipoDoc,
+    categoria: tipoDoc,
+    nombre: archivo.nombre,
+    url: archivo.ruta,
+    ruta: archivo.ruta,
+    tamano: archivo.tamaño || archivo.tamano || 0,
+    tipoMime:
+      archivo.tipoMime ||
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    fecha: String(fechaOriginal).includes('T')
+      ? String(fechaOriginal).split('T')[0]
+      : String(fechaOriginal).slice(0, 10),
+    fechaCreacion: docPrevio?.fechaCreacion || docPrevio?.fecha || fechaOriginal,
+    fechaSubida: fechaISO,
+    fechaModificacion: fechaISO,
+    comentario: docPrevio
+      ? `Ajuste ${estadoAjuste || tipoDoc} actualizado por externo`
+      : `Ajuste ${estadoAjuste || tipoDoc} guardado por externo`,
+    usuario: usuario?.nombre || usuario?.login || 'externo',
+    formularioId,
+    subtareaId: subtarea?._id ? String(subtarea._id) : String(usuario?.subtareaId || ''),
+    origen: usuario?.externo ? 'ajuste-externo' : 'ajuste',
+  };
+
+  casoDoc.historialDocs = [docNuevo, ...historialFiltrado];
+  if (typeof casoDoc.markModified === 'function') {
+    casoDoc.markModified('historialDocs');
+  }
+
+  const camposProtocolo = buildCamposProtocoloDesdeAjuste({
+    tipoHistorial: tipoDoc,
+    nombreArchivo: archivo.nombre,
+    fechaPreferida: fechaOriginal,
+    fechaFallback: fechaLocal,
+    fechaExistenteCaso: fechaProtocoloCaso,
+    soloSiVacioFecha: true,
+  });
+  Object.assign(casoDoc, camposProtocolo);
+
+  await casoDoc.save();
+  console.log(
+    `✅ Ajuste sincronizado en trazabilidad Complex (${tipoDoc}) caso=${complexId} form=${formularioId}`
+  );
+  return true;
+}
 
 const enriquecerTituloAjusteConAsegurado = (titulo, asegurado, tipo) => {
   const tituloBase = String(titulo || '').trim();
@@ -139,27 +373,35 @@ const valoresResponsableCaso = (caso) => {
  */
 async function esResponsableAsignadoDelFormulario(usuarioActual, formulario, usuarioBD = null) {
   try {
-    const numeroAjuste = String(
-      formulario?.numeroCaso ||
-      formulario?.datos?.numeroAjuste ||
-      formulario?.datos?.numeroCaso ||
-      formulario?.trazabilidadSecuencia?.numeroAjuste ||
-      ''
-    ).trim();
+    const complexId = complexIdDesdeFormulario(formulario);
+    const numeroAjuste = numeroAjusteDesdeFormulario(formulario);
 
-    if (!numeroAjuste) return false;
+    let caso = null;
+    if (complexId) {
+      caso =
+        (await Complex.findById(complexId).select('nmroAjste codiRespnsble').lean()) ||
+        (await CasoComplex.findById(complexId).select('nmroAjste codiRespnsble').lean());
+    }
 
-    const filtroNumero = {
-      $or: [
-        { nmroAjste: numeroAjuste },
-        { nmroAjste: numeroAjuste.toUpperCase() },
-        { nmroAjste: { $regex: new RegExp(`^${numeroAjuste.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
-      ]
-    };
-
-    let caso =
-      (await Complex.findOne(filtroNumero).select('nmroAjste codiRespnsble').lean()) ||
-      (await CasoComplex.findOne(filtroNumero).select('nmroAjste codiRespnsble').lean());
+    if (!caso?.codiRespnsble && numeroAjuste && !esClaveReporteTemporal(numeroAjuste)) {
+      const filtroNumero = {
+        $or: [
+          { nmroAjste: numeroAjuste },
+          { nmroAjste: numeroAjuste.toUpperCase() },
+          {
+            nmroAjste: {
+              $regex: new RegExp(
+                `^${numeroAjuste.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+                'i'
+              ),
+            },
+          },
+        ],
+      };
+      caso =
+        (await Complex.findOne(filtroNumero).select('nmroAjste codiRespnsble').lean()) ||
+        (await CasoComplex.findOne(filtroNumero).select('nmroAjste codiRespnsble').lean());
+    }
 
     if (!caso?.codiRespnsble) return false;
 
@@ -325,8 +567,29 @@ class HistorialController {
 
       const formulario = await HistorialFormulario.findOne(construirFiltroPorNumeroAjuste(numeroAjuste))
         .sort({ fechaModificacion: -1, createdAt: -1 })
-        .select('numeroCaso casoId carpetaCaso tipo titulo trazabilidadSecuencia fechaModificacion')
+        .select('numeroCaso casoId carpetaCaso tipo titulo trazabilidadSecuencia fechaModificacion datos')
         .lean();
+
+      // Autoreparar vínculo RPT- → nmroAjste real para que el botón Ajuste encuentre el form
+      if (formulario && esClaveReporteTemporal(formulario.numeroCaso)) {
+        const numeroCanonico = numeroAjusteDesdeFormulario(formulario) || numeroAjuste;
+        if (numeroCanonico && !esClaveReporteTemporal(numeroCanonico)) {
+          await HistorialFormulario.updateOne(
+            { _id: formulario._id },
+            {
+              $set: {
+                numeroCaso: numeroCanonico,
+                'datos.numeroCaso': numeroCanonico,
+                'datos.metadata.numeroAjuste': numeroCanonico,
+                'trazabilidadSecuencia.numeroAjuste': numeroCanonico,
+              },
+            }
+          );
+          formulario.numeroCaso = numeroCanonico;
+          if (!formulario.trazabilidadSecuencia) formulario.trazabilidadSecuencia = {};
+          formulario.trazabilidadSecuencia.numeroAjuste = numeroCanonico;
+        }
+      }
 
       return res.json({
         success: true,
@@ -1048,7 +1311,9 @@ class HistorialController {
           datos.numeroCaso,
           datos.numeroAjuste,
           datos.nmroAjste,
+          datos?.metadata?.numeroAjuste,
           datos.numeroSiniestro,
+          formulario?.trazabilidadSecuencia?.numeroAjuste,
         ].map(norm).filter(Boolean);
         const casoIdsFormulario = [
           formulario.casoId,
@@ -1339,15 +1604,116 @@ class HistorialController {
       console.log(`📊 Tamaño estimado del documento (solo metadata): ${tamanoMB} MB`);
 
       // Verificar si ya existe un casoId para este formulario
-      let casoId = datos.casoId;
-      let numeroCaso = datos.numeroCaso;
+      let casoId = datos.casoId || datos?.metadata?.complexId || '';
+      let numeroCaso = resolverNumeroAjusteCanonico(
+        req.user?.externo ? req.user?.nmroAjste : '',
+        datos?.metadata?.numeroAjuste,
+        datos.numeroCaso,
+        req.body?.numeroCaso,
+        datos.numeroAjuste,
+        datos.nmroAjste
+      );
       let carpetaCaso = datos.carpetaCaso;
 
-      // Si no existe casoId, crear uno nuevo (formulario inicial)
+      // Sesión externa: priorizar el caso Complex real del JWT (nunca generar CASO_/RPT-)
+      if (req.user?.externo) {
+        if (req.user.casoId) casoId = String(req.user.casoId).trim();
+        if (req.user.nmroAjste) numeroCaso = String(req.user.nmroAjste).trim();
+      }
+
+      // Si no existe casoId, crear uno nuevo (formulario inicial sin Complex)
       if (!casoId) {
         casoId = `CASO_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        numeroCaso = datos.reporteNo || `RPT-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
+      }
+      // Solo generar RPT si NO llegó un número de ajuste real
+      if (!numeroCaso || esClaveReporteTemporal(numeroCaso)) {
+        const preferido = resolverNumeroAjusteCanonico(
+          req.user?.nmroAjste,
+          datos?.metadata?.numeroAjuste,
+          req.body?.numeroCaso,
+          datos.numeroAjuste,
+          datos.nmroAjste,
+          datos.numeroCaso
+        );
+        if (preferido && !esClaveReporteTemporal(preferido)) {
+          numeroCaso = preferido;
+        } else if (!numeroCaso) {
+          numeroCaso =
+            datos.reporteNo ||
+            `RPT-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
+        }
+      }
+      if (!carpetaCaso) {
         carpetaCaso = `Caso_${numeroCaso}_${new Date().toISOString().split('T')[0]}`;
+      }
+
+      // Persistir vínculo Complex dentro de datos para sync/trazabilidad posteriores
+      if (casoId) datos.casoId = casoId;
+      if (numeroCaso) datos.numeroCaso = numeroCaso;
+      if (numeroCaso && !esClaveReporteTemporal(numeroCaso)) {
+        datos.metadata = { ...(datos.metadata || {}), numeroAjuste: String(numeroCaso) };
+      }
+      if (casoId && /^[a-fA-F0-9]{24}$/.test(String(casoId))) {
+        datos.metadata = { ...(datos.metadata || {}), complexId: String(casoId) };
+      }
+
+      // Continuidad: si ya hay formulario de ajuste para este nmroAjste, actualizarlo
+      // (evita duplicados RPT- cuando externo/interno guarda desde subtarea).
+      if (
+        esTipoAjusteHistorial(tipo) &&
+        numeroCaso &&
+        !esClaveReporteTemporal(numeroCaso)
+      ) {
+        const existente = await HistorialFormulario.findOne(
+          construirFiltroPorNumeroAjuste(numeroCaso)
+        ).sort({ fechaModificacion: -1, createdAt: -1 });
+
+        if (existente) {
+          const aseguradoExistente = textoAseguradoHistorial(
+            req.body?.asegurado,
+            datos?.asegurado,
+            datos?.tomador,
+            existente.asegurado
+          );
+          existente.titulo =
+            enriquecerTituloAjusteConAsegurado(titulo, aseguradoExistente, tipo) || titulo;
+          if (aseguradoExistente) existente.asegurado = aseguradoExistente;
+          existente.datos = datos;
+          existente.estadoActual =
+            estadoVersionAjuste || datos?.estadoActual || existente.estadoActual || 'inicial';
+          existente.numeroCaso = numeroCaso;
+          if (esObjectIdMongo(casoId)) existente.casoId = casoId;
+          if (carpetaCaso) existente.carpetaCaso = carpetaCaso;
+          if (archivo?.ruta || archivo?.nombre) {
+            existente.archivo = {
+              ...(existente.archivo || {}),
+              nombre: archivo?.nombre || existente.archivo?.nombre,
+              ruta: archivo?.ruta || existente.archivo?.ruta,
+              tamaño: archivo?.tamaño ?? existente.archivo?.tamaño,
+              tipoMime:
+                archivo?.tipoMime ||
+                existente.archivo?.tipoMime ||
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            };
+          }
+          if (!existente.trazabilidadSecuencia) {
+            existente.trazabilidadSecuencia = { numeroAjuste: numeroCaso, pasos: {} };
+          } else {
+            existente.trazabilidadSecuencia.numeroAjuste = numeroCaso;
+          }
+          existente.fechaModificacion = new Date();
+          existente.markModified('datos');
+          existente.markModified('trazabilidadSecuencia');
+          await existente.save();
+          console.log(
+            `♻️ Continuidad ajuste: reutilizado formulario ${existente._id} para ${numeroCaso}`
+          );
+          return res.status(200).json({
+            success: true,
+            reutilizado: true,
+            formulario: existente,
+          });
+        }
       }
 
       // Contar imágenes para logging
@@ -1698,6 +2064,50 @@ class HistorialController {
           aseguradoActualizado,
           tipoActual
         );
+      }
+
+      // Mantener vínculo con el caso Complex (nmroAjste real + complexId)
+      // para que el botón Ajuste abra el mismo documento diligenciado.
+      {
+        const datosMerge = updateFields.datos || formulario.datos || {};
+        const numeroCanonico = resolverNumeroAjusteCanonico(
+          req.user?.externo ? req.user?.nmroAjste : '',
+          datosMerge?.metadata?.numeroAjuste,
+          datosMerge?.numeroAjuste,
+          datosMerge?.nmroAjste,
+          datosMerge?.numeroCaso,
+          datosActualizacion?.numeroCaso,
+          formulario?.trazabilidadSecuencia?.numeroAjuste,
+          formulario?.numeroCaso
+        );
+        const complexIdCanonico =
+          (req.user?.externo && esObjectIdMongo(req.user?.casoId)
+            ? String(req.user.casoId).trim()
+            : '') ||
+          complexIdDesdeFormulario(
+            { ...formulario.toObject?.() || formulario, casoId: updateFields.casoId || formulario.casoId },
+            datosMerge
+          );
+
+        if (numeroCanonico && !esClaveReporteTemporal(numeroCanonico)) {
+          updateFields.numeroCaso = numeroCanonico;
+          if (!updateFields.datos) updateFields.datos = { ...datosMerge };
+          updateFields.datos.numeroCaso = numeroCanonico;
+          updateFields.datos.metadata = {
+            ...(updateFields.datos.metadata || {}),
+            numeroAjuste: numeroCanonico,
+          };
+          updateFields['trazabilidadSecuencia.numeroAjuste'] = numeroCanonico;
+        }
+        if (complexIdCanonico) {
+          updateFields.casoId = complexIdCanonico;
+          if (!updateFields.datos) updateFields.datos = { ...(formulario.datos || {}) };
+          updateFields.datos.casoId = complexIdCanonico;
+          updateFields.datos.metadata = {
+            ...(updateFields.datos.metadata || {}),
+            complexId: complexIdCanonico,
+          };
+        }
       }
 
       console.log('💾 Ejecutando actualización selectiva en MongoDB...');
@@ -2433,7 +2843,9 @@ class HistorialController {
       console.log('✅ Archivo Word guardado exitosamente:', formulario.archivo);
 
       // Sesión externa (enlace de subtarea): el Word del ajuste queda adjunto
-      // automáticamente a la subtarea como formato (entregable obligatorio).
+      // automáticamente a la subtarea como formato (entregable obligatorio)
+      // Y también se escribe en historialDocs tipado del caso Complex para que
+      // el ajustador local lo vea en Trazabilidad.
       if (req.user?.externo && req.user?.subtareaId) {
         try {
           const subtarea = await ComplexSubtarea.findById(req.user.subtareaId);
@@ -2453,9 +2865,37 @@ class HistorialController {
             });
             await subtarea.save();
             console.log('✅ Formato del ajuste adjuntado a la subtarea externa:', subtarea._id.toString());
+
+            try {
+              await sincronizarAjusteEnTrazabilidadComplex({
+                formulario,
+                archivo: formulario.archivo,
+                usuario: req.user,
+                subtarea,
+              });
+            } catch (syncErr) {
+              console.warn(
+                '⚠️ No se pudo sincronizar el ajuste externo en trazabilidad Complex:',
+                syncErr.message
+              );
+            }
           }
         } catch (subErr) {
           console.warn('⚠️ No se pudo adjuntar el formato a la subtarea externa:', subErr.message);
+        }
+      } else if (String(formulario.tipo || '').toLowerCase().includes('ajuste')) {
+        // Fallback: si el frontend no pudo sync, el backend intenta con metadata.complexId
+        try {
+          await sincronizarAjusteEnTrazabilidadComplex({
+            formulario,
+            archivo: formulario.archivo,
+            usuario: req.user,
+          });
+        } catch (syncErr) {
+          console.warn(
+            '⚠️ No se pudo sincronizar el ajuste en trazabilidad Complex:',
+            syncErr.message
+          );
         }
       }
 

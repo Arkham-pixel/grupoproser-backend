@@ -121,9 +121,14 @@ export const ETAPAS_PROTOCOLO_DEFAULT = [
     campoFecha: 'fchaInspccion',
     // Completa con la fecha; el acta es etapa aparte (puede no elaborarse).
     campoDoc: null,
-    referencia: 'fchaContIni',
-    limite: { valor: 24, unidad: 'horas' },
-    limiteMaximo: { valor: 72, unidad: 'horas' },
+    // Con fecha programada (coordinación): el plazo corre desde esa cita.
+    // Sin ella: desde el contacto inicial.
+    referencia: 'fchaProgInspeccion',
+    referenciaAlternativa: 'fchaContIni',
+    // Días hábiles Colombia (no sábado, domingo ni festivos).
+    // Ej.: visita/programada viernes → tienen hasta el lunes hábil siguiente.
+    limite: { valor: 1, unidad: 'dias_habiles' },
+    limiteMaximo: { valor: 3, unidad: 'dias_habiles' },
     alertaVencimiento: true,
     responsable: 'Ajustador asignado / inspector',
     entregable: 'Inspección realizada, registro fotográfico y observaciones',
@@ -137,10 +142,12 @@ export const ETAPAS_PROTOCOLO_DEFAULT = [
     campoFecha: 'fchaInspccion',
     campoDoc: 'anexActaInspccion',
     referencia: 'fchaInspccion',
-    limite: { valor: 0, unidad: 'mismo_dia' },
+    // Tras la visita: 1 día hábil para subir el acta/documento (vie → lun).
+    limite: { valor: 1, unidad: 'dias_habiles' },
     alertaVencimiento: true,
     responsable: 'Ajustador asignado',
-    entregable: 'Acta de inspección cargada en ARNALD (mismo día de la inspección) o registro de no aplica',
+    entregable:
+      'Acta de inspección cargada en ARNALD (1 día hábil tras la inspección) o registro de no aplica',
     alcance: 'ajustador',
   },
   {

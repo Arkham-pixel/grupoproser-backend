@@ -2217,6 +2217,19 @@ router.get("/verificar-sesion", async (req, res) => {
       console.log('⚠️ Token inválido en heartbeat:', error.message);
       return res.status(401).json({ message: "Token inválido o expirado" });
     }
+
+    // Sesión limitada del enlace de subtarea: no hay SecurUser / SesionUsuario
+    if (decoded?.externo || decoded?.role === 'externo') {
+      return res.json({
+        message: "Sesión externa activa",
+        externo: true,
+        usuario: {
+          id: decoded.id,
+          login: decoded.login,
+          name: decoded.nombre || decoded.name || 'Externo',
+        },
+      });
+    }
     
     // Verificar que el usuario existe y está activo
     const usuario = await SecurUser.findById(decoded.id);

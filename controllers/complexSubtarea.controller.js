@@ -13,6 +13,9 @@ import {
   enviarNotificacionSubtareaReabierta,
 } from '../services/emailService.js';
 import {
+  MAPEO_TIPO_HISTORIAL_A_COMPLEX,
+} from '../config/ajusteTrazabilidadComplexMap.js';
+import {
   enriquecerSubtarea,
   esAsignadoInterno,
   loginDesdeUsuario,
@@ -32,12 +35,238 @@ const ETAPAS_REQUIEREN_FORMATO = new Set([
   'presentacionCifras',
 ]);
 
+/** Etapas que en trazabilidad solo usan fechas (sin documento). */
+const ETAPAS_SOLO_FECHA = new Set([
+  'recepcionAsignacion',
+  'carguePlataforma',
+  'coordinacionInspeccion',
+  'seguimientoDocsPendientes',
+  'seguimientoAutorizacionCompania',
+  'seguimientoDocumentosPago',
+]);
+
+/** Campos de fecha de protocolo por etapa (espejo de trazabilidad). */
+const CAMPOS_PROTOCOLO_POR_ETAPA = {
+  recepcionAsignacion: ['fchaAsgncion'],
+  carguePlataforma: ['fchaAsgncion'],
+  contactoInicial: ['fchaContIni'],
+  coordinacionInspeccion: ['fchaCoordInspeccion', 'fchaProgInspeccion'],
+  inspeccion: ['fchaInspccion'],
+  solicitudDocs: ['fchaSoliDocu'],
+  informePreliminar: ['fchaInfoPrelm'],
+  seguimientoDocsPendientes: ['fchaUltSegui'],
+  ultimoDocumento: ['fchaRepoActi'],
+  reporteActividades: ['fchaRepoActi'],
+  informeFinal: ['fchaInfoFnal'],
+  seguimientoAutorizacionCompania: ['fchaAceptacionCifrasAseguradora'],
+  presentacionCifras: ['fchaPresentacionCifras'],
+  seguimientoDocumentosPago: ['fchaUltSegui'],
+  envioFiniquito: ['fchaEnvioFiniquito'],
+};
+
+const CAMPO_OBS_POR_ETAPA = {
+  contactoInicial: 'obseContIni',
+  coordinacionInspeccion: 'obseCoordInspeccion',
+  inspeccion: 'obseInspccion',
+};
+
+/** Coordinación de inspección: el asignado sigue hasta acta (y opcional preliminar). */
+function esFlujoVisitaCoordinacion(subtarea) {
+  return String(subtarea?.etapaTrazabilidad || '').trim() === 'coordinacionInspeccion';
+}
+
+function faseFlujoVisita(subtarea) {
+  if (!esFlujoVisitaCoordinacion(subtarea)) return '';
+  const f = String(subtarea?.flujoVisitaFase || '').trim();
+  return f || 'coordinacion';
+}
+
+const CAMPOS_FECHA_FLUJO_VISITA = [
+  'fchaCoordInspeccion',
+  'fchaProgInspeccion',
+  'fchaInspccion',
+  'fchaInfoPrelm',
+];
+
+const CAMPOS_FECHA_CIERRE_FLUJO_VISITA = [
+  'fchaCoordInspeccion',
+  'fchaProgInspeccion',
+  'fchaInspccion',
+];
+
 function subtareaRequiereFormato(subtarea) {
-  return ETAPAS_REQUIEREN_FORMATO.has(String(subtarea?.etapaTrazabilidad || '').trim());
+  const etapa = String(subtarea?.etapaTrazabilidad || '').trim();
+  // El flujo visita no exige preliminar para cerrar (es opcional)
+  if (esFlujoVisitaCoordinacion(subtarea)) return false;
+  if (ETAPAS_SOLO_FECHA.has(etapa)) return false;
+  return ETAPAS_REQUIEREN_FORMATO.has(etapa);
 }
 
 function tieneFormatoAdjunto(subtarea) {
   return (subtarea?.archivos || []).some((a) => a.tipoArchivo === 'formato');
+}
+
+function camposFechaProtocoloDesdeEtapa(etapa) {
+  return CAMPOS_PROTOCOLO_POR_ETAPA[String(etapa || '').trim()] || [];
+}
+
+function camposFechaPermitidosSubtarea(subtarea) {
+  if (esFlujoVisitaCoordinacion(subtarea)) return CAMPOS_FECHA_FLUJO_VISITA;
+  return camposFechaProtocoloDesdeEtapa(subtarea?.etapaTrazabilidad);
+}
+
+function camposFechaRequeridosAlCompletar(subtarea) {
+  if (esFlujoVisitaCoordinacion(subtarea)) return CAMPOS_FECHA_CIERRE_FLUJO_VISITA;
+  return camposFechaProtocoloDesdeEtapa(subtarea?.etapaTrazabilidad);
+}
+
+function campoFechaProtocoloDesdeEtapa(etapa) {
+  return camposFechaProtocoloDesdeEtapa(etapa)[0] || '';
+}
+
+/** Normaliza YYYY-MM-DD o ISO a Date a mediodía local para evitar salto de día. */
+function parsearFechaProtocolo(valor) {
+  if (valor === null || valor === undefined || valor === '') return null;
+  if (valor instanceof Date && !Number.isNaN(valor.getTime())) return valor;
+  const s = String(valor).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return new Date(`${s}T12:00:00`);
+  }
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function aYmd(fecha) {
+  if (!fecha) return '';
+  const d = fecha instanceof Date ? fecha : new Date(fecha);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function fechasProtocoloComoObjeto(subtarea) {
+  const raw = subtarea?.fechasProtocolo;
+  if (!raw) return {};
+  if (raw instanceof Map) return Object.fromEntries(raw.entries());
+  if (typeof raw === 'object') return { ...raw };
+  return {};
+}
+
+/**
+ * Aplica fechasProtocolo / fechaProtocolo desde el body a la subtarea.
+ */
+function aplicarFechasProtocoloEnSubtarea(subtarea, body = {}) {
+  const campos = camposFechaPermitidosSubtarea(subtarea);
+  if (!campos.length) return;
+
+  const actual = fechasProtocoloComoObjeto(subtarea);
+  let huboCambio = false;
+
+  if (body.fechasProtocolo && typeof body.fechasProtocolo === 'object') {
+    for (const campo of campos) {
+      if (Object.prototype.hasOwnProperty.call(body.fechasProtocolo, campo)) {
+        const parseada = parsearFechaProtocolo(body.fechasProtocolo[campo]);
+        if (parseada) {
+          actual[campo] = parseada;
+          huboCambio = true;
+        } else if (
+          body.fechasProtocolo[campo] === '' ||
+          body.fechasProtocolo[campo] == null
+        ) {
+          delete actual[campo];
+          huboCambio = true;
+        }
+      }
+    }
+  }
+
+  // Compat: una sola fechaProtocolo → primer campo de la etapa
+  if (body.fechaProtocolo !== undefined) {
+    const parseada = parsearFechaProtocolo(body.fechaProtocolo);
+    if (parseada) {
+      actual[campos[0]] = parseada;
+      huboCambio = true;
+    } else if (body.fechaProtocolo === '' || body.fechaProtocolo == null) {
+      delete actual[campos[0]];
+      huboCambio = true;
+    }
+  }
+
+  if (!huboCambio && Object.keys(actual).length === 0) return;
+
+  subtarea.fechasProtocolo = actual;
+  if (typeof subtarea.markModified === 'function') {
+    subtarea.markModified('fechasProtocolo');
+  }
+  const primaria = parsearFechaProtocolo(actual[campos[0]]);
+  subtarea.fechaProtocolo = primaria || undefined;
+}
+
+function faltanFechasProtocoloRequeridas(subtarea) {
+  const campos = camposFechaRequeridosAlCompletar(subtarea);
+  if (!campos.length) return [];
+  const obj = fechasProtocoloComoObjeto(subtarea);
+  return campos.filter((campo, idx) => {
+    if (parsearFechaProtocolo(obj[campo])) return false;
+    if (idx === 0 && parsearFechaProtocolo(subtarea.fechaProtocolo)) return false;
+    return true;
+  });
+}
+
+/**
+ * Envía las fechas (y observaciones) de la subtarea a los hitos de trazabilidad
+ * del caso. Si un hito ya tiene fecha, no la sobrescribe.
+ */
+async function sincronizarFechaProtocoloEnCaso(subtarea) {
+  const campos = camposFechaPermitidosSubtarea(subtarea);
+  if (!campos.length) return { ok: false, motivo: 'etapa-sin-fecha' };
+
+  const obj = fechasProtocoloComoObjeto(subtarea);
+  const casoDoc = await Complex.findById(subtarea.casoId);
+  if (!casoDoc) return { ok: false, motivo: 'caso-no-encontrado' };
+
+  let escritos = 0;
+  for (const campo of campos) {
+    const fecha =
+      parsearFechaProtocolo(obj[campo]) ||
+      (campo === campos[0] ? parsearFechaProtocolo(subtarea.fechaProtocolo) : null) ||
+      (campo === campos[0] ? parsearFechaProtocolo(subtarea.fechaCompletada) : null);
+    if (!fecha) continue;
+
+    const anterior = casoDoc[campo];
+    const tieneAnterior = anterior != null && String(anterior).trim() !== '';
+    if (tieneAnterior) {
+      if (aYmd(anterior) === aYmd(fecha)) continue;
+      continue; // respetar fecha ya puesta en trazabilidad
+    }
+    casoDoc[campo] = fecha;
+    escritos += 1;
+  }
+
+  // Observaciones: en flujo visita van a coordinación y/o inspección
+  const obs = String(subtarea.observacionesAsignado || '').trim();
+  if (obs) {
+    const camposObs = esFlujoVisitaCoordinacion(subtarea)
+      ? ['obseCoordInspeccion', 'obseInspccion']
+      : [CAMPO_OBS_POR_ETAPA[String(subtarea?.etapaTrazabilidad || '').trim()]].filter(Boolean);
+    for (const campoObs of camposObs) {
+      if (!String(casoDoc[campoObs] || '').trim()) {
+        casoDoc[campoObs] = obs;
+        escritos += 1;
+      }
+    }
+  }
+
+  if (escritos > 0) {
+    await casoDoc.save();
+    console.log(
+      `✅ Fechas/obs de subtarea → trazabilidad caso=${casoDoc._id} etapa=${String(subtarea?.etapaTrazabilidad || '')} campos=${escritos}`
+    );
+  }
+  return { ok: true, escritos };
 }
 
 /**
@@ -139,14 +368,85 @@ function normalizarTipoArchivo(valor) {
   return String(valor || '').trim().toLowerCase() === 'formato' ? 'formato' : 'documento';
 }
 
-/** Guarda el archivo también en historialDocs del caso Complex. */
+/** etapa de subtarea → tipo de historialDocs que lee Trazabilidad */
+function tipoHistorialDesdeEtapaSubtarea(etapa) {
+  const e = String(etapa || '').trim();
+  const mapa = {
+    contactoInicial: 'contactoInicial',
+    inspeccion: 'inspeccion',
+    solicitudDocs: 'solicitudDocs',
+    informePreliminar: 'informePreliminar',
+    ultimoDocumento: 'ultimoDocumento',
+    reporteActividades: 'ultimoDocumento',
+    informeFinal: 'informeFinal',
+    presentacionCifras: 'presentacionCifras',
+    envioFiniquito: 'envioFiniquito',
+  };
+  return mapa[e] || '';
+}
+
+/**
+ * Guarda el archivo de la subtarea en historialDocs del caso con el MISMO
+ * tipo de bandeja de trazabilidad (inspeccion, informePreliminar, …),
+ * y actualiza el anexo de protocolo. Así el asignador lo ve en Trazabilidad.
+ */
 async function sincronizarArchivoEnCaso({ casoId, subtarea, archivo }) {
   const casoDoc = await Complex.findById(casoId);
-  if (!casoDoc) return;
+  if (!casoDoc) return { ok: false, motivo: 'caso-no-encontrado' };
 
-  const esFormato = archivo.tipoArchivo === 'formato';
-  const tipoHist = esFormato ? 'formatoSubtarea' : 'subtarea';
-  const ahora = new Date().toISOString();
+  const etapa = String(subtarea?.etapaTrazabilidad || '').trim();
+  const fase = faseFlujoVisita(subtarea);
+  // Etapas solo-fecha no llevan documento… excepto flujo visita (acta/fotos/preliminar)
+  if (ETAPAS_SOLO_FECHA.has(etapa) && !esFlujoVisitaCoordinacion(subtarea)) {
+    return { ok: false, motivo: 'etapa-solo-fecha' };
+  }
+
+  let tipoHist = tipoHistorialDesdeEtapaSubtarea(etapa);
+  if (esFlujoVisitaCoordinacion(subtarea)) {
+    // Acta/fotos → bandeja inspección; formato en fase preliminar → informe preliminar
+    tipoHist =
+      archivo.tipoArchivo === 'formato' && fase === 'preliminar'
+        ? 'informePreliminar'
+        : 'inspeccion';
+  }
+  if (!tipoHist) {
+    tipoHist = archivo.tipoArchivo === 'formato' ? 'formatoSubtarea' : 'subtarea';
+  }
+
+  const ahora = new Date();
+  const fechaISO = ahora.toISOString();
+  const fechaLocal = aYmd(ahora);
+  const subtareaId = String(subtarea._id);
+  const filename = String(archivo.filename || '');
+
+  const historial = Array.isArray(casoDoc.historialDocs) ? [...casoDoc.historialDocs] : [];
+  // Reemplazar entrada previa: en flujo visita se permiten varios docs (acta + fotos);
+  // en el resto, un entregable por tipo/subtarea.
+  const filtrado = historial.filter((doc) => {
+    if (!doc) return false;
+    const mismoFile =
+      filename &&
+      String(doc.filename || '') === filename &&
+      String(doc.subtareaId || '') === subtareaId;
+    if (esFlujoVisitaCoordinacion(subtarea)) {
+      return !mismoFile;
+    }
+    const mismoSub =
+      String(doc.subtareaId || '') === subtareaId &&
+      String(doc.tipo || doc.categoria || '') === tipoHist;
+    return !(mismoSub || mismoFile);
+  });
+
+  const fechasObj = fechasProtocoloComoObjeto(subtarea);
+  const fechaProtocolo =
+    parsearFechaProtocolo(
+      esFlujoVisitaCoordinacion(subtarea)
+        ? fechasObj.fchaInspccion || fechasObj.fchaCoordInspeccion
+        : fechasObj[camposFechaProtocoloDesdeEtapa(etapa)[0]]
+    ) ||
+    parsearFechaProtocolo(subtarea.fechaProtocolo) ||
+    null;
+
   const entrada = {
     tipo: tipoHist,
     categoria: tipoHist,
@@ -154,22 +454,60 @@ async function sincronizarArchivoEnCaso({ casoId, subtarea, archivo }) {
     filename: archivo.filename,
     url: archivo.url,
     ruta: archivo.url,
-    fecha: ahora,
-    fechaSubida: ahora,
-    fechaCreacion: ahora,
+    fecha: fechaProtocolo ? aYmd(fechaProtocolo) : fechaLocal,
+    fechaSubida: fechaISO,
+    fechaCreacion: fechaProtocolo ? aYmd(fechaProtocolo) : fechaLocal,
+    fechaModificacion: fechaISO,
     subidoPor: archivo.subidoPor || '',
-    subtareaId: String(subtarea._id),
+    subtareaId,
     subtareaTitulo: subtarea.titulo || '',
     origen: 'subtarea',
+    comentario: `Adjunto de subtarea (${etapa || tipoHist})`,
   };
 
-  const historial = Array.isArray(casoDoc.historialDocs) ? [...casoDoc.historialDocs] : [];
-  historial.push(entrada);
-  casoDoc.historialDocs = historial;
+  casoDoc.historialDocs = [entrada, ...filtrado];
   if (typeof casoDoc.markModified === 'function') {
     casoDoc.markModified('historialDocs');
   }
+
+  // Anexo de protocolo (acta, informe, etc.) — solo si está vacío
+  const cfg = MAPEO_TIPO_HISTORIAL_A_COMPLEX[tipoHist];
+  if (cfg?.campoAnexo && archivo.nombre) {
+    const anterior = String(casoDoc[cfg.campoAnexo] || '').trim();
+    if (!anterior) {
+      casoDoc[cfg.campoAnexo] = String(archivo.nombre).trim();
+    }
+  }
+  // Fecha de hito: solo si está vacía
+  if (cfg?.campoFecha && fechaProtocolo) {
+    const anteriorF = casoDoc[cfg.campoFecha];
+    if (anteriorF == null || String(anteriorF).trim() === '') {
+      casoDoc[cfg.campoFecha] = fechaProtocolo;
+    }
+  }
+
   await casoDoc.save();
+  console.log(
+    `✅ Archivo de subtarea → trazabilidad tipo=${tipoHist} caso=${casoId} subtarea=${subtareaId}`
+  );
+  return { ok: true, tipo: tipoHist };
+}
+
+/** Reenvía a trazabilidad todos los archivos de la subtarea (p. ej. al completar). */
+async function sincronizarTodosArchivosSubtareaEnCaso(subtarea) {
+  const archivos = Array.isArray(subtarea?.archivos) ? subtarea.archivos : [];
+  for (const archivo of archivos) {
+    if (!archivo?.url && !archivo?.nombre) continue;
+    try {
+      await sincronizarArchivoEnCaso({
+        casoId: subtarea.casoId,
+        subtarea,
+        archivo,
+      });
+    } catch (err) {
+      console.warn('⚠️ Sync archivo subtarea → trazabilidad:', err.message);
+    }
+  }
 }
 
 async function resolverEmailResponsable(codi) {
@@ -499,6 +837,10 @@ export async function crearSubtarea(req, res) {
       titulo: titulo.trim(),
       etapaTrazabilidad: String(etapaTrazabilidad || '').trim(),
       etapaProtocoloId: String(etapaProtocoloId || '').trim(),
+      flujoVisitaFase:
+        String(etapaTrazabilidad || '').trim() === 'coordinacionInspeccion'
+          ? 'coordinacion'
+          : '',
       descripcion: String(descripcion || ''),
       instrucciones: String(instrucciones || ''),
       tipoAsignado,
@@ -599,10 +941,13 @@ export async function actualizarSubtarea(req, res) {
       descripcion,
       instrucciones,
       fechaLimite,
+      fechaProtocolo,
+      fechasProtocolo,
       estado,
       observacionesAsignado,
       marcarLeida,
       motivoReapertura,
+      flujoVisitaFase,
     } = req.body || {};
 
     const esAsignado = esAsignadoInterno(usuario, subtarea);
@@ -645,6 +990,52 @@ export async function actualizarSubtarea(req, res) {
         error:
           'Esta etapa exige el formato (informe) antes de completarla: genérelo en el formulario de ajuste; quedará adjunto a la subtarea.',
       });
+    }
+
+    // Flujo visita (coordinación→inspección): exige acta/fotos antes de cerrar
+    if (
+      estado === 'completada' &&
+      esFlujoVisitaCoordinacion(subtarea) &&
+      !(subtarea.archivos || []).length
+    ) {
+      return res.status(400).json({
+        error:
+          'Antes de cerrar debe subir el acta de inspección (físico o generado) y/o las fotos y datos de la visita.',
+      });
+    }
+
+    // Avance de fase del flujo visita
+    if (
+      flujoVisitaFase !== undefined &&
+      esFlujoVisitaCoordinacion(subtarea) &&
+      (trabaja || gestiona)
+    ) {
+      const permitidas = new Set(['coordinacion', 'inspeccion', 'decidir', 'preliminar']);
+      const nueva = String(flujoVisitaFase || '').trim();
+      if (nueva && !permitidas.has(nueva)) {
+        return res.status(400).json({ error: 'fase de flujo visita inválida' });
+      }
+      subtarea.flujoVisitaFase = nueva || 'coordinacion';
+    }
+
+    // Fechas de protocolo (igual que las bandejas de trazabilidad)
+    if (
+      (fechaProtocolo !== undefined || fechasProtocolo !== undefined) &&
+      (trabaja || gestiona)
+    ) {
+      aplicarFechasProtocoloEnSubtarea(subtarea, { fechaProtocolo, fechasProtocolo });
+    }
+
+    // Al completar una etapa con hitos de protocolo, las fechas son obligatorias
+    if (estado === 'completada' && camposFechaRequeridosAlCompletar(subtarea).length) {
+      const faltantes = faltanFechasProtocoloRequeridas(subtarea);
+      if (faltantes.length) {
+        return res.status(400).json({
+          error:
+            'Indique las fechas de la etapa (igual que en trazabilidad). Esas fechas se enviarán al protocolo del caso.',
+          camposFaltantes: faltantes,
+        });
+      }
     }
 
     if (gestiona) {
@@ -693,6 +1084,30 @@ export async function actualizarSubtarea(req, res) {
     }
 
     await subtarea.save();
+
+    // Sincronizar fecha de protocolo a la trazabilidad del caso
+    if (subtarea.fechaProtocolo || estado === 'completada') {
+      try {
+        await sincronizarFechaProtocoloEnCaso(subtarea);
+      } catch (syncFechaErr) {
+        console.warn(
+          '⚠️ No se pudo sincronizar fecha de subtarea en trazabilidad:',
+          syncFechaErr.message
+        );
+      }
+    }
+
+    // Archivos de la subtarea → bandeja de trazabilidad (inspeccion, informe, …)
+    if ((subtarea.archivos || []).length > 0) {
+      try {
+        await sincronizarTodosArchivosSubtareaEnCaso(subtarea);
+      } catch (syncArchErr) {
+        console.warn(
+          '⚠️ No se pudo sincronizar archivos de subtarea en trazabilidad:',
+          syncArchErr.message
+        );
+      }
+    }
 
     if (estado === 'completada') {
       try {
@@ -850,6 +1265,7 @@ async function encontrarPorToken(token) {
 }
 
 function payloadPublico(subtarea, caso) {
+  const fase = faseFlujoVisita(subtarea);
   return {
     id: subtarea._id,
     titulo: subtarea.titulo,
@@ -857,8 +1273,16 @@ function payloadPublico(subtarea, caso) {
     instrucciones: subtarea.instrucciones,
     estado: subtarea.estado,
     etapaTrazabilidad: subtarea.etapaTrazabilidad || '',
+    flujoVisitaFase: fase || subtarea.flujoVisitaFase || '',
+    esFlujoVisita: esFlujoVisitaCoordinacion(subtarea),
     requiereFormato: subtareaRequiereFormato(subtarea),
+    soloFecha:
+      esFlujoVisitaCoordinacion(subtarea)
+        ? fase === 'coordinacion'
+        : ETAPAS_SOLO_FECHA.has(String(subtarea.etapaTrazabilidad || '').trim()),
     fechaLimite: subtarea.fechaLimite,
+    fechaProtocolo: subtarea.fechaProtocolo || null,
+    fechasProtocolo: fechasProtocoloComoObjeto(subtarea),
     observacionesAsignado: subtarea.observacionesAsignado,
     archivos: (subtarea.archivos || []).map((a) => ({
       nombre: a.nombre,
@@ -874,6 +1298,7 @@ function payloadPublico(subtarea, caso) {
     nombreExterno: subtarea.nombreExterno,
     creadoPorNombre: subtarea.creadoPorNombre,
     expira: subtarea.tokenExpira,
+    casoId: subtarea.casoId ? String(subtarea.casoId) : '',
   };
 }
 
@@ -907,9 +1332,26 @@ export async function actualizarPublica(req, res) {
       return res.status(410).json({ error: 'Subtarea cancelada' });
     }
 
-    const { estado, observacionesAsignado } = req.body || {};
+    const {
+      estado,
+      observacionesAsignado,
+      fechaProtocolo,
+      fechasProtocolo,
+      flujoVisitaFase,
+    } = req.body || {};
     if (observacionesAsignado !== undefined) {
       subtarea.observacionesAsignado = String(observacionesAsignado);
+    }
+    if (fechaProtocolo !== undefined || fechasProtocolo !== undefined) {
+      aplicarFechasProtocoloEnSubtarea(subtarea, { fechaProtocolo, fechasProtocolo });
+    }
+    if (flujoVisitaFase !== undefined && esFlujoVisitaCoordinacion(subtarea)) {
+      const permitidas = new Set(['coordinacion', 'inspeccion', 'decidir', 'preliminar']);
+      const nueva = String(flujoVisitaFase || '').trim();
+      if (nueva && !permitidas.has(nueva)) {
+        return res.status(400).json({ error: 'fase de flujo visita inválida' });
+      }
+      subtarea.flujoVisitaFase = nueva || 'coordinacion';
     }
     if (estado !== undefined) {
       if (!ESTADOS_ASIGNADO.has(estado)) {
@@ -924,6 +1366,29 @@ export async function actualizarPublica(req, res) {
           error:
             'Debe diligenciar y guardar el formulario de ajuste (informe) antes de marcar la tarea como completada.',
         });
+      }
+      if (
+        estado === 'completada' &&
+        esFlujoVisitaCoordinacion(subtarea) &&
+        !(subtarea.archivos || []).length
+      ) {
+        return res.status(400).json({
+          error:
+            'Antes de cerrar debe subir el acta de inspección (físico o generado) y/o las fotos y datos de la visita.',
+        });
+      }
+      if (
+        estado === 'completada' &&
+        camposFechaRequeridosAlCompletar(subtarea).length
+      ) {
+        const faltantes = faltanFechasProtocoloRequeridas(subtarea);
+        if (faltantes.length) {
+          return res.status(400).json({
+            error:
+              'Indique las fechas de la etapa (igual que en trazabilidad). Esas fechas se enviarán al protocolo del caso.',
+            camposFaltantes: faltantes,
+          });
+        }
       }
       aplicarCambioEstado(
         subtarea,
@@ -940,6 +1405,28 @@ export async function actualizarPublica(req, res) {
     }
 
     await subtarea.save();
+
+    if (subtarea.fechaProtocolo || estado === 'completada') {
+      try {
+        await sincronizarFechaProtocoloEnCaso(subtarea);
+      } catch (syncFechaErr) {
+        console.warn(
+          '⚠️ No se pudo sincronizar fecha externa en trazabilidad:',
+          syncFechaErr.message
+        );
+      }
+    }
+
+    if ((subtarea.archivos || []).length > 0) {
+      try {
+        await sincronizarTodosArchivosSubtareaEnCaso(subtarea);
+      } catch (syncArchErr) {
+        console.warn(
+          '⚠️ No se pudo sincronizar archivos externos en trazabilidad:',
+          syncArchErr.message
+        );
+      }
+    }
 
     if (estado === 'completada') {
       const caso = await cargarCaso(subtarea.casoId);
@@ -1084,7 +1571,25 @@ export async function resumenCaso(req, res) {
       filtro.codiAsignado = { $in: logins.length ? logins : ['__none__'] };
     }
 
-    const subtareas = await ComplexSubtarea.find(filtro).lean();
+    const subtareas = await ComplexSubtarea.find(filtro);
+    // Reparar sync: lo hecho en subtareas debe verse en trazabilidad del caso
+    for (const s of subtareas) {
+      const tieneFechas =
+        Boolean(s.fechaProtocolo) ||
+        Object.keys(fechasProtocoloComoObjeto(s)).length > 0;
+      if (!(s.archivos || []).length && !tieneFechas) continue;
+      try {
+        if (tieneFechas) {
+          await sincronizarFechaProtocoloEnCaso(s);
+        }
+        if ((s.archivos || []).length) {
+          await sincronizarTodosArchivosSubtareaEnCaso(s);
+        }
+      } catch (repairErr) {
+        console.warn('⚠️ Repair sync subtarea→trazabilidad:', repairErr.message);
+      }
+    }
+
     const enriquecidas = subtareas.map(enriquecerSubtarea);
     const conteo = { verde: 0, amarillo: 0, rojo: 0, gris: 0, total: enriquecidas.length };
     for (const s of enriquecidas) {

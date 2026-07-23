@@ -152,6 +152,13 @@ export function calcularDuracionesSubtarea(subtarea, ahora = new Date()) {
 export function enriquecerSubtarea(subtarea) {
   const obj = typeof subtarea?.toObject === 'function' ? subtarea.toObject() : { ...subtarea };
   delete obj.tokenHash;
+  if (obj.fechasProtocolo instanceof Map) {
+    obj.fechasProtocolo = Object.fromEntries(obj.fechasProtocolo.entries());
+  } else if (obj.fechasProtocolo && typeof obj.fechasProtocolo === 'object') {
+    obj.fechasProtocolo = { ...obj.fechasProtocolo };
+  } else {
+    obj.fechasProtocolo = {};
+  }
   const duraciones = calcularDuracionesSubtarea(obj);
   return {
     ...obj,
