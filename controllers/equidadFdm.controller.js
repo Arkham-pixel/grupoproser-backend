@@ -32,6 +32,20 @@ const toStringOrNull = (value, fallback = null) => {
   return String(value).trim();
 };
 
+const parseLiquidadorPayload = (valor, fallback = null) => {
+  if (valor === undefined || valor === null || valor === '') return fallback ?? null;
+  if (typeof valor === 'object' && !Array.isArray(valor)) return valor;
+  if (typeof valor === 'string') {
+    try {
+      const parsed = JSON.parse(valor);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    } catch {
+      return fallback ?? null;
+    }
+  }
+  return fallback ?? null;
+};
+
 /** Formato: FDM-YYYY-MM-N (asignado solo al crear) */
 const generarConsecutivoFdm = async () => {
   const ahora = new Date();
@@ -111,6 +125,7 @@ const buildFdmPayload = (data = {}, base = {}) => ({
   estado: toStringOrNull(data.estado, base.estado ?? null),
   observaciones: toStringOrNull(data.observaciones, base.observaciones ?? null),
   detalle: toStringOrNull(data.detalle, base.detalle ?? null),
+  liquidador: parseLiquidadorPayload(data.liquidador, base.liquidador ?? null),
 });
 
 const validarRequeridos = (payload) => {

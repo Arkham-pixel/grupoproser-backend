@@ -28,12 +28,29 @@ const esClearExplicito = (valor) =>
 
 const parseDate = (value) => {
   if (!value) return null;
+
+  // Solo día: mediodía local (compatibilidad registros antiguos)
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
     const [year, month, day] = value.trim().split('-').map(Number);
     if (!Number.isNaN(year) && !Number.isNaN(month) && !Number.isNaN(day)) {
       return new Date(year, month - 1, day, 12, 0, 0);
     }
   }
+
+  // Fecha+hora del formulario sin zona (YYYY-MM-DDTHH:mm) → hora local
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value.trim())) {
+    const str = value.trim();
+    const tieneZona = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(str);
+    if (!tieneZona) {
+      const [datePart, timePart] = str.split('T');
+      const [year, month, day] = datePart.split('-').map(Number);
+      const [hour, minute] = timePart.split(':').map(Number);
+      if (year && month && day) {
+        return new Date(year, month - 1, day, hour || 0, minute || 0, 0, 0);
+      }
+    }
+  }
+
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 };
@@ -349,9 +366,37 @@ const buildExpressPayload = (
     data.fechaSolicitudDocumentos,
     base.fechaSolicitudDocumentos ?? null
   ),
+  fechaAcuseReciboDocumentos: parseDateFlexible(
+    data.fechaAcuseReciboDocumentos,
+    base.fechaAcuseReciboDocumentos ?? null
+  ),
+  fechaUltimoDocumento: parseDateFlexible(
+    data.fechaUltimoDocumento,
+    base.fechaUltimoDocumento ?? null
+  ),
+  fechaDefinicionCaso: parseDateFlexible(
+    data.fechaDefinicionCaso,
+    base.fechaDefinicionCaso ?? null
+  ),
+  fechaSolicitudDocumentosAdicionales: parseDateFlexible(
+    data.fechaSolicitudDocumentosAdicionales,
+    base.fechaSolicitudDocumentosAdicionales ?? null
+  ),
+  fechaSolicitudCorrecciones: parseDateFlexible(
+    data.fechaSolicitudCorrecciones,
+    base.fechaSolicitudCorrecciones ?? null
+  ),
+  fechaCorreccionesPresentadas: parseDateFlexible(
+    data.fechaCorreccionesPresentadas,
+    base.fechaCorreccionesPresentadas ?? null
+  ),
   fechaPresentacionCifras: parseDateFlexible(
     data.fechaPresentacionCifras,
     base.fechaPresentacionCifras ?? null
+  ),
+  fechaDocumentosPago: parseDateFlexible(
+    data.fechaDocumentosPago,
+    base.fechaDocumentosPago ?? null
   ),
   fechaFiniquitosFirmado: parseDateFlexible(
     data.fechaFiniquitosFirmado,

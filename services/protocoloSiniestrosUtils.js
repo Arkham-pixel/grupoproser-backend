@@ -189,6 +189,16 @@ function etapaCompletaPorCriterio(caso, etapa) {
         campoTieneValor(caso, 'anxoEnvioFiniquito');
       return presentacion && finiquito;
     }
+    case 'definicionODocsAdicionalesExpress':
+      return (
+        campoTieneValor(caso, 'fechaDefinicionCaso') ||
+        campoTieneValor(caso, 'fechaSolicitudDocumentosAdicionales')
+      );
+    case 'documentosPagoExpress':
+      return (
+        campoTieneValor(caso, 'fechaDocumentosPago') ||
+        campoTieneValor(caso, 'fechaCargueFiniquito')
+      );
     default:
       return null;
   }

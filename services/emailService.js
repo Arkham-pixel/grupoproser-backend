@@ -619,10 +619,22 @@ export const enviarEmailAlertas = async (datosAlertas) => {
     
     // IMPORTANTE: Los recordatorios de casos pendientes SOLO se envían al responsable asignado
     // NO se envían a quien asigna ni al funcionario de la aseguradora
+
+    const modulo = String(datosAlertas.modulo || 'complex').toLowerCase();
+    const esExpress = modulo === 'express';
+    const tituloSistema = esExpress
+      ? 'Sistema de Alertas ANS Express'
+      : 'Sistema de Alertas Complex';
+    const enlacePanel = esExpress
+      ? `${resolveFrontendUrl()}/express/protocolo`
+      : `${resolveFrontendUrl()}/complex/alertas`;
     
     // Crear contenido HTML para las alertas
-    const contenidoAlertas = datosAlertas.alertas.casos.map(caso => {
-      const alertasHTML = caso.alertas.map(alerta => `
+    const contenidoAlertas = (datosAlertas.alertas?.casos || []).map(caso => {
+      const docsFaltantes = Array.isArray(caso.documentosFaltantes)
+        ? caso.documentosFaltantes.length
+        : 0;
+      const alertasHTML = (caso.alertas || []).map(alerta => `
         <div style="margin: 10px 0; padding: 15px; border-left: 4px solid ${
           alerta.prioridad === 'ALTA' ? '#dc2626' : 
           alerta.prioridad === 'MEDIA' ? '#ea580c' : '#ca8a04'
@@ -644,15 +656,16 @@ export const enviarEmailAlertas = async (datosAlertas) => {
             };">${alerta.prioridad}</span>
           </div>
           <p style="margin: 0; color: #6b7280; font-size: 14px;">
-            <strong>Acción requerida:</strong> ${alerta.accion}
+            <strong>Acción requerida:</strong> ${alerta.accion || 'Revisar el caso en ARNALD'}
           </p>
+          ${alerta.etiquetaLimite ? `<p style="margin: 6px 0 0 0; color: #9ca3af; font-size: 12px;">Plazo ANS: ${alerta.etiquetaLimite}</p>` : ''}
         </div>
       `).join('');
       
       return `
         <div style="margin: 20px 0; padding: 20px; border: 1px solid #e5e7eb; border-radius: 12px; background-color: #ffffff;">
           <h3 style="margin: 0 0 15px 0; color: #1f2937; font-size: 18px;">
-            🚨 Caso ${caso.numeroAjuste}
+            🚨 Caso ${caso.numeroAjuste || caso.consecutivo || 'N/A'}
           </h3>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; font-size: 14px;">
             <div>
@@ -663,7 +676,7 @@ export const enviarEmailAlertas = async (datosAlertas) => {
             <div>
               <strong>Estado:</strong> ${caso.estado || 'N/A'}<br>
               <strong>Total Alertas:</strong> ${caso.totalAlertas}<br>
-              <strong>Documentos Faltantes:</strong> ${caso.documentosFaltantes.length}
+              ${esExpress ? '' : `<strong>Documentos Faltantes:</strong> ${docsFaltantes}`}
             </div>
           </div>
           ${alertasHTML}
@@ -695,12 +708,12 @@ export const enviarEmailAlertas = async (datosAlertas) => {
     const mailOptions = {
       from: `"Grupo Proser - Sistema de Alertas" <${process.env.EMAIL_USER}>`,
       to: datosAlertas.emailResponsable, // SOLO al responsable asignado
-      subject: `🚨 ALERTAS PENDIENTES - ${datosAlertas.alertas.casosConAlertas} Casos Requieren Atención`,
+      subject: `🚨 ALERTAS ${esExpress ? 'ANS EXPRESS' : 'PENDIENTES'} - ${datosAlertas.alertas.casosConAlertas} Casos Requieren Atención`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; background-color: #f8f9fa; padding: 20px;">
           <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
             <div style="text-align: center; margin-bottom: 30px;">
-              <h1 style="color: #dc2626; margin: 0; font-size: 28px;">🚨 Sistema de Alertas Complex</h1>
+              <h1 style="color: #dc2626; margin: 0; font-size: 28px;">🚨 ${tituloSistema}</h1>
               <p style="color: #6b7280; margin: 10px 0 0 0;">Grupo Proser - Notificaciones Automáticas</p>
             </div>
             
@@ -716,11 +729,11 @@ export const enviarEmailAlertas = async (datosAlertas) => {
                   <div style="font-size: 12px; color: #6b7280;">Con Alertas</div>
                 </div>
                 <div style="text-align: center;">
-                  <div style="font-size: 24px; font-weight: bold; color: #dc2626;">${datosAlertas.alertas.resumen.documentosObligatorios}</div>
-                  <div style="font-size: 12px; color: #6b7280;">Docs Obligatorios</div>
+                  <div style="font-size: 24px; font-weight: bold; color: #dc2626;">${datosAlertas.alertas.resumen?.documentosObligatorios ?? 0}</div>
+                  <div style="font-size: 12px; color: #6b7280;">${esExpress ? 'Alertas ANS' : 'Docs Obligatorios'}</div>
                 </div>
                 <div style="text-align: center;">
-                  <div style="font-size: 24px; font-weight: bold; color: #dc2626;">${datosAlertas.alertas.resumen.casosCriticos}</div>
+                  <div style="font-size: 24px; font-weight: bold; color: #dc2626;">${datosAlertas.alertas.resumen?.casosCriticos ?? 0}</div>
                   <div style="font-size: 12px; color: #6b7280;">Casos Críticos</div>
                 </div>
               </div>
@@ -729,7 +742,7 @@ export const enviarEmailAlertas = async (datosAlertas) => {
             <div style="background-color: #f0f9ff; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
               <h3 style="color: #0369a1; margin: 0 0 15px 0; font-size: 16px;">👤 Destinatario</h3>
               <p style="margin: 0; color: #0c4a6e;">
-                <strong>Ajustador:</strong> ${datosAlertas.nombreResponsable}<br>
+                <strong>Responsable:</strong> ${datosAlertas.nombreResponsable}<br>
                 <strong>Fecha de notificación:</strong> ${datosAlertas.fechaAsignacion}
               </p>
             </div>
@@ -738,12 +751,19 @@ export const enviarEmailAlertas = async (datosAlertas) => {
               <h3 style="color: #1f2937; margin: 0 0 15px 0; font-size: 18px;">📋 Detalle de Alertas por Caso</h3>
               ${contenidoAlertas}
             </div>
+
+            <div style="background-color:#fef2f2; padding:18px; border-radius:8px; border-left:4px solid #dc2626; margin:25px 0; text-align:center;">
+              <a href="${enlacePanel}"
+                 style="display:inline-block; background-color:#dc2626; color:#ffffff; padding:12px 24px; text-decoration:none; border-radius:8px; font-weight:700; font-size:14px;">
+                Abrir panel de alertas ${esExpress ? 'Express' : 'Complex'}
+              </a>
+            </div>
             
             <div style="background-color: #f0fdf4; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
               <h3 style="color: #059669; margin: 0 0 15px 0; font-size: 16px;">💡 Recomendaciones</h3>
               <ul style="margin: 0; padding-left: 20px; color: #065f46;">
-                <li>Revisa primero los casos marcados como <strong>CRÍTICOS</strong></li>
-                <li>Sube los documentos obligatorios faltantes</li>
+                <li>Revisa primero los casos con prioridad <strong>ALTA</strong></li>
+                <li>${esExpress ? 'Registra las fechas ANS vencidas en el caso Express' : 'Sube los documentos obligatorios faltantes'}</li>
                 <li>Actualiza el estado de los casos inactivos</li>
                 <li>Contacta al equipo si necesitas apoyo</li>
               </ul>

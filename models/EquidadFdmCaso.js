@@ -51,6 +51,8 @@ const EquidadFdmCasoSchema = new mongoose.Schema({
   estado: { type: String, required: true },
   observaciones: String,
   detalle: String,
+  /** Estado del liquidador FDM (encabezado, ítems, deducible, constancia) */
+  liquidador: { type: mongoose.Schema.Types.Mixed, default: null },
 }, {
   collection: 'gsk3cAppequidadFdmCasos',
   timestamps: true,

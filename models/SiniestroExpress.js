@@ -36,7 +36,21 @@ const SiniestroExpressSchema = new mongoose.Schema({
   correoNotificacion: String,
   fechaCierre: Date,
   fechaSolicitudDocumentos: Date,
+  /** ANS Express: acuse de recibo de la documentación aportada */
+  fechaAcuseReciboDocumentos: Date,
+  /** ANS Express: recepción del último documento (inicio plazo definición) */
+  fechaUltimoDocumento: Date,
+  /** ANS Express: definición del caso */
+  fechaDefinicionCaso: Date,
+  /** ANS Express: alternativa a definición — solicitud de docs adicionales */
+  fechaSolicitudDocumentosAdicionales: Date,
+  /** ANS Express: cuando se requirieron correcciones */
+  fechaSolicitudCorrecciones: Date,
+  /** ANS Express: cuando se presentaron las correcciones */
+  fechaCorreccionesPresentadas: Date,
   fechaPresentacionCifras: Date,
+  /** ANS Express: montaje de documentos para pago */
+  fechaDocumentosPago: Date,
   fechaFiniquitosFirmado: Date,
   reserva: Number,
   estadoProceso: { type: String, required: true },

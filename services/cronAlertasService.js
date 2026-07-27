@@ -1,7 +1,12 @@
 import cron from 'node-cron';
 import { getNextCronRun } from '../utils/cronNextRun.js';
 import { enviarAlertasTodosAjustadores, obtenerAlertasTodosAjustadores } from './alertasService.js';
+import {
+  enviarAlertasTodosExpress,
+  obtenerAlertasExpressPorResponsables,
+} from './alertasExpressService.js';
 import { obtenerProtocoloActivo } from './protocoloConfigService.js';
+import { obtenerProtocoloExpressPorDefecto } from '../config/protocoloExpressDefaults.js';
 
 // Configuración del cron job
 const CRON_SCHEDULE = process.env.ALERTAS_CRON_SCHEDULE || '0 9 * * *'; // 9:00 AM todos los días
@@ -32,12 +37,19 @@ class CronAlertasService {
     try {
       console.log('🚀 Iniciando servicio de cron de alertas...');
       console.log(`⏰ Programado para ejecutarse: ${CRON_SCHEDULE} (hora de Colombia)`);
-      console.log(`📅 IMPORTANTE: Solo casos agregados desde octubre 2025 recibirán alertas`);
-      console.log(`📧 Las alertas se enviarán automáticamente por email a los ajustadores`);
+      console.log(`📅 IMPORTANTE: Complex desde oct-2025 · Express desde jul-2026`);
+      console.log(`📧 Las alertas se enviarán automáticamente por email a los responsables`);
       
       obtenerProtocoloActivo()
-        .then((p) => console.log(`📋 Protocolo de tiempos cargado (v${p.version}, ${p.etapas?.length || 0} etapas)`))
-        .catch((err) => console.warn('⚠️ No se pudo precargar protocolo de tiempos:', err.message));
+        .then((p) => console.log(`📋 Protocolo Complex cargado (v${p.version}, ${p.etapas?.length || 0} etapas)`))
+        .catch((err) => console.warn('⚠️ No se pudo precargar protocolo Complex:', err.message));
+
+      try {
+        const pExpress = obtenerProtocoloExpressPorDefecto();
+        console.log(`📋 Protocolo Express ANS cargado (v${pExpress.version}, ${pExpress.etapas?.length || 0} etapas)`);
+      } catch (err) {
+        console.warn('⚠️ No se pudo precargar protocolo Express:', err.message);
+      }
       
       // Programar la tarea
       this.task = cron.schedule(CRON_SCHEDULE, async () => {
@@ -88,7 +100,6 @@ class CronAlertasService {
   async ejecutarAlertasAutomaticas() {
     try {
       console.log('🚨 ===== EJECUTANDO ALERTAS AUTOMÁTICAS =====');
-      // Obtener fecha y hora actual en zona horaria de Colombia
       const ahora = new Date();
       const fechaColombia = ahora.toLocaleString('es-CO', { 
         timeZone: 'America/Bogota',
@@ -102,32 +113,31 @@ class CronAlertasService {
       console.log('⏰ Fecha y hora (Colombia):', fechaColombia);
       
       this.lastExecution = new Date();
-      
-      // Verificar si hay alertas antes de enviar
+
+      // --- Complex ---
+      console.log('📋 --- Alertas Complex ---');
       const alertasGenerales = await obtenerAlertasTodosAjustadores();
-      
       if (alertasGenerales.ajustadoresConAlertas === 0) {
-        console.log('✅ No hay alertas pendientes, saltando envío automático');
-        return;
+        console.log('✅ Complex: no hay alertas pendientes');
+      } else {
+        console.log(`📊 Complex: ${alertasGenerales.ajustadoresConAlertas} ajustadores · ${alertasGenerales.resumenGeneral.totalAlertas} alertas`);
+        const resultado = await enviarAlertasTodosAjustadores();
+        console.log(`📧 Complex enviados: ${resultado.totalEnviados} · omitidos: ${resultado.totalOmitidos || 0} · errores: ${resultado.totalErrores}`);
       }
-      
-      console.log(`📊 Total de ajustadores con alertas: ${alertasGenerales.ajustadoresConAlertas}`);
-      console.log(`📊 Total de alertas: ${alertasGenerales.resumenGeneral.totalAlertas}`);
-      
-      // Enviar alertas a todos los ajustadores
-      const resultado = await enviarAlertasTodosAjustadores();
-      
-      console.log('✅ Alertas automáticas ejecutadas correctamente');
-      console.log(`📧 Emails enviados: ${resultado.totalEnviados}`);
-      console.log(`❌ Errores: ${resultado.totalErrores}`);
-      
-      // Log detallado de resultados
-      if (resultado.resultados && resultado.resultados.length > 0) {
-        console.log('📋 Detalle de resultados:');
-        resultado.resultados.forEach(resultado => {
-          const status = resultado.success ? '✅' : '❌';
-          console.log(`  ${status} ${resultado.ajustador}: ${resultado.message}`);
-        });
+
+      // --- Express ANS ---
+      console.log('📋 --- Alertas ANS Express ---');
+      const alertasExpress = await obtenerAlertasExpressPorResponsables();
+      if (!alertasExpress.responsablesConAlertas) {
+        console.log('✅ Express: no hay alertas ANS pendientes');
+      } else {
+        console.log(
+          `📊 Express: ${alertasExpress.responsablesConAlertas} responsables · ${alertasExpress.resumenGeneral.totalAlertas} alertas`
+        );
+        const resultadoExpress = await enviarAlertasTodosExpress();
+        console.log(
+          `📧 Express enviados: ${resultadoExpress.totalEnviados} · omitidos: ${resultadoExpress.totalOmitidos} · errores: ${resultadoExpress.totalErrores}`
+        );
       }
       
       console.log('🚨 ===== FIN ALERTAS AUTOMÁTICAS =====');

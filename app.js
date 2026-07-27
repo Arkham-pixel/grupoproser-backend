@@ -37,6 +37,7 @@ import intermediarioRoutes from './routes/intermediario.routes.js';
 import expressCatalogoRoutes from './routes/expressCatalogo.routes.js';
 import siniestroExpressRoutes from './routes/siniestroExpress.routes.js';
 import equidadFdmRoutes from './routes/equidadFdm.routes.js';
+import propiedadesRoutes from './routes/propiedades.routes.js';
 import chatgptRoutes from './routes/chatgpt.routes.js';
 import inspeccionPropiedadesRoutes from './routes/inspeccionPropiedades.routes.js';
 import puertosRoutes from './routes/puertos.routes.js';
@@ -189,6 +190,7 @@ try {
 app.use('/api/express-catalogos', expressCatalogoRoutes);
 app.use('/api/siniestros-express', siniestroExpressRoutes);
 app.use('/api/equidad-fdm', equidadFdmRoutes);
+app.use('/api/propiedades', propiedadesRoutes);
 app.use('/api/chatgpt', chatgptRoutes);
 app.use('/api/inspeccion-propiedades', inspeccionPropiedadesRoutes);
 app.use('/api/puertos', puertosRoutes);

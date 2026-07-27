@@ -7,6 +7,8 @@ const ResponsableSchema = new mongoose.Schema({
   telefono: String,
   /** Último correo automático de alertas Complex (recordatorio cada 30 días). */
   fchaUltimoRecordatorioAlertas: Date,
+  /** Último correo automático de alertas ANS Express (recordatorio cada 30 días). */
+  fchaUltimoRecordatorioAlertasExpress: Date,
 }, { collection: 'gsk3cAppresponsable' });
 
 const Responsable = mongoose.model('Responsable', ResponsableSchema);
