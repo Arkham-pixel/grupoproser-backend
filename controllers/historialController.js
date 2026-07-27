@@ -727,11 +727,11 @@ class HistorialController {
         eliminado: { $ne: true } // Excluir formularios eliminados explícitamente
       };
       
-      // FILTRAR POR USUARIO: Solo admin y soporte ven todos los formularios
-      // Los usuarios normales (incluyendo visualizador) solo ven sus propios formularios
-      const esAdminOSoporte = rolUsuario === 'admin' || rolUsuario === 'soporte';
+      // Los usuarios internos autenticados pueden consultar todos los informes.
+      // Los enlaces externos siguen limitados a su caso/subtarea.
+      const tieneAccesoGlobal = !usuarioActual?.externo;
       
-      if (!esAdminOSoporte && userIdUsuario) {
+      if (!tieneAccesoGlobal && userIdUsuario) {
         // Usuario normal o visualizador: solo ver sus propios formularios
         // Mejorar la búsqueda: primero obtener el usuario completo de la BD para buscar todos sus formularios
         const condicionesUsuario = [];
@@ -892,8 +892,8 @@ class HistorialController {
           console.error('⚠️ Error en búsqueda adicional por nombreUsuario:', error);
           // No fallar si esto falla
         }
-      } else if (esAdminOSoporte) {
-        console.log('👑 Admin/Soporte: viendo todos los formularios');
+      } else if (tieneAccesoGlobal) {
+        console.log('👥 Usuario interno: viendo todos los formularios');
       }
       
       if (tipo && tipo !== 'todos') {
@@ -901,8 +901,8 @@ class HistorialController {
       }
       
       if (usuario) {
-        // Si es admin o soporte, buscar formularios del usuario seleccionado
-        if (esAdminOSoporte) {
+        // Los usuarios internos pueden filtrar por el propietario del informe.
+        if (tieneAccesoGlobal) {
           const usuarioStr = String(usuario).trim();
           const condicionesUsuarioBusqueda = [];
           
@@ -1074,7 +1074,7 @@ class HistorialController {
       }
       
       // Para usuarios normales: hacer una búsqueda adicional por nombreUsuario si parece que faltan formularios
-      if (!esAdminOSoporte && formularios.length > 0) {
+      if (!tieneAccesoGlobal && formularios.length > 0) {
         try {
           // Obtener información del usuario para búsqueda adicional
           let usuarioBD = null;
@@ -1147,7 +1147,7 @@ class HistorialController {
       }
       
       // Si hay filtro por usuario y no se encontraron todos, hacer una búsqueda adicional más amplia
-      if (usuario && esAdminOSoporte && formularios.length === 0) {
+      if (usuario && tieneAccesoGlobal && formularios.length === 0) {
         console.log('⚠️ No se encontraron formularios con el filtro inicial, intentando búsqueda alternativa...');
         // Buscar solo por nombreUsuario como fallback
         const filtrosAlternativos = {
@@ -1262,7 +1262,8 @@ class HistorialController {
         usuarioActual: {
           id: userIdUsuario,
           rol: rolUsuario,
-          esAdminOSoporte
+          esAdminOSoporte: rolUsuario === 'admin' || rolUsuario === 'soporte',
+          accesoGlobal: tieneAccesoGlobal
         }
       });
     } catch (error) {
@@ -1281,9 +1282,6 @@ class HistorialController {
       
       // Obtener información del usuario del token
       const usuarioActual = req.user;
-      const rolUsuario = usuarioActual?.role || usuarioActual?.rol || '';
-      const userIdUsuario = usuarioActual?.id || usuarioActual?.login || '';
-      const esAdminOSoporte = rolUsuario === 'admin' || rolUsuario === 'soporte';
       
       let formulario = await HistorialFormulario.findById(id)
         .select('-__v -eliminado')
@@ -1333,115 +1331,6 @@ class HistorialController {
           (casoIdJwt && casoIdsFormulario.includes(casoIdJwt)) ||
           esPropietarioExterno;
         if (!esDeSuCaso) {
-          return res.status(403).json({
-            success: false,
-            error: 'No tienes permisos para ver este formulario'
-          });
-        }
-      } else
-      // Verificar permisos:
-      // 1) dueño del formulario
-      // 2) admin/soporte
-      // 3) responsable asignado del caso Complex (aunque el ajuste lo haya iniciado otro usuario)
-      if (!esAdminOSoporte) {
-        let tienePermiso = false;
-        let usuarioBD = null;
-        const userIdStr = String(userIdUsuario);
-        const formularioUserId = String(formulario.userId || '');
-        const formularioUsuario = String(formulario.usuario || '');
-        
-        // Comparación directa
-        if (formularioUserId === userIdStr || formularioUsuario === userIdStr) {
-          tienePermiso = true;
-        } else {
-          // Buscar el usuario en BD para obtener todos sus valores posibles
-          try {
-            // Primero intentar buscar por _id del token
-            if (usuarioActual?.id && mongoose.Types.ObjectId.isValid(usuarioActual.id)) {
-              usuarioBD = await SecurUser.findById(usuarioActual.id);
-            }
-            
-            // Si no se encontró, buscar por login
-            if (!usuarioBD && usuarioActual?.login) {
-              usuarioBD = await SecurUser.findOne({ login: usuarioActual.login });
-            }
-            
-            if (usuarioBD) {
-              const userIdObjectId = usuarioBD._id;
-              const userIdString = userIdObjectId.toString();
-              const userLogin = usuarioBD.login;
-              
-              // Crear lista de valores posibles del usuario
-              const valoresPosibles = new Set();
-              valoresPosibles.add(userIdString);
-              if (userLogin && userLogin.trim()) {
-                valoresPosibles.add(userLogin.trim());
-              }
-              if (usuarioActual?.id && String(usuarioActual.id) !== userIdString) {
-                valoresPosibles.add(String(usuarioActual.id));
-              }
-              if (usuarioActual?.login && usuarioActual.login.trim() !== userIdString) {
-                valoresPosibles.add(usuarioActual.login.trim());
-              }
-              
-              // Verificar si el formulario pertenece al usuario
-              const valoresArray = Array.from(valoresPosibles);
-              tienePermiso = valoresArray.some(valor => 
-                formularioUserId === valor || formularioUsuario === valor
-              );
-              
-              // También verificar por nombreUsuario como último recurso
-              if (!tienePermiso && formulario.nombreUsuario) {
-                const nombreUsuarioFormulario = (formulario.nombreUsuario || '').trim();
-                const nombreUsuarioBD = (usuarioBD.name || '').trim();
-                if (nombreUsuarioFormulario && nombreUsuarioBD && 
-                    nombreUsuarioFormulario.toLowerCase() === nombreUsuarioBD.toLowerCase()) {
-                  tienePermiso = true;
-                }
-              }
-            } else {
-              // Fallback: comparación directa con valores del token
-              const valoresFallback = new Set();
-              if (usuarioActual?.id) valoresFallback.add(String(usuarioActual.id));
-              if (usuarioActual?.login) valoresFallback.add(String(usuarioActual.login).trim());
-              if (userIdStr) valoresFallback.add(userIdStr.trim());
-              
-              const valoresFallbackArray = Array.from(valoresFallback);
-              tienePermiso = valoresFallbackArray.some(valor => 
-                formularioUserId === valor || formularioUsuario === valor
-              );
-            }
-          } catch (error) {
-            console.error('⚠️ Error verificando permisos:', error);
-            // En caso de error, usar comparación directa simple
-            tienePermiso = formularioUserId === userIdStr || formularioUsuario === userIdStr;
-          }
-        }
-
-        // Si no es dueño, permitir acceso al responsable asignado del caso
-        if (!tienePermiso) {
-          tienePermiso = await esResponsableAsignadoDelFormulario(
-            usuarioActual,
-            formulario,
-            usuarioBD
-          );
-          if (tienePermiso) {
-            console.log('✅ Acceso concedido por responsable asignado del caso Complex', {
-              formularioId: id,
-              login: usuarioActual?.login,
-              numeroCaso: formulario?.numeroCaso
-            });
-          }
-        }
-        
-        if (!tienePermiso) {
-          console.warn('⛔ Acceso denegado a formulario', {
-            formularioId: id,
-            login: usuarioActual?.login,
-            role: rolUsuario,
-            formularioUserId,
-            numeroCaso: formulario?.numeroCaso
-          });
           return res.status(403).json({
             success: false,
             error: 'No tienes permisos para ver este formulario'
@@ -1525,9 +1414,8 @@ class HistorialController {
       
       // Obtener información del usuario del token
       const usuarioActual = req.user;
-      const rolUsuario = usuarioActual?.role || usuarioActual?.rol || '';
       const userIdUsuario = usuarioActual?.id || usuarioActual?.login || '';
-      const esAdminOSoporte = rolUsuario === 'admin' || rolUsuario === 'soporte';
+      const tieneAccesoGlobal = !usuarioActual?.externo;
       
       // Construir filtros
       const filtros = {
@@ -1535,8 +1423,8 @@ class HistorialController {
         eliminado: { $ne: true }
       };
       
-      // Filtrar por usuario si no es admin/soporte
-      if (!esAdminOSoporte && userIdUsuario) {
+      // Los usuarios internos pueden ver todos los formularios de la carpeta.
+      if (!tieneAccesoGlobal && userIdUsuario) {
         filtros.userId = userIdUsuario;
       }
       
@@ -2258,13 +2146,12 @@ class HistorialController {
     try {
       // Obtener información del usuario del token
       const usuarioActual = req.user;
-      const rolUsuario = usuarioActual?.role || usuarioActual?.rol || '';
       const userIdUsuario = usuarioActual?.id || usuarioActual?.login || '';
-      const esAdminOSoporte = rolUsuario === 'admin' || rolUsuario === 'soporte';
+      const tieneAccesoGlobal = !usuarioActual?.externo;
       
-      // Si no es admin/soporte, filtrar por usuario
+      // Los usuarios internos pueden consultar todos los casos organizados.
       let casos;
-      if (esAdminOSoporte) {
+      if (tieneAccesoGlobal) {
         casos = await HistorialFormulario.obtenerCasosOrganizados();
       } else {
         // Para usuarios normales, obtener solo sus casos
@@ -2340,9 +2227,8 @@ class HistorialController {
       
       // Obtener información del usuario del token
       const usuarioActual = req.user;
-      const rolUsuario = usuarioActual?.role || usuarioActual?.rol || '';
       const userIdUsuario = usuarioActual?.id || usuarioActual?.login || '';
-      const esAdminOSoporte = rolUsuario === 'admin' || rolUsuario === 'soporte';
+      const tieneAccesoGlobal = !usuarioActual?.externo;
       
       // Construir filtros
       const filtros = {
@@ -2350,8 +2236,8 @@ class HistorialController {
         eliminado: { $ne: true }
       };
       
-      // Filtrar por usuario si no es admin/soporte
-      if (!esAdminOSoporte && userIdUsuario) {
+      // Los usuarios internos pueden ver todos los formularios del caso.
+      if (!tieneAccesoGlobal && userIdUsuario) {
         filtros.userId = userIdUsuario;
       }
       
@@ -2385,15 +2271,14 @@ class HistorialController {
 
       // Obtener información del usuario del token
       const usuarioActual = req.user;
-      const rolUsuario = usuarioActual?.role || usuarioActual?.rol || '';
       const userIdUsuario = usuarioActual?.id || usuarioActual?.login || '';
-      const esAdminOSoporte = rolUsuario === 'admin' || rolUsuario === 'soporte';
+      const tieneAccesoGlobal = !usuarioActual?.externo;
 
       // Buscar formularios
       let formularios = await HistorialFormulario.buscarPorTexto(texto.trim());
       
-      // Filtrar por usuario si no es admin/soporte
-      if (!esAdminOSoporte && userIdUsuario) {
+      // Los usuarios internos pueden buscar en todos los informes.
+      if (!tieneAccesoGlobal && userIdUsuario) {
         formularios = formularios.filter(form => form.userId === userIdUsuario);
       }
 
