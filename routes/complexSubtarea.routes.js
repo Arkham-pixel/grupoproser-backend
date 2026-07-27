@@ -4,6 +4,7 @@ import {
   listarMias,
   crearSubtarea,
   actualizarSubtarea,
+  reasignarSubtarea,
   cancelarSubtarea,
   reenviarNotificacion,
   subirArchivoAutenticado,
@@ -43,6 +44,7 @@ router.get('/caso/:casoId', poblarUsuarioOpcional, listarPorCaso);
 router.post('/caso/:casoId', poblarUsuarioOpcional, crearSubtarea);
 router.get('/:id', poblarUsuarioOpcional, obtenerUna);
 router.patch('/:id', poblarUsuarioOpcional, actualizarSubtarea);
+router.post('/:id/reasignar', poblarUsuarioOpcional, reasignarSubtarea);
 router.delete('/:id', poblarUsuarioOpcional, cancelarSubtarea);
 router.post('/:id/reenviar', poblarUsuarioOpcional, reenviarNotificacion);
 router.post(

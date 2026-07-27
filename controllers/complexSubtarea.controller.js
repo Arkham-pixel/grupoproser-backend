@@ -27,6 +27,11 @@ import {
 const DIAS_TOKEN_DEFAULT = 30;
 const ESTADOS_ASIGNADO = new Set(['pendiente', 'en_progreso', 'completada']);
 const ESTADOS_GESTION = new Set(['pendiente', 'en_progreso', 'completada', 'cancelada']);
+const POLITICAS_ENTREGA_FLUJO_VISITA = new Set([
+  'asignado_decide',
+  'exige_preliminar',
+  'solo_acta',
+]);
 
 /** Etapas cuyo entregable es un formato (informe); exigen adjuntarlo para completar. */
 const ETAPAS_REQUIEREN_FORMATO = new Set([
@@ -81,6 +86,11 @@ function faseFlujoVisita(subtarea) {
   return f || 'coordinacion';
 }
 
+function politicaEntregaFlujoVisita(subtarea) {
+  const politica = String(subtarea?.flujoVisitaEntrega || '').trim();
+  return POLITICAS_ENTREGA_FLUJO_VISITA.has(politica) ? politica : 'asignado_decide';
+}
+
 const CAMPOS_FECHA_FLUJO_VISITA = [
   'fchaCoordInspeccion',
   'fchaProgInspeccion',
@@ -96,8 +106,9 @@ const CAMPOS_FECHA_CIERRE_FLUJO_VISITA = [
 
 function subtareaRequiereFormato(subtarea) {
   const etapa = String(subtarea?.etapaTrazabilidad || '').trim();
-  // El flujo visita no exige preliminar para cerrar (es opcional)
-  if (esFlujoVisitaCoordinacion(subtarea)) return false;
+  if (esFlujoVisitaCoordinacion(subtarea)) {
+    return politicaEntregaFlujoVisita(subtarea) === 'exige_preliminar';
+  }
   if (ETAPAS_SOLO_FECHA.has(etapa)) return false;
   return ETAPAS_REQUIEREN_FORMATO.has(etapa);
 }
@@ -116,7 +127,11 @@ function camposFechaPermitidosSubtarea(subtarea) {
 }
 
 function camposFechaRequeridosAlCompletar(subtarea) {
-  if (esFlujoVisitaCoordinacion(subtarea)) return CAMPOS_FECHA_CIERRE_FLUJO_VISITA;
+  if (esFlujoVisitaCoordinacion(subtarea)) {
+    return politicaEntregaFlujoVisita(subtarea) === 'exige_preliminar'
+      ? CAMPOS_FECHA_FLUJO_VISITA
+      : CAMPOS_FECHA_CIERRE_FLUJO_VISITA;
+  }
   return camposFechaProtocoloDesdeEtapa(subtarea?.etapaTrazabilidad);
 }
 
@@ -818,6 +833,7 @@ export async function crearSubtarea(req, res) {
       fechaLimite,
       etapaTrazabilidad = '',
       etapaProtocoloId = '',
+      flujoVisitaEntrega = 'asignado_decide',
     } = req.body || {};
 
     if (!titulo?.trim()) {
@@ -825,6 +841,12 @@ export async function crearSubtarea(req, res) {
     }
     if (!['interno', 'externo'].includes(tipoAsignado)) {
       return res.status(400).json({ error: 'tipoAsignado debe ser interno o externo' });
+    }
+    if (
+      String(etapaTrazabilidad || '').trim() === 'coordinacionInspeccion' &&
+      !POLITICAS_ENTREGA_FLUJO_VISITA.has(String(flujoVisitaEntrega).trim())
+    ) {
+      return res.status(400).json({ error: 'Política de entrega de visita inválida' });
     }
 
     let tokenRaw = null;
@@ -841,6 +863,10 @@ export async function crearSubtarea(req, res) {
         String(etapaTrazabilidad || '').trim() === 'coordinacionInspeccion'
           ? 'coordinacion'
           : '',
+      flujoVisitaEntrega:
+        String(etapaTrazabilidad || '').trim() === 'coordinacionInspeccion'
+          ? String(flujoVisitaEntrega).trim()
+          : 'asignado_decide',
       descripcion: String(descripcion || ''),
       instrucciones: String(instrucciones || ''),
       tipoAsignado,
@@ -948,6 +974,8 @@ export async function actualizarSubtarea(req, res) {
       marcarLeida,
       motivoReapertura,
       flujoVisitaFase,
+      flujoVisitaEntrega,
+      motivoCambioFlujo,
     } = req.body || {};
 
     const esAsignado = esAsignadoInterno(usuario, subtarea);
@@ -962,6 +990,38 @@ export async function actualizarSubtarea(req, res) {
       });
     }
     const nombreReabre = esReapertura ? await resolverNombreUsuario(usuario) : '';
+
+    if (flujoVisitaEntrega !== undefined) {
+      if (!gestiona || !esFlujoVisitaCoordinacion(subtarea)) {
+        return res.status(403).json({ error: 'Solo el gestor puede cambiar la política de entrega' });
+      }
+      const nuevaPolitica = String(flujoVisitaEntrega || '').trim();
+      if (!POLITICAS_ENTREGA_FLUJO_VISITA.has(nuevaPolitica)) {
+        return res.status(400).json({ error: 'Política de entrega de visita inválida' });
+      }
+      if (
+        nuevaPolitica !== politicaEntregaFlujoVisita(subtarea) &&
+        !String(motivoCambioFlujo || '').trim()
+      ) {
+        return res.status(400).json({
+          error: 'Indique el motivo del cambio de entrega para notificar al asignado',
+        });
+      }
+      if (nuevaPolitica === 'solo_acta' && faseFlujoVisita(subtarea) === 'preliminar') {
+        return res.status(400).json({
+          error: 'No puede cambiar a solo acta después de iniciar el informe preliminar',
+        });
+      }
+      if (nuevaPolitica !== politicaEntregaFlujoVisita(subtarea)) {
+        subtarea.flujoVisitaEntrega = nuevaPolitica;
+        subtarea.historialEstados.push({
+          estado: subtarea.estado,
+          fecha: new Date(),
+          por: loginDesdeUsuario(usuario) || 'gestor',
+          nota: `Entrega post-acta: ${nuevaPolitica}. Motivo: ${String(motivoCambioFlujo).trim()}`,
+        });
+      }
+    }
 
     if (marcarLeida) {
       subtarea.leidoEnPlataforma = new Date();
@@ -1014,6 +1074,9 @@ export async function actualizarSubtarea(req, res) {
       const nueva = String(flujoVisitaFase || '').trim();
       if (nueva && !permitidas.has(nueva)) {
         return res.status(400).json({ error: 'fase de flujo visita inválida' });
+      }
+      if (nueva === 'preliminar' && politicaEntregaFlujoVisita(subtarea) === 'solo_acta') {
+        return res.status(400).json({ error: 'Esta subtarea fue configurada para entrega solo con acta' });
       }
       subtarea.flujoVisitaFase = nueva || 'coordinacion';
     }
@@ -1148,6 +1211,124 @@ export async function actualizarSubtarea(req, res) {
   }
 }
 
+/** Reasigna una subtarea abierta y conserva su evidencia, fechas e historial operativo. */
+export async function reasignarSubtarea(req, res) {
+  try {
+    const usuario = usuarioDesdeReq(req);
+    const subtarea = await ComplexSubtarea.findById(req.params.id);
+    if (!subtarea) return res.status(404).json({ error: 'Subtarea no encontrada' });
+    const caso = await cargarCaso(subtarea.casoId);
+    if (!caso) return res.status(404).json({ error: 'Caso no encontrado' });
+    if (!puedeGestionarSubtareasCaso(usuario, caso)) {
+      return res.status(403).json({ error: 'Solo el gestor puede reasignar la subtarea' });
+    }
+    if (!['pendiente', 'en_progreso'].includes(subtarea.estado)) {
+      return res.status(400).json({ error: 'Solo se pueden reasignar subtareas abiertas' });
+    }
+
+    const {
+      tipoAsignado,
+      codiAsignado = '',
+      nombreAsignado = '',
+      emailAsignado = '',
+      nombreExterno = '',
+      emailExterno = '',
+      motivoReasignacion = '',
+      notificar = true,
+    } = req.body || {};
+    if (!['interno', 'externo'].includes(tipoAsignado)) {
+      return res.status(400).json({ error: 'tipoAsignado debe ser interno o externo' });
+    }
+    if (!String(motivoReasignacion).trim()) {
+      return res.status(400).json({ error: 'Indique el motivo de la reasignación' });
+    }
+
+    subtarea.historialAsignaciones.push({
+      tipoAsignado: subtarea.tipoAsignado,
+      codiAsignado: subtarea.codiAsignado,
+      nombreAsignado: subtarea.nombreAsignado,
+      emailAsignado: subtarea.emailAsignado,
+      nombreExterno: subtarea.nombreExterno,
+      emailExterno: subtarea.emailExterno,
+      fecha: new Date(),
+      por: loginDesdeUsuario(usuario) || 'gestor',
+      motivo: String(motivoReasignacion).trim(),
+    });
+
+    let tokenRaw = null;
+    if (tipoAsignado === 'interno') {
+      if (!String(codiAsignado).trim()) {
+        return res.status(400).json({ error: 'Debe indicar el ajustador interno' });
+      }
+      let nombre = String(nombreAsignado || '').trim();
+      let email = String(emailAsignado || '').trim();
+      if (!nombre || !email) {
+        const responsable = await Responsable.findOne({
+          codiRespnsble: String(codiAsignado).trim(),
+        }).lean();
+        nombre = nombre || responsable?.nmbrRespnsble || '';
+        email = email || responsable?.email || '';
+      }
+      if (!email) email = await resolverEmailResponsable(codiAsignado);
+      subtarea.tipoAsignado = 'interno';
+      subtarea.codiAsignado = String(codiAsignado).trim();
+      subtarea.nombreAsignado = nombre;
+      subtarea.emailAsignado = email || '';
+      subtarea.nombreExterno = '';
+      subtarea.emailExterno = '';
+      subtarea.tokenHash = undefined;
+      subtarea.tokenExpira = undefined;
+    } else {
+      if (!String(emailExterno).trim()) {
+        return res.status(400).json({ error: 'El email del externo es obligatorio' });
+      }
+      const token = generarTokenAcceso();
+      tokenRaw = token.raw;
+      subtarea.tipoAsignado = 'externo';
+      subtarea.codiAsignado = '';
+      subtarea.nombreAsignado = '';
+      subtarea.emailAsignado = '';
+      subtarea.nombreExterno = String(nombreExterno || '').trim();
+      subtarea.emailExterno = String(emailExterno).trim().toLowerCase();
+      subtarea.tokenHash = token.hash;
+      subtarea.tokenExpira = new Date(Date.now() + DIAS_TOKEN_DEFAULT * 24 * 60 * 60 * 1000);
+    }
+    subtarea.leidoEnPlataforma = undefined;
+    subtarea.historialEstados.push({
+      estado: subtarea.estado,
+      fecha: new Date(),
+      por: loginDesdeUsuario(usuario) || 'gestor',
+      nota: `Reasignada. Motivo: ${String(motivoReasignacion).trim()}`,
+    });
+    await subtarea.save();
+
+    let notificacion = null;
+    if (notificar !== false) {
+      try {
+        notificacion = await notificarAsignacion(
+          subtarea,
+          caso,
+          tokenRaw,
+          frontendUrlDesdeReq(req)
+        );
+        subtarea.notificadoEn = new Date();
+        await subtarea.save();
+      } catch (err) {
+        notificacion = { success: false, error: err.message };
+      }
+    }
+    const response = enriquecerSubtarea(subtarea);
+    if (tokenRaw) {
+      response.enlaceExterno = `/complex/subtarea/${tokenRaw}`;
+      response.tokenUnaVez = tokenRaw;
+    }
+    return res.json({ subtarea: response, notificacion });
+  } catch (error) {
+    console.error('❌ reasignarSubtarea:', error);
+    return res.status(500).json({ error: error.message });
+  }
+}
+
 export async function cancelarSubtarea(req, res) {
   try {
     const usuario = usuarioDesdeReq(req);
@@ -1274,6 +1455,7 @@ function payloadPublico(subtarea, caso) {
     estado: subtarea.estado,
     etapaTrazabilidad: subtarea.etapaTrazabilidad || '',
     flujoVisitaFase: fase || subtarea.flujoVisitaFase || '',
+    flujoVisitaEntrega: politicaEntregaFlujoVisita(subtarea),
     esFlujoVisita: esFlujoVisitaCoordinacion(subtarea),
     requiereFormato: subtareaRequiereFormato(subtarea),
     soloFecha:
@@ -1350,6 +1532,9 @@ export async function actualizarPublica(req, res) {
       const nueva = String(flujoVisitaFase || '').trim();
       if (nueva && !permitidas.has(nueva)) {
         return res.status(400).json({ error: 'fase de flujo visita inválida' });
+      }
+      if (nueva === 'preliminar' && politicaEntregaFlujoVisita(subtarea) === 'solo_acta') {
+        return res.status(400).json({ error: 'Esta subtarea fue configurada para entrega solo con acta' });
       }
       subtarea.flujoVisitaFase = nueva || 'coordinacion';
     }

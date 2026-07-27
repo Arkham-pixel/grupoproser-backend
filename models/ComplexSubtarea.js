@@ -53,6 +53,12 @@ const ComplexSubtareaSchema = new mongoose.Schema(
       enum: ['', 'coordinacion', 'inspeccion', 'decidir', 'preliminar'],
       default: '',
     },
+    /** Regla definida por el gestor para la entrega posterior al acta. */
+    flujoVisitaEntrega: {
+      type: String,
+      enum: ['asignado_decide', 'exige_preliminar', 'solo_acta'],
+      default: 'asignado_decide',
+    },
     /** Id de etapa del protocolo de tiempos */
     etapaProtocoloId: { type: String, default: '' },
     descripcion: { type: String, default: '' },
@@ -106,6 +112,25 @@ const ComplexSubtareaSchema = new mongoose.Schema(
     motivoReaperturaPor: { type: String, default: '' },
     archivos: { type: [ArchivoSubtareaSchema], default: [] },
     historialEstados: { type: [HistorialEstadoSchema], default: [] },
+    historialAsignaciones: {
+      type: [
+        new mongoose.Schema(
+          {
+            tipoAsignado: String,
+            codiAsignado: String,
+            nombreAsignado: String,
+            emailAsignado: String,
+            nombreExterno: String,
+            emailExterno: String,
+            fecha: { type: Date, default: Date.now },
+            por: String,
+            motivo: String,
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
     notificadoEn: { type: Date },
     leidoEnPlataforma: { type: Date },
   },
