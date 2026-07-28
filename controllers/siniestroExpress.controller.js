@@ -382,6 +382,10 @@ const buildExpressPayload = (
     data.fechaSolicitudDocumentosAdicionales,
     base.fechaSolicitudDocumentosAdicionales ?? null
   ),
+  fechaSolicitudDocumentosPendientes: parseDateFlexible(
+    data.fechaSolicitudDocumentosPendientes,
+    base.fechaSolicitudDocumentosPendientes ?? null
+  ),
   fechaSolicitudCorrecciones: parseDateFlexible(
     data.fechaSolicitudCorrecciones,
     base.fechaSolicitudCorrecciones ?? null
@@ -394,6 +398,10 @@ const buildExpressPayload = (
     data.fechaPresentacionCifras,
     base.fechaPresentacionCifras ?? null
   ),
+  fechaReconsideracion: parseDateFlexible(
+    data.fechaReconsideracion,
+    base.fechaReconsideracion ?? null
+  ),
   fechaDocumentosPago: parseDateFlexible(
     data.fechaDocumentosPago,
     base.fechaDocumentosPago ?? null
@@ -401,6 +409,10 @@ const buildExpressPayload = (
   fechaFiniquitosFirmado: parseDateFlexible(
     data.fechaFiniquitosFirmado,
     base.fechaFiniquitosFirmado ?? null
+  ),
+  fechaRecordatorio: parseDateFlexible(
+    data.fechaRecordatorio,
+    base.fechaRecordatorio ?? null
   ),
   reserva: parseNumberFlexible(data.reserva, base.reserva ?? null),
   estadoProceso: toStringOrNull(data.estadoProceso, base.estadoProceso ?? null),

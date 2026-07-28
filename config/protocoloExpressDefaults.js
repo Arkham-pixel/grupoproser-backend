@@ -1,12 +1,13 @@
 /**
  * ANS / protocolo de tiempos — siniestros Express.
  * Plazos en días hábiles Colombia (festivos + fines de semana).
+ * Etapas alineadas a las fechas oficiales Express (correo julio 2026).
  */
 
-export const PROTOCOLO_EXPRESS_VERSION = '2026-07-24-ans';
+export const PROTOCOLO_EXPRESS_VERSION = '2026-07-28-ans-oficiales';
 export const PROTOCOLO_EXPRESS_FECHA_ACTIVACION = '2026-07-24';
 export const PROTOCOLO_EXPRESS_DOCUMENTO =
-  'ANS Express — solicitud de configuración de alertas (julio 2026)';
+  'ANS Express — fechas oficiales (julio 2026)';
 
 /**
  * Estados Express sin alertas ANS.
@@ -35,10 +36,10 @@ export const ETAPAS_PROTOCOLO_EXPRESS_DEFAULT = [
     id: 'acuseReciboDocs',
     fase: 2,
     nombre: 'Acuse de recibo de documentación',
-    actividad: 'Emitir el acuse de recibo de la documentación aportada',
+    actividad: 'Emitir el acuse de recibo desde el último documento recibido',
     campoFecha: 'fechaAcuseReciboDocumentos',
     campoDoc: null,
-    referencia: 'fechaReciboDocumentos',
+    referencia: 'fechaUltimoDocumento',
     limite: { valor: 3, unidad: 'dias_habiles' },
     alertaVencimiento: true,
     responsable: 'Responsable Express',
@@ -54,7 +55,6 @@ export const ETAPAS_PROTOCOLO_EXPRESS_DEFAULT = [
     campoFecha: 'fechaDefinicionCaso',
     campoDoc: null,
     referencia: 'fechaUltimoDocumento',
-    referenciaAlternativa: 'fechaReciboDocumentos',
     limite: { valor: 5, unidad: 'dias_habiles' },
     alertaVencimiento: true,
     responsable: 'Responsable Express',
@@ -63,17 +63,17 @@ export const ETAPAS_PROTOCOLO_EXPRESS_DEFAULT = [
     criterioCompletitud: 'definicionODocsAdicionalesExpress',
   },
   {
-    id: 'correcciones',
+    id: 'docsPendientes',
     fase: 4,
-    nombre: 'Correcciones requeridas',
-    actividad: 'Presentar las correcciones requeridas',
-    campoFecha: 'fechaCorreccionesPresentadas',
+    nombre: 'Documentos pendientes',
+    actividad: 'Recibir el último documento tras la solicitud de documentos pendientes',
+    campoFecha: 'fechaUltimoDocumento',
     campoDoc: null,
-    referencia: 'fechaSolicitudCorrecciones',
+    referencia: 'fechaSolicitudDocumentosPendientes',
     limite: { valor: 1, unidad: 'dias_habiles' },
     alertaVencimiento: true,
     responsable: 'Responsable Express',
-    entregable: 'Correcciones presentadas',
+    entregable: 'Último documento recibido tras solicitud de pendientes',
     alcance: 'ajustador',
   },
   {
@@ -94,17 +94,31 @@ export const ETAPAS_PROTOCOLO_EXPRESS_DEFAULT = [
   {
     id: 'documentosPago',
     fase: 6,
-    nombre: 'Documentos para pago',
-    actividad: 'Montar los documentos para pago',
+    nombre: 'Cargue de documentos de pago',
+    actividad: 'Cargar los documentos para pago',
     campoFecha: 'fechaDocumentosPago',
     campoDoc: null,
     referencia: 'fechaPresentacionCifras',
     limite: { valor: 1, unidad: 'dias_habiles' },
     alertaVencimiento: true,
     responsable: 'Responsable Express',
-    entregable: 'Documentos para pago montados',
+    entregable: 'Documentos para pago cargados',
     alcance: 'ajustador',
-    criterioCompletitud: 'documentosPagoExpress',
+  },
+  {
+    id: 'finiquitosFirmados',
+    fase: 7,
+    nombre: 'Finiquitos firmados',
+    actividad: 'Registrar la fecha de finiquitos firmados',
+    campoFecha: 'fechaFiniquitosFirmado',
+    campoDoc: null,
+    referencia: 'fechaDocumentosPago',
+    referenciaAlternativa: 'fechaPresentacionCifras',
+    limite: { valor: 1, unidad: 'dias_habiles' },
+    alertaVencimiento: true,
+    responsable: 'Responsable Express',
+    entregable: 'Finiquitos firmados registrados',
+    alcance: 'ajustador',
   },
 ];
 

@@ -44,14 +44,23 @@ const SiniestroExpressSchema = new mongoose.Schema({
   fechaDefinicionCaso: Date,
   /** ANS Express: alternativa a definición — solicitud de docs adicionales */
   fechaSolicitudDocumentosAdicionales: Date,
+  /** Solicitud de documentos pendientes (fecha oficial Express) */
+  fechaSolicitudDocumentosPendientes: Date,
   /** ANS Express: cuando se requirieron correcciones */
   fechaSolicitudCorrecciones: Date,
   /** ANS Express: cuando se presentaron las correcciones */
   fechaCorreccionesPresentadas: Date,
   fechaPresentacionCifras: Date,
+  /** Reconsideración (fecha oficial Express) */
+  fechaReconsideracion: Date,
   /** ANS Express: montaje de documentos para pago */
   fechaDocumentosPago: Date,
   fechaFiniquitosFirmado: Date,
+  /**
+   * Último recordatorio enviado al asegurado por docs pendientes.
+   * Ciclo: 30 días desde fechaSolicitudDocumentos (o desde esta fecha si ya existe).
+   */
+  fechaRecordatorio: Date,
   reserva: Number,
   estadoProceso: { type: String, required: true },
   /** 'aplica' | 'no_aplica' */

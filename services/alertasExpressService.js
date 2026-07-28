@@ -15,6 +15,49 @@ import {
 } from './responsableResolverService.js';
 
 const FECHA_LIMITE_ALERTAS_EXPRESS = new Date('2026-07-01T00:00:00.000Z');
+export const DIAS_RECORDATORIO_DOCS_PENDIENTES_EXPRESS = 30;
+
+/** Códigos de estado Express que cierran/finalizan el caso (sin alerta de recordatorio). */
+const CODIGOS_ESTADO_EXPRESS_CERRADO = ['2', '4', '5'];
+
+function normalizarTextoEstadoExpress(valor) {
+  return String(valor ?? '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, ' ');
+}
+
+function esEstadoExpressCerradoParaAlertas(valorEstado) {
+  const raw = String(valorEstado ?? '').trim();
+  if (!raw) return false;
+  if (CODIGOS_ESTADO_EXPRESS_CERRADO.includes(raw)) return true;
+  const estado = normalizarTextoEstadoExpress(raw);
+  if (!estado || estado === 'SIN_ESTADO' || estado === 'SIN ESTADO') return false;
+  if (estado.includes('ESPERA DE DESISTIMIENTO')) return false;
+  if (estado.includes('OBJETADO')) return true;
+  if (estado.includes('DESISTIDO')) return true;
+  if (estado.includes('LIQUIDAR')) return true;
+  if (estado.includes('ANULAD')) return true;
+  if (estado.includes('PRESCRIT')) return true;
+  if (estado.includes('NO RESPONSABILIDAD')) return true;
+  if (estado === 'CASO CERRADO' || estado === 'CERRADO') return true;
+  return false;
+}
+
+function casoExpressFinalizadoParaRecordatorio(caso, mapaEstados = {}) {
+  if (caso?.fechaCierre) return true;
+  if (esEstadoExpressCerradoParaAlertas(caso?.estadoProceso)) return true;
+  const { estado } = resolverEstadoExpress(caso, mapaEstados);
+  return esEstadoExpressCerradoParaAlertas(estado);
+}
+
+function parseFechaCasoExpress(valor) {
+  if (!valor) return null;
+  const d = new Date(valor);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
 
 async function cargarMapaEstadosExpress() {
   const estados = await EstadoExpress.find()
@@ -83,8 +126,60 @@ export function generarAlertasCasoExpress(caso, protocolo = null, mapaEstados = 
     return [];
   }
   const proto = protocolo || obtenerProtocoloExpressPorDefecto();
-  const alertas = evaluarProtocoloCaso(caso, proto, new Date(), 'todos');
-  return alertas.map((a) => mapearAlertaExpress(a, caso, mapaEstados));
+  const alertas = evaluarProtocoloCaso(caso, proto, new Date(), 'todos').map((a) =>
+    mapearAlertaExpress(a, caso, mapaEstados)
+  );
+  const recordatorio = evaluarAlertaRecordatorioDocumentosExpress(caso, new Date(), mapaEstados);
+  if (recordatorio) {
+    alertas.push(mapearAlertaExpress(recordatorio, caso, mapaEstados));
+  }
+  return alertas;
+}
+
+/**
+ * Ciclo mensual docs pendientes:
+ * base = fechaRecordatorio || fechaSolicitudDocumentos
+ * alerta si >= 30 días calendario y aún no hay docs ni caso finalizado.
+ */
+export function evaluarAlertaRecordatorioDocumentosExpress(
+  caso,
+  ahora = new Date(),
+  mapaEstados = {}
+) {
+  if (!caso) return null;
+  if (casoExpressFinalizadoParaRecordatorio(caso, mapaEstados)) return null;
+  if (parseFechaCasoExpress(caso.fechaUltimoDocumento) || parseFechaCasoExpress(caso.fechaReciboDocumentos)) {
+    return null;
+  }
+
+  const solicitud = parseFechaCasoExpress(caso.fechaSolicitudDocumentos);
+  if (!solicitud) return null;
+
+  const recordatorio = parseFechaCasoExpress(caso.fechaRecordatorio);
+  const base = recordatorio || solicitud;
+  const dias = diasCalendarioEntreFechas(base, ahora);
+  if (dias == null || dias < DIAS_RECORDATORIO_DOCS_PENDIENTES_EXPRESS) return null;
+
+  const retraso = dias - DIAS_RECORDATORIO_DOCS_PENDIENTES_EXPRESS;
+  const origen = recordatorio
+    ? 'último recordatorio'
+    : 'solicitud inicial de documentos';
+
+  return {
+    etapaId: 'recordatorioDocumentosPendientes',
+    nombre: 'Recordatorio documentos pendientes',
+    fase: 0,
+    prioridad: dias >= DIAS_RECORDATORIO_DOCS_PENDIENTES_EXPRESS * 2 ? 'ALTA' : 'MEDIA',
+    mensaje: `Han pasado ${dias} días desde el ${origen} sin recepción de documentos. Registrar nueva fecha de recordatorio.`,
+    transcurrido: dias,
+    limite: DIAS_RECORDATORIO_DOCS_PENDIENTES_EXPRESS,
+    retraso: Math.max(0, retraso),
+    horasLimite: DIAS_RECORDATORIO_DOCS_PENDIENTES_EXPRESS * 24,
+    horasTranscurridas: dias * 24,
+    etiquetaLimite: `${DIAS_RECORDATORIO_DOCS_PENDIENTES_EXPRESS} días calendario`,
+    tipo: 'RECORDATORIO_DOCUMENTOS_PENDIENTES',
+    accion: 'Enviar recordatorio al asegurado y actualizar Fecha de recordatorio',
+  };
 }
 
 const PROTOCOLO_EXPRESS_META = {

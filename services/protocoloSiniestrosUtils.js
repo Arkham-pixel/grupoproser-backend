@@ -195,10 +195,7 @@ function etapaCompletaPorCriterio(caso, etapa) {
         campoTieneValor(caso, 'fechaSolicitudDocumentosAdicionales')
       );
     case 'documentosPagoExpress':
-      return (
-        campoTieneValor(caso, 'fechaDocumentosPago') ||
-        campoTieneValor(caso, 'fechaCargueFiniquito')
-      );
+      return campoTieneValor(caso, 'fechaDocumentosPago');
     default:
       return null;
   }
