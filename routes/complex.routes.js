@@ -10,7 +10,6 @@ import {
   notificarControlHoras,
   notificarGerencia,
   solicitarCorreccionControlHoras,
-  cambiarEstadosFinalizadosAFacturado,
   contarCasosAseguradoras,
   obtenerAutofillAjuste,
   obtenerBandejaFacturacion,
@@ -67,9 +66,6 @@ router.post('/notificaciones/honorarios', notificarHonorarios);
 router.post('/notificaciones/control-horas', notificarControlHoras);
 router.post('/notificaciones/control-horas/correccion', solicitarCorreccionControlHoras);
 router.post('/notificaciones/gerencia', notificarGerencia);
-
-// Cambiar casos FINALIZADOS a FACTURADO (ejecución manual)
-router.post('/cambiar-estados/finalizados-a-facturado', cambiarEstadosFinalizadosAFacturado);
 
 // Contar casos por aseguradoras BBVA y Zurich
 router.get('/contar-aseguradoras', contarCasosAseguradoras);

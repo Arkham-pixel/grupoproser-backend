@@ -14,7 +14,6 @@ import './models/Intermediario.js';
 import { iniciarCronAlertas } from './services/cronAlertasService.js';
 import { CronTareasService } from './services/cronTareasService.js';
 import { iniciarCronSesiones } from './services/cronSesionesService.js';
-import { iniciarCronCambioEstados } from './services/cronCambioEstadosService.js';
 import { iniciarCronEmailOutbox } from './services/cronEmailOutboxService.js';
 import { iniciarCronExpressCierreMensual } from './services/cronExpressCierreMensualService.js';
 import { verifyMailOnStartup } from './services/mailTransport.js';
@@ -91,10 +90,6 @@ mongoose
       // Iniciar cron de sesiones inactivas
       iniciarCronSesiones();
       console.log("✅ Servicio de cron de sesiones inactivas iniciado");
-      
-      // Iniciar cron de cambio automático de estados
-      iniciarCronCambioEstados();
-      console.log("✅ Servicio de cron de cambio de estados iniciado");
 
       iniciarCronEmailOutbox();
       console.log("✅ Servicio de cron de cola de correos iniciado");
@@ -130,10 +125,6 @@ mongoose
             // Iniciar cron de sesiones inactivas
             iniciarCronSesiones();
             console.log("✅ Servicio de cron de sesiones inactivas reiniciado después de reconexión");
-            
-            // Iniciar cron de cambio automático de estados
-            iniciarCronCambioEstados();
-            console.log("✅ Servicio de cron de cambio de estados reiniciado después de reconexión");
 
             iniciarCronExpressCierreMensual();
             console.log("✅ Servicio de cron de cierre mensual Express reiniciado después de reconexión");
