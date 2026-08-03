@@ -53,6 +53,9 @@ export const TIPOS_MERCANCIA_PUERTOS_DEFAULT = [
 
 export const ASEGURADORAS_PUERTOS_DEFAULT = ['SURA', 'MAPFRE', 'LIBERTY', 'BOLÍVAR'];
 
+/** Vacío a propósito: los asegurados se agregan desde Catálogos según cada operación. */
+export const ASEGURADOS_PUERTOS_DEFAULT = [];
+
 export const SUCURSALES_PUERTOS_DEFAULT = ['Bogotá', 'Medellín', 'Cali', 'Barranquilla'];
 
 export const ESTADOS_ACTA_PUERTOS_DEFAULT = ['Activo', 'Cerrado', 'Borrador'];
@@ -66,6 +69,7 @@ export const DEFAULTS_POR_TIPO = {
   tipo_transporte: TIPOS_TRANSPORTE_PUERTOS_DEFAULT,
   tipo_mercancia: TIPOS_MERCANCIA_PUERTOS_DEFAULT,
   aseguradora: ASEGURADORAS_PUERTOS_DEFAULT,
+  asegurado: ASEGURADOS_PUERTOS_DEFAULT,
   sucursal: SUCURSALES_PUERTOS_DEFAULT,
   estado_acta: ESTADOS_ACTA_PUERTOS_DEFAULT,
 };

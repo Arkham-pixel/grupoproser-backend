@@ -94,6 +94,7 @@ const CAMPOS_ACTA_POR_TIPO = {
   tipo_inspeccion: 'tipoInspeccion',
   tipo_mercancia: 'mercancia',
   aseguradora: 'codiAsgrdra',
+  asegurado: 'asegurado',
   sucursal: 'sucursal',
   estado_acta: 'estado',
 };

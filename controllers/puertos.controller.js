@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import PuertosCaso from '../models/PuertosCaso.js';
 import PuertosActa from '../models/PuertosActa.js';
+import Cliente from '../models/Cliente.js';
 import {
   deleteOrphanedStoredFiles,
   isStoredFileReference,
@@ -247,7 +248,10 @@ const mapCasoALista = (doc) => {
       fecha: formatearFechaLista(doc.fechaInforme || informe.fecha || doc.createdAt),
       fechaAsignacion: '',
       fechaInforme: formatearFechaLista(doc.fechaInforme),
-      asegurado: doc.asgrBenfcro || informe.asegurado || '',
+      // Inspección asegurado: cliente/asegurado ≠ aseguradora (empresaCliente)
+      asegurado: doc.asgrBenfcro || informe.asegurado || informe.nombreCliente || '',
+      aseguradora:
+        doc.nombreAseguradora || informe.empresaCliente || doc.codiAsgrdra || '',
       mercancia: informe.nombreMotonave || informe.modelosVehiculos || '',
       estado,
       estadoCodigo: doc.codiEstdo || 'en_curso',
@@ -265,6 +269,9 @@ const mapCasoALista = (doc) => {
   }
 
   const estado = estadoListaDesdeCaso(doc);
+  const nombreAseguradora = String(doc.nombreAseguradora || '').trim();
+  const codigoAseguradora = String(doc.codiAsgrdra || '').trim();
+  const exportador = String(doc.asgrBenfcro || '').trim();
   return {
     id: doc._id?.toString(),
     tipoRegistro: 'caso_exportacion',
@@ -279,15 +286,17 @@ const mapCasoALista = (doc) => {
     fecha: formatearFechaLista(doc.fchaInspccion || doc.fchaAsgncion || doc.createdAt),
     fechaAsignacion: formatearFechaLista(doc.fchaAsgncion),
     fechaInforme: formatearFechaLista(doc.fechaInforme),
-    asegurado: doc.nombreAseguradora || doc.codiAsgrdra || '',
-    mercancia: doc.asgrBenfcro || '',
+    // Listado: Cliente = exportador/asegurado; Aseguradora = compañía de seguros
+    asegurado: exportador,
+    aseguradora: nombreAseguradora || codigoAseguradora,
+    mercancia: doc.actividad || '',
     estado: estado.etiqueta,
     estadoCodigo: estado.codigo,
     estadoProgreso: estado.progreso,
     estadoTotal: estado.total,
     estadoDetalle: estado.detalle || '',
     avance: estado.total ? `${estado.progreso}/${estado.total}` : '',
-    beneficiario: doc.asgrBenfcro || '',
+    beneficiario: exportador,
     inspector: doc.nombreResponsable || '',
     creadoPor: doc.creadoPor || '',
     actualizadoPor: doc.actualizadoPor || '',
@@ -311,6 +320,7 @@ const mapActaALista = (doc) => ({
   fechaAsignacion: '',
   fechaInforme: '',
   asegurado: doc.asegurado || '',
+  aseguradora: doc.codiAsgrdra || doc.aseguradora || doc.nombreAseguradora || '',
   mercancia: doc.mercancia || '',
   estado: doc.estado || 'Maqueta',
   estadoCodigo: 'maqueta',
@@ -352,14 +362,49 @@ function aplicarFiltrosPostLista(registros, query) {
     if (regional && !String(r.regional || '').toLowerCase().includes(regional.toLowerCase())) {
       return false;
     }
-    if (cliente && !String(r.asegurado || '').toLowerCase().includes(cliente.toLowerCase())) {
-      return false;
+    if (cliente) {
+      const textoCliente = `${r.asegurado || ''} ${r.aseguradora || ''} ${r.beneficiario || ''}`.toLowerCase();
+      if (!textoCliente.includes(cliente.toLowerCase())) return false;
     }
     const f = r.fecha || '';
     if (fechaDesde && f && f < fechaDesde) return false;
     if (fechaHasta && f && f > fechaHasta) return false;
     return true;
   });
+}
+
+/** Resuelve códigos de aseguradora (codiAsgrdra) a razón social cuando aplica. */
+async function enriquecerAseguradorasLista(registros = []) {
+  const codigos = [
+    ...new Set(
+      registros
+        .map((r) => String(r.aseguradora || '').trim())
+        .filter((v) => v && !/\s/.test(v))
+    ),
+  ];
+  if (!codigos.length) return registros;
+
+  try {
+    const clientes = await Cliente.find({ codiAsgrdra: { $in: codigos } })
+      .select('codiAsgrdra rzonSocial')
+      .lean();
+    if (!clientes.length) return registros;
+
+    const mapa = new Map(
+      clientes
+        .filter((c) => c.codiAsgrdra && c.rzonSocial)
+        .map((c) => [String(c.codiAsgrdra), String(c.rzonSocial).trim()])
+    );
+
+    return registros.map((r) => {
+      const raw = String(r.aseguradora || '').trim();
+      const nombre = mapa.get(raw);
+      return nombre ? { ...r, aseguradora: nombre } : r;
+    });
+  } catch (err) {
+    console.warn('⚠️ No se pudieron resolver nombres de aseguradora:', err.message);
+    return registros;
+  }
 }
 
 export const listarRegistrosPuertos = async (req, res) => {
@@ -375,9 +420,15 @@ export const listarRegistrosPuertos = async (req, res) => {
         { consecutivo: regex },
         { asgrBenfcro: regex },
         { nombreAseguradora: regex },
+        { codiAsgrdra: regex },
         { numeroSolicitud: regex },
       ];
-      filtrosActa.$or = [{ nroActa: regex }, { asegurado: regex }, { mercancia: regex }];
+      filtrosActa.$or = [
+        { nroActa: regex },
+        { asegurado: regex },
+        { mercancia: regex },
+        { codiAsgrdra: regex },
+      ];
     }
 
     const incluirCasos =
@@ -417,13 +468,15 @@ export const listarRegistrosPuertos = async (req, res) => {
       }
     });
 
-    const registros = aplicarFiltrosPostLista(
+    const registrosBase = aplicarFiltrosPostLista(
       [
         ...casos.map(mapCasoALista),
         ...actas.map(mapActaALista),
       ].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')),
       req.query
     );
+
+    const registros = await enriquecerAseguradorasLista(registrosBase);
 
     res.json({ total: registros.length, registros });
   } catch (error) {
