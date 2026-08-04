@@ -53,6 +53,8 @@ const SiniestroExpressSchema = new mongoose.Schema({
   fechaPresentacionCifras: Date,
   /** Reconsideración (fecha oficial Express) */
   fechaReconsideracion: Date,
+  /** 'aplica' | 'no_aplica' — si no aplica, no cuenta en ANS ni genera alerta */
+  reconsideracionAplica: String,
   /** ANS Express: montaje de documentos para pago */
   fechaDocumentosPago: Date,
   fechaFiniquitosFirmado: Date,

@@ -255,6 +255,13 @@ const normalizarSalvamentoEnPayload = (payload) => {
   return payload;
 };
 
+const normalizarReconsideracionEnPayload = (payload) => {
+  if (payload.reconsideracionAplica === 'no_aplica') {
+    payload.fechaReconsideracion = null;
+  }
+  return payload;
+};
+
 const asegurarConsecutivo = async (payload, base = {}) => {
   if (!payload.consecutivo && !base.consecutivo) {
     payload.consecutivo = await generarConsecutivoExpress();
@@ -288,12 +295,12 @@ const buscarSiniestroExpressPorId = async (idParam) => {
   return null;
 };
 
-const normalizarSalvamentoAplicaValor = (valor, fallback = 'no_aplica') => {
+const normalizarReconsideracionAplicaValor = (valor, fallback = '') => {
   const raw = Array.isArray(valor) ? valor[valor.length - 1] : valor;
   if (raw === undefined || raw === null || raw === '') return fallback;
   const v = String(raw).trim().toLowerCase().replace(/\s+/g, '_');
   if (['aplica', 'si', 'sí', 'yes'].includes(v)) return 'aplica';
-  if (['no_aplica', 'noaplica', 'no', 'n/a', 'no_aplica.'].includes(v)) return 'no_aplica';
+  if (['no_aplica', 'noaplica', 'no', 'n/a'].includes(v)) return 'no_aplica';
   const texto = String(raw).trim().toLowerCase();
   if (texto === 'aplica') return 'aplica';
   if (texto === 'no aplica') return 'no_aplica';
@@ -398,6 +405,10 @@ const buildExpressPayload = (
     data.fechaPresentacionCifras,
     base.fechaPresentacionCifras ?? null
   ),
+  reconsideracionAplica: normalizarReconsideracionAplicaValor(
+    data.reconsideracionAplica,
+    normalizarReconsideracionAplicaValor(base.reconsideracionAplica, '')
+  ),
   fechaReconsideracion: parseDateFlexible(
     data.fechaReconsideracion,
     base.fechaReconsideracion ?? null
@@ -448,8 +459,10 @@ export const crearSiniestroExpress = async (req, res) => {
     const { anexos, anexosSalvamento } = mapArchivosSubidos(req, req.files || {});
 
     const payload = await aplicarCatalogosExpress(
-      normalizarSalvamentoEnPayload(
-        buildExpressPayload(req.body, { anexos, anexosSalvamento })
+      normalizarReconsideracionEnPayload(
+        normalizarSalvamentoEnPayload(
+          buildExpressPayload(req.body, { anexos, anexosSalvamento })
+        )
       )
     );
     await asegurarConsecutivo(payload);
@@ -591,11 +604,13 @@ export const actualizarSiniestroExpress = async (req, res) => {
 
     const base = registroActual.toObject();
     const payload = await aplicarCatalogosExpress(
-      normalizarSalvamentoEnPayload(
-        buildExpressPayload(
-          req.body,
-          { anexos: anexosFinales, anexosSalvamento: anexosSalvamentoFinales },
-          base
+      normalizarReconsideracionEnPayload(
+        normalizarSalvamentoEnPayload(
+          buildExpressPayload(
+            req.body,
+            { anexos: anexosFinales, anexosSalvamento: anexosSalvamentoFinales },
+            base
+          )
         )
       )
     );

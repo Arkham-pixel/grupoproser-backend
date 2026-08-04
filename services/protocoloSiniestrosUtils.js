@@ -153,7 +153,7 @@ function casoTieneDocumentoEtapa(caso, etapa) {
   return tieneDocumentoEnHistorialDocs(caso, tipoHistorial);
 }
 
-/** Inspección y acta pueden omitirse cuando el ajustador deja constancia. */
+/** Inspección/acta (Complex) y reconsideración (Express) pueden omitirse. */
 function etapaOmitidaPorNoAplica(caso, etapa) {
   if (!etapa?.id) return false;
   if (caso?.inspeccionNoAplica === true || caso?.inspeccionNoAplica === 'true') {
@@ -162,7 +162,36 @@ function etapaOmitidaPorNoAplica(caso, etapa) {
   if (caso?.actaInspeccionNoAplica === true || caso?.actaInspeccionNoAplica === 'true') {
     if (etapa.id === 'actaInspeccion') return true;
   }
+  if (etapa.id === 'reconsideracion' && reconsideracionExpressOmitida(caso)) {
+    return true;
+  }
   return false;
+}
+
+/**
+ * Reconsideración Express:
+ * - no_aplica → no cuenta ni alerta
+ * - sin marcar / sin fecha, pero ya hay fechas posteriores → se salta (no afecta tiempos ni alerta)
+ * - solo alerta/evalúa si aplica explícitamente o hay fecha de reconsideración sin avance posterior
+ */
+function reconsideracionExpressOmitida(caso) {
+  const flag = String(caso?.reconsideracionAplica ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+  if (flag === 'no_aplica' || flag === 'noaplica') return true;
+  if (flag === 'aplica') return false;
+
+  const tieneFecha = campoTieneValor(caso, 'fechaReconsideracion');
+  if (tieneFecha) return false;
+
+  // No marcado y sin fecha: si ya avanzó (pago / finiquito), no bloquear ni alertar
+  return (
+    campoTieneValor(caso, 'fechaDocumentosPago') ||
+    campoTieneValor(caso, 'fechaFiniquitosFirmado') ||
+    campoTieneValor(caso, 'fechaCargueFiniquito') ||
+    campoTieneValor(caso, 'fechaCierre')
+  );
 }
 
 /**
@@ -285,6 +314,12 @@ function obtenerGraciaDiasHabiles(protocolo, item) {
 }
 
 function resolverFechaReferenciaEtapa(caso, etapa) {
+  if (etapa?.referencia === 'fechaReconsideracion' && reconsideracionExpressOmitida(caso)) {
+    if (etapa.referenciaAlternativa) {
+      return parsearFechaProtocolo(caso[etapa.referenciaAlternativa]);
+    }
+    return null;
+  }
   const principal = parsearFechaProtocolo(caso[etapa.referencia]);
   if (principal) return principal;
   if (etapa.referenciaAlternativa) {

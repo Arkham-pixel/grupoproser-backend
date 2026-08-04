@@ -4,7 +4,7 @@
  * Etapas alineadas a las fechas oficiales Express (correo julio 2026).
  */
 
-export const PROTOCOLO_EXPRESS_VERSION = '2026-07-28-ans-oficiales';
+export const PROTOCOLO_EXPRESS_VERSION = '2026-08-04-reconsideracion-opcional';
 export const PROTOCOLO_EXPRESS_FECHA_ACTIVACION = '2026-07-24';
 export const PROTOCOLO_EXPRESS_DOCUMENTO =
   'ANS Express — fechas oficiales (julio 2026)';
@@ -92,13 +92,28 @@ export const ETAPAS_PROTOCOLO_EXPRESS_DEFAULT = [
     alcance: 'ajustador',
   },
   {
+    id: 'reconsideracion',
+    fase: 5.5,
+    nombre: 'Reconsideración',
+    actividad: 'Registrar reconsideración cuando aplique (omitir si no aplica)',
+    campoFecha: 'fechaReconsideracion',
+    campoDoc: null,
+    referencia: 'fechaPresentacionCifras',
+    limite: { valor: 1, unidad: 'dias_habiles' },
+    alertaVencimiento: true,
+    responsable: 'Responsable Express',
+    entregable: 'Reconsideración registrada o marcada como no aplica',
+    alcance: 'ajustador',
+  },
+  {
     id: 'documentosPago',
     fase: 6,
     nombre: 'Cargue de documentos de pago',
     actividad: 'Cargar los documentos para pago',
     campoFecha: 'fechaDocumentosPago',
     campoDoc: null,
-    referencia: 'fechaPresentacionCifras',
+    referencia: 'fechaReconsideracion',
+    referenciaAlternativa: 'fechaPresentacionCifras',
     limite: { valor: 1, unidad: 'dias_habiles' },
     alertaVencimiento: true,
     responsable: 'Responsable Express',
