@@ -4,7 +4,7 @@
  * Etapas alineadas a las fechas oficiales Express (correo julio 2026).
  */
 
-export const PROTOCOLO_EXPRESS_VERSION = '2026-08-04-reconsideracion-opcional';
+export const PROTOCOLO_EXPRESS_VERSION = '2026-08-04-secuencia-avance';
 export const PROTOCOLO_EXPRESS_FECHA_ACTIVACION = '2026-07-24';
 export const PROTOCOLO_EXPRESS_DOCUMENTO =
   'ANS Express — fechas oficiales (julio 2026)';
@@ -21,7 +21,7 @@ export const ETAPAS_PROTOCOLO_EXPRESS_DEFAULT = [
     id: 'solicitudInicialDocs',
     fase: 1,
     nombre: 'Solicitud inicial de documentos',
-    actividad: 'Realizar la solicitud inicial de documentos',
+    actividad: 'Realizar la solicitud inicial de documentos (plazo desde aviso al ajustador; aviso a compañía opcional)',
     campoFecha: 'fechaSolicitudDocumentos',
     campoDoc: null,
     referencia: 'avisoSiniestro',

@@ -153,7 +153,7 @@ function casoTieneDocumentoEtapa(caso, etapa) {
   return tieneDocumentoEnHistorialDocs(caso, tipoHistorial);
 }
 
-/** Inspección/acta (Complex) y reconsideración (Express) pueden omitirse. */
+/** Inspección/acta (Complex) y hitos Express opcionales pueden omitirse. */
 function etapaOmitidaPorNoAplica(caso, etapa) {
   if (!etapa?.id) return false;
   if (caso?.inspeccionNoAplica === true || caso?.inspeccionNoAplica === 'true') {
@@ -163,6 +163,9 @@ function etapaOmitidaPorNoAplica(caso, etapa) {
     if (etapa.id === 'actaInspeccion') return true;
   }
   if (etapa.id === 'reconsideracion' && reconsideracionExpressOmitida(caso)) {
+    return true;
+  }
+  if (etapa.id === 'documentosPago' && documentosPagoExpressOmitida(caso)) {
     return true;
   }
   return false;
@@ -188,6 +191,16 @@ function reconsideracionExpressOmitida(caso) {
   // No marcado y sin fecha: si ya avanzó (pago / finiquito), no bloquear ni alertar
   return (
     campoTieneValor(caso, 'fechaDocumentosPago') ||
+    campoTieneValor(caso, 'fechaFiniquitosFirmado') ||
+    campoTieneValor(caso, 'fechaCargueFiniquito') ||
+    campoTieneValor(caso, 'fechaCierre')
+  );
+}
+
+/** Documentos de pago: sin fecha pero ya hay finiquito/cierre → se salta en ANS. */
+function documentosPagoExpressOmitida(caso) {
+  if (campoTieneValor(caso, 'fechaDocumentosPago')) return false;
+  return (
     campoTieneValor(caso, 'fechaFiniquitosFirmado') ||
     campoTieneValor(caso, 'fechaCargueFiniquito') ||
     campoTieneValor(caso, 'fechaCierre')
@@ -244,12 +257,15 @@ export function etapaEstaCompleta(caso, etapa) {
 }
 
 /**
- * Avance de una etapa posterior: basta con la fecha del hito
- * (en varios casos solo radican fecha y no adjuntan soporte).
+ * Avance real de una etapa posterior (fecha u hito cumplido).
+ * "Omitida / no aplica" NO cuenta como avance de secuencia: si no, marcar
+ * reconsideración No aplica silenciaría alertas de etapas anteriores.
  */
 function etapaTieneAvanceRegistrado(caso, etapa) {
   if (!etapa) return false;
-  if (etapaOmitidaPorNoAplica(caso, etapa)) return true;
+  if (etapaOmitidaPorNoAplica(caso, etapa)) {
+    return Boolean(etapa.campoFecha && campoTieneValor(caso, etapa.campoFecha));
+  }
   if (etapaEstaCompleta(caso, etapa)) return true;
   if (etapa.campoFecha && campoTieneValor(caso, etapa.campoFecha)) return true;
   return false;
@@ -314,7 +330,20 @@ function obtenerGraciaDiasHabiles(protocolo, item) {
 }
 
 function resolverFechaReferenciaEtapa(caso, etapa) {
-  if (etapa?.referencia === 'fechaReconsideracion' && reconsideracionExpressOmitida(caso)) {
+  // Si la referencia es un hito Express omitido/saltado, usar alternativa (secuencia).
+  if (
+    etapa?.referencia === 'fechaReconsideracion' &&
+    reconsideracionExpressOmitida(caso)
+  ) {
+    if (etapa.referenciaAlternativa) {
+      return parsearFechaProtocolo(caso[etapa.referenciaAlternativa]);
+    }
+    return null;
+  }
+  if (
+    etapa?.referencia === 'fechaDocumentosPago' &&
+    documentosPagoExpressOmitida(caso)
+  ) {
     if (etapa.referenciaAlternativa) {
       return parsearFechaProtocolo(caso[etapa.referenciaAlternativa]);
     }
