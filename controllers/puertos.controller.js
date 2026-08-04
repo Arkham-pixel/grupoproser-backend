@@ -666,7 +666,12 @@ export const actualizarPuertosActa = async (req, res) => {
     delete datos._id;
     delete datos.createdAt;
     delete datos.updatedAt;
-    const acta = await PuertosActa.findByIdAndUpdate(id, datos, { new: true }).lean();
+    // $set explícito para no perder campos de texto largo (observaciones HTML)
+    const acta = await PuertosActa.findByIdAndUpdate(
+      id,
+      { $set: datos },
+      { new: true, runValidators: false }
+    ).lean();
     if (!acta) return res.status(404).json({ error: 'Acta no encontrada' });
     res.json(acta);
   } catch (error) {
