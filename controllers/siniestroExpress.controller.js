@@ -295,6 +295,18 @@ const buscarSiniestroExpressPorId = async (idParam) => {
   return null;
 };
 
+const normalizarSalvamentoAplicaValor = (valor, fallback = 'no_aplica') => {
+  const raw = Array.isArray(valor) ? valor[valor.length - 1] : valor;
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  const v = String(raw).trim().toLowerCase().replace(/\s+/g, '_');
+  if (['aplica', 'si', 'sí', 'yes'].includes(v)) return 'aplica';
+  if (['no_aplica', 'noaplica', 'no', 'n/a'].includes(v)) return 'no_aplica';
+  const texto = String(raw).trim().toLowerCase();
+  if (texto === 'aplica') return 'aplica';
+  if (texto === 'no aplica') return 'no_aplica';
+  return fallback;
+};
+
 const normalizarReconsideracionAplicaValor = (valor, fallback = '') => {
   const raw = Array.isArray(valor) ? valor[valor.length - 1] : valor;
   if (raw === undefined || raw === null || raw === '') return fallback;
