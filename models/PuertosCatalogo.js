@@ -19,6 +19,8 @@ const PuertosCatalogoSchema = new mongoose.Schema(
     tipo: { type: String, enum: TIPOS, required: true, index: true },
     nombre: { type: String, required: true, trim: true },
     activo: { type: Boolean, default: true },
+    /** Solo para tipo=sucursal: nombre de la aseguradora padre en el catálogo. */
+    aseguradoraNombre: { type: String, default: null, trim: true, index: true },
   },
   { timestamps: true, collection: 'puertos_catalogos' }
 );

@@ -7,6 +7,16 @@ import { resolveFrontendUrl } from '../config/platformUrls.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  normalizeEmailLocale,
+  getEmailText,
+  getEmailSubject,
+  fillEmailTemplate,
+  isMissingCaseNumber,
+} from './emailI18n.js';
+
+// Re-export i18n helpers so callers / tests can import from emailService if needed.
+export { normalizeEmailLocale, getEmailText, getEmailSubject, isMissingCaseNumber };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,62 +50,67 @@ const obtenerEmailsEncargadosRiesgos = async () => {
 
 /** URL y botón HTML para acceso directo al caso en correos */
 function construirEnlaceCaso(datos = {}) {
+  const text = getEmailText(datos);
   const frontendUrl = resolveFrontendUrl();
   if (datos.casoId) {
     return {
       url: `${frontendUrl}/editar-caso/${datos.casoId}`,
-      texto: datos.numeroCaso ? `Abrir caso ${datos.numeroCaso}` : 'Abrir caso en ARNALD',
+      texto: !isMissingCaseNumber(datos.numeroCaso)
+        ? `${text.openCase} ${datos.numeroCaso}`
+        : `${text.openCase} ARNALD`,
     };
   }
-  if (datos.numeroCaso && datos.numeroCaso !== 'Sin número') {
+  if (!isMissingCaseNumber(datos.numeroCaso)) {
     return {
       url: `${frontendUrl}/complex/excel?buscar=${encodeURIComponent(datos.numeroCaso)}`,
-      texto: `Buscar caso ${datos.numeroCaso}`,
+      texto: `${text.searchCase} ${datos.numeroCaso}`,
     };
   }
   return {
     url: `${frontendUrl}/complex/mis-casos`,
-    texto: 'Ver mis casos',
+    texto: text.viewCases,
   };
 }
 
 function htmlBotonAccesoCaso(datos = {}) {
   const { url, texto } = construirEnlaceCaso(datos);
-  const etiquetaBoton =
-    datos.numeroCaso && datos.numeroCaso !== 'Sin número'
-      ? `Ir al caso ${datos.numeroCaso}`
-      : 'Ir al caso';
+  const translation = getEmailText(datos);
+  const etiquetaBoton = !isMissingCaseNumber(datos.numeroCaso)
+    ? `${translation.goToCase} ${datos.numeroCaso}`
+    : translation.goToCase;
   return `
     <div style="background-color:#fef2f2; padding:22px; border-radius:8px; border-left:4px solid #dc2626; margin:25px 0; text-align:center;">
-      <p style="margin:0 0 12px 0; color:#991b1b; font-weight:700; font-size:16px;">Acceso directo al caso</p>
+      <p style="margin:0 0 12px 0; color:#991b1b; font-weight:700; font-size:16px;">${translation.directAccess}</p>
       <a href="${url}"
          style="display:inline-block; background-color:#dc2626; color:#ffffff; padding:14px 28px; text-decoration:none; border-radius:8px; font-weight:700; font-size:15px;">
         ${etiquetaBoton}
       </a>
       <p style="margin:14px 0 0 0; color:#7f1d1d; font-size:12px; line-height:1.5;">
-        Ingrese a ARNALD DataFlow para iniciar la gestión según el protocolo (contacto inicial en 12 horas).
+        ${translation.protocol}
       </p>
       <p style="margin:12px 0 0 0; color:#7f1d1d; font-size:12px; line-height:1.5; word-break:break-all;">
-        Si el botón no funciona, copie este enlace: <a href="${url}" style="color:#b91c1c;">${url}</a>
+        ${translation.brokenButton} <a href="${url}" style="color:#b91c1c;">${url}</a>
       </p>
     </div>
   `;
 }
 
 function htmlSeccionDestinatarios(datos = {}) {
-  const quienAsigna = datos.quienAsigna && datos.quienAsigna !== 'Sistema'
-    ? datos.quienAsigna
-    : (datos.loginQuienAsigna || datos.quienAsigna || 'No identificado');
+  const t = getEmailText(datos);
+  const quienAsigna =
+    datos.quienAsigna && datos.quienAsigna !== 'Sistema' && datos.quienAsigna !== t.system
+      ? datos.quienAsigna
+      : (datos.loginQuienAsigna || datos.quienAsigna || t.unidentified);
   return `
     <div style="background-color:#f0f9ff; padding:20px; border-radius:8px; margin-bottom:25px;">
-      <h3 style="color:#0369a1; margin:0 0 15px 0; font-size:16px;">Destinatarios de esta notificación</h3>
+      <h3 style="color:#0369a1; margin:0 0 15px 0; font-size:16px;">${t.recipientsTitle}</h3>
       <table style="width:100%; border-collapse:collapse;">
         <tr>
-          <td style="padding:8px 0; font-weight:bold; color:#374151; width:42%;">Responsable asignado:</td>
-          <td style="padding:8px 0; color:#1f2937;">${datos.nombreResponsable || 'Sin asignar'}</td>
+          <td style="padding:8px 0; font-weight:bold; color:#374151; width:42%;">${t.assignedResponsible}</td>
+          <td style="padding:8px 0; color:#1f2937;">${datos.nombreResponsable || t.unassigned}</td>
         </tr>
         <tr>
-          <td style="padding:8px 0; font-weight:bold; color:#374151;">Persona que asignó:</td>
+          <td style="padding:8px 0; font-weight:bold; color:#374151;">${t.assignedByPerson}</td>
           <td style="padding:8px 0; color:#1f2937;">${quienAsigna}</td>
         </tr>
       </table>
@@ -103,8 +118,9 @@ function htmlSeccionDestinatarios(datos = {}) {
   `;
 }
 
-function formatearFechaCorreo(valor) {
-  if (!valor) return 'No especificada';
+function formatearFechaCorreo(valor, datos = {}) {
+  const t = getEmailText(datos);
+  if (!valor) return t.notSpecifiedF;
   try {
     const fecha = new Date(valor);
     if (Number.isNaN(fecha.getTime())) return String(valor);
@@ -214,8 +230,11 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
      
      console.log('📧 ✅ Emails a notificar:', todosLosEmails);
     
+    // Callers deben pasar datosCaso.locale ('es'|'en') — preferencia destinatario/emisor.
+    const t = getEmailText(datosCaso);
+
     // Obtener nombre de aseguradora (para todos los tipos de casos)
-    let nombreAseguradora = datosCaso.aseguradora || 'No especificada';
+    let nombreAseguradora = datosCaso.aseguradora || t.notSpecifiedF;
     if (datosCaso.aseguradora) {
       try {
         const cliente = await Cliente.findOne({ codiAsgrdra: datosCaso.aseguradora });
@@ -238,8 +257,8 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
     console.log('📧 Estado para correo:', nombreEstado, '(código:', datosCaso.codiEstdo || datosCaso.estado, ')');
     
     // Obtener nombre del funcionario de aseguradora
-    let nombreFuncionario = datosCaso.funcionarioAseguradora || datosCaso.funcAsgrdraNombre || 'No especificado';
-    if (!nombreFuncionario || nombreFuncionario === 'No especificado' || nombreFuncionario === '') {
+    let nombreFuncionario = datosCaso.funcionarioAseguradora || datosCaso.funcAsgrdraNombre || t.notSpecified;
+    if (!nombreFuncionario || nombreFuncionario === 'No especificado' || nombreFuncionario === t.notSpecified || nombreFuncionario === '') {
       // Si no tenemos el nombre, intentar buscarlo por código o nombre
       const valorBuscado = datosCaso.funcAsgrdra || datosCaso.funcionarioAseguradora || '';
       if (valorBuscado) {
@@ -303,13 +322,13 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
           } else {
             console.log('❌ ❌ ❌ FUNCIONARIO NO ENCONTRADO EN BD ❌ ❌ ❌');
             console.log('❌ Valor buscado:', valorBuscado);
-            nombreFuncionario = valorBuscado || 'No especificado';
+            nombreFuncionario = valorBuscado || t.notSpecified;
           }
         } catch (error) {
           console.log('❌ ❌ ❌ ERROR AL BUSCAR FUNCIONARIO ❌ ❌ ❌');
           console.log('❌ Error:', error.message);
           console.log('❌ Stack trace:', error.stack);
-          nombreFuncionario = valorBuscado || 'No especificado';
+          nombreFuncionario = valorBuscado || t.notSpecified;
         }
       } else {
         console.log('⚠️ No hay valor para buscar funcionario');
@@ -322,8 +341,8 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
     console.log('📧 Nombre final del funcionario:', nombreFuncionario);
     
     // Formatear fecha de asignación (formato: 20/11/2025)
-    const fechaFormateada = formatearFechaCorreo(datosCaso.fechaAsignacion);
-    const fechaSiniestroFormateada = formatearFechaCorreo(datosCaso.fechaSiniestro);
+    const fechaFormateada = formatearFechaCorreo(datosCaso.fechaAsignacion, datosCaso);
+    const fechaSiniestroFormateada = formatearFechaCorreo(datosCaso.fechaSiniestro, datosCaso);
     const htmlEnlaceCaso = htmlBotonAccesoCaso(datosCaso);
     
     // Generar HTML según el tipo de caso
@@ -334,79 +353,79 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f8f9fa; padding: 20px;">
           <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
             <div style="text-align: center; margin-bottom: 30px;">
-              <h1 style="color: #2563eb; margin: 0; font-size: 24px;">📋 Caso de Riesgo Asignado</h1>
-              <p style="color: #6b7280; margin: 10px 0 0 0;">Sistema de Gestión de Casos - Grupo Proser</p>
-              ${datosCaso.quienAsigna && datosCaso.quienAsigna !== 'Sistema' ? `
+              <h1 style="color: #2563eb; margin: 0; font-size: 24px;">📋 ${t.riskCaseAssignedTitle}</h1>
+              <p style="color: #6b7280; margin: 10px 0 0 0;">${t.caseMgmtSubtitle}</p>
+              ${datosCaso.quienAsigna && datosCaso.quienAsigna !== 'Sistema' && datosCaso.quienAsigna !== t.system ? `
               <div style="background-color: #d1fae5; padding: 15px; border-radius: 8px; margin-top: 15px; border-left: 4px solid #10b981;">
                 <p style="color: #065f46; margin: 0; font-weight: bold; font-size: 16px;">
                   ✅ Has asignado exitosamente este caso de riesgo
                 </p>
                 <p style="color: #047857; margin: 5px 0 0 0; font-size: 14px;">
-                  El caso ${datosCaso.numeroCaso || 'N/A'} ha sido asignado correctamente al inspector ${datosCaso.inspector || datosCaso.nombreResponsable || 'Sin asignar'}
+                  El caso ${datosCaso.numeroCaso || 'N/A'} ha sido asignado correctamente al inspector ${datosCaso.inspector || datosCaso.nombreResponsable || t.unassigned}
                 </p>
               </div>
               ` : ''}
             </div>
             
             <div style="background-color: #dbeafe; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
-              <h2 style="color: #1e40af; margin: 0 0 15px 0; font-size: 18px;">📊 Información del Caso</h2>
+              <h2 style="color: #1e40af; margin: 0 0 15px 0; font-size: 18px;">📊 ${t.caseInfo}</h2>
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🏢 Cliente:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.aseguradora || nombreAseguradora || 'No especificada'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🏢 ${t.client}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.aseguradora || nombreAseguradora || t.notSpecifiedF}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👤 Inspector:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.inspector || datosCaso.nombreResponsable || 'No especificado'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👤 ${t.inspector}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.inspector || datosCaso.nombreResponsable || t.notSpecified}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📋 Clasificación:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.clasificacion || 'No especificada'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📋 ${t.classification}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.clasificacion || t.notSpecifiedF}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📞 Quien Solicita:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.quienSolicita || 'No especificado'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📞 ${t.requestedBy}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.quienSolicita || t.notSpecified}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🏙️ Ciudad de Inspección:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.ciudadInspeccion || datosCaso.ciudadSucursal || datosCaso.codigoPoblado || 'No especificada'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🏙️ ${t.inspectionCity}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.ciudadInspeccion || datosCaso.ciudadSucursal || datosCaso.codigoPoblado || t.notSpecifiedF}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📍 Dirección:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.direccion || 'No especificada'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📍 ${t.address}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.direccion || t.notSpecifiedF}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👥 Asegurado:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.asegurado || 'No especificado'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👥 ${t.insured}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.asegurado || t.notSpecified}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📅 Fecha de Asignación:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.fechaAsignacion || 'No especificada'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📅 ${t.assignmentDate}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.fechaAsignacion || t.notSpecifiedF}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📝 Observación:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.observaciones || datosCaso.descripcion || 'No especificada'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📝 ${t.observation}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.observaciones || datosCaso.descripcion || t.notSpecifiedF}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📊 Estado:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📊 ${t.status}</td>
                   <td style="padding: 8px 0; color: #1f2937;">${nombreEstado}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👨‍💼 Asignado por:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.quienAsigna || 'Sistema'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👨‍💼 ${t.assignedBy}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.quienAsigna || t.system}</td>
                 </tr>
               </table>
             </div>
             
             ${datosCaso.observaciones ? `
             <div style="background-color: #fef3c7; padding: 15px; border-radius: 8px; margin-bottom: 25px;">
-              <h3 style="color: #92400e; margin: 0 0 10px 0; font-size: 16px;">📝 Observaciones</h3>
+              <h3 style="color: #92400e; margin: 0 0 10px 0; font-size: 16px;">📝 ${t.observations}</h3>
               <p style="color: #78350f; margin: 0; line-height: 1.5;">${datosCaso.observaciones}</p>
             </div>
             ` : ''}
             
             <div style="background-color: #f0f9ff; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
-              <h3 style="color: #0369a1; margin: 0 0 15px 0; font-size: 16px;">👥 Equipo de Gestión de Riesgo</h3>
+              <h3 style="color: #0369a1; margin: 0 0 15px 0; font-size: 16px;">👥 ${t.riskTeam}</h3>
               <ul style="margin: 0; padding-left: 20px; color: #0c4a6e;">
                 <li>Mario Alberto Pinilla de la Torre</li>
                 <li>Arnaldo Andrés Tapia Gutierrez</li>
@@ -414,7 +433,7 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
             </div>
             
             <div style="background-color: #ecfdf5; padding: 20px; border-radius: 8px; margin-bottom: 25px; border-left: 4px solid #10b981;">
-              <h3 style="color: #047857; margin: 0 0 10px 0; font-size: 16px;">📊 Reporte Independiente</h3>
+              <h3 style="color: #047857; margin: 0 0 10px 0; font-size: 16px;">📊 ${t.independentReport}</h3>
               <p style="color: #065f46; margin: 0; line-height: 1.5;">
                 Este caso ha sido registrado en el sistema y está disponible para seguimiento y gestión independiente.
                 Puede acceder al reporte completo desde el sistema de gestión de casos.
@@ -423,8 +442,8 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
             
             <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
               <p style="color: #6b7280; font-size: 12px; margin: 0;">
-                Este es un mensaje automático del Sistema de Gestión de Casos de Grupo Proser.<br>
-                No responda a este correo. Para consultas, contacte al administrador del sistema.
+                ${t.footerAuto}<br>
+                ${t.footerNoReply}
               </p>
             </div>
           </div>
@@ -436,96 +455,96 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f8f9fa; padding: 20px;">
           <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
             <div style="text-align: center; margin-bottom: 30px;">
-              <h1 style="color: #dc2626; margin: 0; font-size: 24px;">Nuevo siniestro asignado</h1>
-              <p style="color: #6b7280; margin: 10px 0 0 0;">ARNALD DataFlow · Protocolo de atención de siniestros</p>
+              <h1 style="color: #dc2626; margin: 0; font-size: 24px;">${t.newClaimAssigned}</h1>
+              <p style="color: #6b7280; margin: 10px 0 0 0;">${t.arnaldProtocolSubtitle}</p>
               <p style="color: #991b1b; margin: 12px 0 0 0; font-size: 14px; font-weight: 600;">
-                Fase 1 — Recepción de asignación · Inicie contacto inicial en 12 horas
+                ${t.phase1Banner}
               </p>
             </div>
             
             ${htmlEnlaceCaso}
 
             <div style="background-color: #dbeafe; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
-              <h2 style="color: #1e40af; margin: 0 0 15px 0; font-size: 18px;">Información del siniestro</h2>
+              <h2 style="color: #1e40af; margin: 0 0 15px 0; font-size: 18px;">${t.claimInfo}</h2>
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151; width: 42%;">Número de ajuste:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151; width: 42%;">${t.adjustmentNumber}</td>
                   <td style="padding: 8px 0; color: #1f2937;">${datosCaso.numeroCaso || '—'}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Número de siniestro:</td>
-                  <td style="padding: 8px 0; color: #1f2937; font-weight: 600;">${datosCaso.numeroSiniestro || 'No especificado'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.claimNumberLabel}</td>
+                  <td style="padding: 8px 0; color: #1f2937; font-weight: 600;">${datosCaso.numeroSiniestro || t.notSpecified}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Fecha del siniestro:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.claimDate}</td>
                   <td style="padding: 8px 0; color: #1f2937;">${fechaSiniestroFormateada}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Ramo / tipo póliza:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.tipoPoliza || datosCaso.ramo || 'No especificado'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.policyBranch}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.tipoPoliza || datosCaso.ramo || t.notSpecified}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Código workflow:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.codigoWorkflow || 'No especificado'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.workflowCode}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.codigoWorkflow || t.notSpecified}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Aseguradora:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.insurer}</td>
                   <td style="padding: 8px 0; color: #1f2937;">${nombreAseguradora}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Asegurado / beneficiario:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.aseguradoReal || datosCaso.asgrBenfcro || 'No especificado'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.insuredBeneficiary}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.aseguradoReal || datosCaso.asgrBenfcro || t.notSpecified}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Intermediario:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.intermediario || datosCaso.asegurado || 'No especificado'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.intermediary}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.intermediario || datosCaso.asegurado || t.notSpecified}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Funcionario aseguradora:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.insurerOfficer}</td>
                   <td style="padding: 8px 0; color: #1f2937;">${nombreFuncionario}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Ciudad del siniestro:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.ciudadSiniestro || datosCaso.descripcionCiudad || 'No especificada'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.claimCity}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.ciudadSiniestro || datosCaso.descripcionCiudad || t.notSpecifiedF}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Número de póliza:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.numeroPoliza || 'No especificado'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.policyNumber}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.numeroPoliza || t.notSpecified}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Estado del caso:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.caseStatus}</td>
                   <td style="padding: 8px 0; color: #1f2937;">${nombreEstado}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Ajustador asignado:</td>
-                  <td style="padding: 8px 0; color: #1f2937; font-weight: 600;">${datosCaso.nombreResponsable || 'Sin asignar'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.assignedAdjuster}</td>
+                  <td style="padding: 8px 0; color: #1f2937; font-weight: 600;">${datosCaso.nombreResponsable || t.unassigned}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Fecha de asignación:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.assignmentDate}</td>
                   <td style="padding: 8px 0; color: #1f2937;">${fechaFormateada}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Asignado por:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.quienAsigna || 'Sistema'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.assignedBy}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.quienAsigna || t.system}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151; vertical-align: top;">Descripción:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.descripcionSiniestro || 'No especificada'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151; vertical-align: top;">${t.description}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.descripcionSiniestro || t.notSpecifiedF}</td>
                 </tr>
               </table>
             </div>
             
             ${datosCaso.observaciones ? `
             <div style="background-color: #fef3c7; padding: 15px; border-radius: 8px; margin-bottom: 25px;">
-              <h3 style="color: #92400e; margin: 0 0 10px 0; font-size: 16px;">Observaciones</h3>
+              <h3 style="color: #92400e; margin: 0 0 10px 0; font-size: 16px;">${t.observations}</h3>
               <p style="color: #78350f; margin: 0; line-height: 1.5;">${datosCaso.observaciones}</p>
             </div>
             ` : ''}
             
             <div style="background-color: #f0fdf4; padding: 16px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #16a34a;">
               <p style="margin:0; color:#166534; font-size:13px; line-height:1.6;">
-                <strong>Próximo paso (protocolo):</strong> contacto con el intermediario y cargue de evidencia en ARNALD
-                dentro de las <strong>12 horas</strong> siguientes a esta asignación.
+                <strong>${t.nextStepProtocol}</strong> ${t.nextStepBody}
+                <strong>${t.nextStepHours}</strong> ${t.nextStepSuffix}
               </p>
             </div>
 
@@ -534,8 +553,8 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
             
             <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
               <p style="color: #6b7280; font-size: 12px; margin: 0;">
-                Mensaje automático de ARNALD DataFlow · Grupo Proser<br>
-                No responda a este correo.
+                ${t.footerArnald}<br>
+                ${t.footerNoReplyShort}
               </p>
             </div>
           </div>
@@ -543,14 +562,19 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
       `;
     };
     
-    const asuntoComplex = `🆕 Siniestro asignado — Caso ${datosCaso.numeroCaso || 'nuevo'} | Siniestro ${datosCaso.numeroSiniestro || '—'}`;
+    const asuntoComplex = getEmailSubject(datosCaso, 'subjectAsignacionComplex', {
+      numero: datosCaso.numeroCaso || t.newCase,
+      siniestro: datosCaso.numeroSiniestro || '—',
+    });
     
     // Construir objeto mailOptions con todos los datos necesarios
     const mailOptions = {
       from: `"ARNALD DataFlow" <${process.env.EMAIL_USER}>`,
       to: todosLosEmails.join(', '),
       subject: datosCaso.tipoCaso === 'riesgo' || datosCaso.esCasoRiesgo 
-        ? `📋 Caso de Riesgo Asignado - ${datosCaso.numeroCaso || 'Nuevo'}`
+        ? getEmailSubject(datosCaso, 'subjectAsignacionRiesgo', {
+            numero: datosCaso.numeroCaso || (normalizeEmailLocale(datosCaso) === 'en' ? 'New' : 'Nuevo'),
+          })
         : asuntoComplex,
       html: htmlContent
     };
@@ -619,12 +643,14 @@ export const enviarEmailAlertas = async (datosAlertas) => {
     
     // IMPORTANTE: Los recordatorios de casos pendientes SOLO se envían al responsable asignado
     // NO se envían a quien asigna ni al funcionario de la aseguradora
+    // Callers deben pasar datosAlertas.locale ('es'|'en').
+    const t = getEmailText(datosAlertas);
 
     const modulo = String(datosAlertas.modulo || 'complex').toLowerCase();
     const esExpress = modulo === 'express';
     const tituloSistema = esExpress
-      ? 'Sistema de Alertas ANS Express'
-      : 'Sistema de Alertas Complex';
+      ? t.alertsSystemExpress
+      : t.alertsSystemComplex;
     const enlacePanel = esExpress
       ? `${resolveFrontendUrl()}/express/protocolo`
       : `${resolveFrontendUrl()}/complex/alertas`;
@@ -656,27 +682,27 @@ export const enviarEmailAlertas = async (datosAlertas) => {
             };">${alerta.prioridad}</span>
           </div>
           <p style="margin: 0; color: #6b7280; font-size: 14px;">
-            <strong>Acción requerida:</strong> ${alerta.accion || 'Revisar el caso en ARNALD'}
+            <strong>${t.actionRequired}</strong> ${alerta.accion || t.reviewCaseArnald}
           </p>
-          ${alerta.etiquetaLimite ? `<p style="margin: 6px 0 0 0; color: #9ca3af; font-size: 12px;">Plazo ANS: ${alerta.etiquetaLimite}</p>` : ''}
+          ${alerta.etiquetaLimite ? `<p style="margin: 6px 0 0 0; color: #9ca3af; font-size: 12px;">${t.ansDeadline} ${alerta.etiquetaLimite}</p>` : ''}
         </div>
       `).join('');
       
       return `
         <div style="margin: 20px 0; padding: 20px; border: 1px solid #e5e7eb; border-radius: 12px; background-color: #ffffff;">
           <h3 style="margin: 0 0 15px 0; color: #1f2937; font-size: 18px;">
-            🚨 Caso ${caso.numeroAjuste || caso.consecutivo || 'N/A'}
+            🚨 ${t.caseLabel} ${caso.numeroAjuste || caso.consecutivo || 'N/A'}
           </h3>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; font-size: 14px;">
             <div>
-              <strong>Siniestro:</strong> ${caso.numeroSiniestro || 'N/A'}<br>
-              <strong>Aseguradora:</strong> ${caso.aseguradora || 'N/A'}<br>
-              <strong>Asegurado:</strong> ${caso.asegurado || 'N/A'}
+              <strong>${t.claimLabel}</strong> ${caso.numeroSiniestro || 'N/A'}<br>
+              <strong>${t.insurerLabel}</strong> ${caso.aseguradora || 'N/A'}<br>
+              <strong>${t.insuredLabel}</strong> ${caso.asegurado || 'N/A'}
             </div>
             <div>
-              <strong>Estado:</strong> ${caso.estado || 'N/A'}<br>
-              <strong>Total Alertas:</strong> ${caso.totalAlertas}<br>
-              ${esExpress ? '' : `<strong>Documentos Faltantes:</strong> ${docsFaltantes}`}
+              <strong>${t.statusLabel}</strong> ${caso.estado || 'N/A'}<br>
+              <strong>${t.totalAlerts}</strong> ${caso.totalAlertas}<br>
+              ${esExpress ? '' : `<strong>${t.missingDocs}</strong> ${docsFaltantes}`}
             </div>
           </div>
           ${alertasHTML}
@@ -685,8 +711,8 @@ export const enviarEmailAlertas = async (datosAlertas) => {
               <div style="display: flex; align-items: center; gap: 8px;">
                 <span style="color: #6b7280;">⏰</span>
                 <span style="font-size: 14px; color: #374151;">
-                  <strong>Última actividad:</strong> ${caso.inactividad.actividad}
-                  ${caso.inactividad.dias !== null ? ` (hace ${caso.inactividad.dias} días)` : ''}
+                  <strong>${t.lastActivity}</strong> ${caso.inactividad.actividad}
+                  ${caso.inactividad.dias !== null ? ` ${fillEmailTemplate(t.daysAgo, { dias: caso.inactividad.dias })}` : ''}
                 </span>
                 <span style="padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; background-color: ${
                   caso.inactividad.estado === 'CRÍTICO' ? '#fecaca' : 
@@ -708,71 +734,74 @@ export const enviarEmailAlertas = async (datosAlertas) => {
     const mailOptions = {
       from: `"Grupo Proser - Sistema de Alertas" <${process.env.EMAIL_USER}>`,
       to: datosAlertas.emailResponsable, // SOLO al responsable asignado
-      subject: `🚨 ALERTAS ${esExpress ? 'ANS EXPRESS' : 'PENDIENTES'} - ${datosAlertas.alertas.casosConAlertas} Casos Requieren Atención`,
+      subject: getEmailSubject(datosAlertas, 'subjectAlertas', {
+        tipo: esExpress ? t.subjectAlertasExpress : t.subjectAlertasPendientes,
+        count: datosAlertas.alertas.casosConAlertas,
+      }),
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; background-color: #f8f9fa; padding: 20px;">
           <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
             <div style="text-align: center; margin-bottom: 30px;">
               <h1 style="color: #dc2626; margin: 0; font-size: 28px;">🚨 ${tituloSistema}</h1>
-              <p style="color: #6b7280; margin: 10px 0 0 0;">Grupo Proser - Notificaciones Automáticas</p>
+              <p style="color: #6b7280; margin: 10px 0 0 0;">${t.autoNotifications}</p>
             </div>
             
             <div style="background-color: #fef2f2; padding: 20px; border-radius: 8px; margin-bottom: 25px; border-left: 4px solid #dc2626;">
-              <h2 style="color: #dc2626; margin: 0 0 15px 0; font-size: 20px;">⚠️ Resumen de Alertas</h2>
+              <h2 style="color: #dc2626; margin: 0 0 15px 0; font-size: 20px;">⚠️ ${t.alertsSummary}</h2>
               <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
                 <div style="text-align: center;">
                   <div style="font-size: 24px; font-weight: bold; color: #dc2626;">${datosAlertas.alertas.totalCasos}</div>
-                  <div style="font-size: 12px; color: #6b7280;">Total Casos</div>
+                  <div style="font-size: 12px; color: #6b7280;">${t.totalCases}</div>
                 </div>
                 <div style="text-align: center;">
                   <div style="font-size: 24px; font-weight: bold; color: #ea580c;">${datosAlertas.alertas.casosConAlertas}</div>
-                  <div style="font-size: 12px; color: #6b7280;">Con Alertas</div>
+                  <div style="font-size: 12px; color: #6b7280;">${t.withAlerts}</div>
                 </div>
                 <div style="text-align: center;">
                   <div style="font-size: 24px; font-weight: bold; color: #dc2626;">${datosAlertas.alertas.resumen?.documentosObligatorios ?? 0}</div>
-                  <div style="font-size: 12px; color: #6b7280;">${esExpress ? 'Alertas ANS' : 'Docs Obligatorios'}</div>
+                  <div style="font-size: 12px; color: #6b7280;">${esExpress ? t.ansAlerts : t.mandatoryDocs}</div>
                 </div>
                 <div style="text-align: center;">
                   <div style="font-size: 24px; font-weight: bold; color: #dc2626;">${datosAlertas.alertas.resumen?.casosCriticos ?? 0}</div>
-                  <div style="font-size: 12px; color: #6b7280;">Casos Críticos</div>
+                  <div style="font-size: 12px; color: #6b7280;">${t.criticalCases}</div>
                 </div>
               </div>
             </div>
             
             <div style="background-color: #f0f9ff; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
-              <h3 style="color: #0369a1; margin: 0 0 15px 0; font-size: 16px;">👤 Destinatario</h3>
+              <h3 style="color: #0369a1; margin: 0 0 15px 0; font-size: 16px;">👤 ${t.recipientTitle}</h3>
               <p style="margin: 0; color: #0c4a6e;">
-                <strong>Responsable:</strong> ${datosAlertas.nombreResponsable}<br>
-                <strong>Fecha de notificación:</strong> ${datosAlertas.fechaAsignacion}
+                <strong>${t.responsibleLabel}</strong> ${datosAlertas.nombreResponsable}<br>
+                <strong>${t.notificationDate}</strong> ${datosAlertas.fechaAsignacion}
               </p>
             </div>
             
             <div style="margin-bottom: 25px;">
-              <h3 style="color: #1f2937; margin: 0 0 15px 0; font-size: 18px;">📋 Detalle de Alertas por Caso</h3>
+              <h3 style="color: #1f2937; margin: 0 0 15px 0; font-size: 18px;">📋 ${t.alertsDetailByCase}</h3>
               ${contenidoAlertas}
             </div>
 
             <div style="background-color:#fef2f2; padding:18px; border-radius:8px; border-left:4px solid #dc2626; margin:25px 0; text-align:center;">
               <a href="${enlacePanel}"
                  style="display:inline-block; background-color:#dc2626; color:#ffffff; padding:12px 24px; text-decoration:none; border-radius:8px; font-weight:700; font-size:14px;">
-                Abrir panel de alertas ${esExpress ? 'Express' : 'Complex'}
+                ${fillEmailTemplate(t.openAlertsPanel, { modulo: esExpress ? 'Express' : 'Complex' })}
               </a>
             </div>
             
             <div style="background-color: #f0fdf4; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
-              <h3 style="color: #059669; margin: 0 0 15px 0; font-size: 16px;">💡 Recomendaciones</h3>
+              <h3 style="color: #059669; margin: 0 0 15px 0; font-size: 16px;">💡 ${t.recommendations}</h3>
               <ul style="margin: 0; padding-left: 20px; color: #065f46;">
-                <li>Revisa primero los casos con prioridad <strong>ALTA</strong></li>
-                <li>${esExpress ? 'Registra las fechas ANS vencidas en el caso Express' : 'Sube los documentos obligatorios faltantes'}</li>
-                <li>Actualiza el estado de los casos inactivos</li>
-                <li>Contacta al equipo si necesitas apoyo</li>
+                <li>${t.recHighFirst} <strong>${t.priorityHigh}</strong></li>
+                <li>${esExpress ? t.recExpress : t.recComplex}</li>
+                <li>${t.recInactive}</li>
+                <li>${t.recSupport}</li>
               </ul>
             </div>
             
             <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
               <p style="color: #6b7280; font-size: 12px; margin: 0;">
-                Este es un mensaje automático del Sistema de Alertas de Grupo Proser.<br>
-                No responda a este correo. Para consultas, contacte al administrador del sistema.
+                ${t.footerAlerts}<br>
+                ${t.footerNoReply}
               </p>
             </div>
           </div>
@@ -805,83 +834,85 @@ export const enviarNotificacionAseguradora = async (datosCaso) => {
     console.log('📧 Iniciando envío de notificación a aseguradora...');
     console.log('📧 Datos del caso:', JSON.stringify(datosCaso, null, 2));
     
+    // Callers deben pasar datosCaso.locale ('es'|'en').
+    const t = getEmailText(datosCaso);
     
     const mailOptions = {
       from: `"Grupo Proser - Sistema de Casos" <${process.env.EMAIL_USER}>`,
       to: datosCaso.emailFuncionarioAseguradora,
-      subject: 'Casos Asignados',
+      subject: getEmailSubject(datosCaso, 'subjectCasosAsignados'),
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f8f9fa; padding: 20px;">
           <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
             <div style="text-align: center; margin-bottom: 30px;">
-              <h1 style="color: #2563eb; margin: 0; font-size: 24px;">📋 Caso Asignado</h1>
-              <p style="color: #6b7280; margin: 10px 0 0 0;">Sistema de Gestión de Casos - Grupo Proser</p>
+              <h1 style="color: #2563eb; margin: 0; font-size: 24px;">📋 ${t.caseAssignedTitle}</h1>
+              <p style="color: #6b7280; margin: 10px 0 0 0;">${t.caseMgmtSubtitle}</p>
             </div>
             
             <div style="background-color: #dbeafe; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
-              <h2 style="color: #1e40af; margin: 0 0 15px 0; font-size: 18px;">📊 Información del Caso</h2>
+              <h2 style="color: #1e40af; margin: 0 0 15px 0; font-size: 18px;">📊 ${t.caseInfo}</h2>
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🔢 Número de Ajuste:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🔢 ${t.adjustmentNumberEmoji}</td>
                   <td style="padding: 8px 0; color: #1f2937;">${datosCaso.numeroCaso}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📊 Número de Siniestro:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.numeroSiniestro || 'No especificado'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📊 ${t.claimNumber}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.numeroSiniestro || t.notSpecified}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🔧 Código Workflow:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.codigoWorkflow || 'No especificado'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🔧 ${t.workflowCode}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.codigoWorkflow || t.notSpecified}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🏢 Aseguradora:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.aseguradora || 'No especificada'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🏢 ${t.insurer}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.aseguradora || t.notSpecifiedF}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👥 Asegurado:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.asegurado || 'No especificado'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👥 ${t.insured}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.asegurado || t.notSpecified}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📅 Fecha de Asignación:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.fechaAsignacion || 'No especificada'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📅 ${t.assignmentDate}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.fechaAsignacion || t.notSpecifiedF}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📋 Número de Póliza:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.numeroPoliza || 'No especificado'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📋 ${t.policyNumber}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.numeroPoliza || t.notSpecified}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🏙️ Ciudad del Siniestro:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.ciudadSiniestro || 'No especificada'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🏙️ ${t.claimCity}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.ciudadSiniestro || t.notSpecifiedF}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📝 Descripción:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.descripcionSiniestro || 'No especificada'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📝 ${t.description}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.descripcionSiniestro || t.notSpecifiedF}</td>
                 </tr>
               </table>
             </div>
             
             <div style="background-color: #f0f9ff; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
-              <h3 style="color: #0369a1; margin: 0 0 15px 0; font-size: 16px;">👤 Responsable Asignado</h3>
+              <h3 style="color: #0369a1; margin: 0 0 15px 0; font-size: 16px;">👤 ${t.assignedResponsibleTitle}</h3>
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Nombre:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.nombreResponsable || 'Sin asignar'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.name}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.nombreResponsable || t.unassigned}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Email:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.emailResponsable || 'No disponible'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.email}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.emailResponsable || t.notAvailable}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">Teléfono:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.telefonoResponsable || 'No disponible'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.phone}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.telefonoResponsable || t.notAvailable}</td>
                 </tr>
               </table>
             </div>
             
             <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
               <p style="color: #6b7280; font-size: 12px; margin: 0;">
-                Este es un mensaje automático del Sistema de Gestión de Casos de Grupo Proser.<br>
-                No responda a este correo. Para consultas, contacte al administrador del sistema.
+                ${t.footerAuto}<br>
+                ${t.footerNoReply}
               </p>
             </div>
           </div>
@@ -919,58 +950,60 @@ export const enviarNotificacionCreador = async (datosCaso) => {
         message: 'No hay email del creador para notificar'
       };
     }
-    
+    // Callers deben pasar datosCaso.locale ('es'|'en').
+    const t = getEmailText(datosCaso);
+    const dateLocale = normalizeEmailLocale(datosCaso) === 'en' ? 'en-US' : 'es-CO';
     
     const mailOptions = {
       from: `"Grupo Proser - Sistema de Casos" <${process.env.EMAIL_USER}>`,
       to: datosCaso.emailCreador,
-      subject: `✅ Caso Creado Exitosamente - ${datosCaso.numeroCaso}`,
+      subject: getEmailSubject(datosCaso, 'subjectCasoCreado', { numero: datosCaso.numeroCaso }),
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f8f9fa; padding: 20px;">
           <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
             <div style="text-align: center; margin-bottom: 30px;">
-              <h1 style="color: #059669; margin: 0; font-size: 24px;">✅ Caso Creado Exitosamente</h1>
-              <p style="color: #6b7280; margin: 10px 0 0 0;">Sistema de Gestión de Casos - Grupo Proser</p>
+              <h1 style="color: #059669; margin: 0; font-size: 24px;">✅ ${t.createdCaseTitle}</h1>
+              <p style="color: #6b7280; margin: 10px 0 0 0;">${t.caseMgmtSubtitle}</p>
             </div>
             
             <div style="background-color: #d1fae5; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
-              <h2 style="color: #065f46; margin: 0 0 15px 0; font-size: 18px;">📊 Información del Caso Creado</h2>
+              <h2 style="color: #065f46; margin: 0 0 15px 0; font-size: 18px;">📊 ${t.createdCaseInfo}</h2>
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🔢 Número de ${datosCaso.tipoCaso === 'riesgo' ? 'Riesgo' : 'Ajuste'}:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🔢 ${datosCaso.tipoCaso === 'riesgo' ? t.riskNumber : t.adjustmentNumberEmoji}</td>
                   <td style="padding: 8px 0; color: #1f2937;">${datosCaso.numeroCaso}</td>
                 </tr>
                 ${datosCaso.numeroSiniestro ? `
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📊 Número de Siniestro:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📊 ${t.claimNumber}</td>
                   <td style="padding: 8px 0; color: #1f2937;">${datosCaso.numeroSiniestro}</td>
                 </tr>
                 ` : ''}
                 ${datosCaso.codigoWorkflow ? `
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🔧 Código Workflow:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🔧 ${t.workflowCode}</td>
                   <td style="padding: 8px 0; color: #1f2937;">${datosCaso.codigoWorkflow}</td>
                 </tr>
                 ` : ''}
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👤 Responsable Asignado:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.nombreResponsable || 'Sin asignar'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👤 ${t.assignedResponsible}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.nombreResponsable || t.unassigned}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🏢 Aseguradora:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.aseguradora || 'No especificada'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🏢 ${t.insurer}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.aseguradora || t.notSpecifiedF}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👥 Asegurado:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.asegurado || 'No especificado'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👥 ${t.insured}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.asegurado || t.notSpecified}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📅 Fecha de Creación:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${new Date().toLocaleDateString('es-CO')}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📅 ${t.creationDate}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${new Date().toLocaleDateString(dateLocale)}</td>
                 </tr>
                 ${datosCaso.numeroPoliza ? `
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📋 Número de Póliza:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📋 ${t.policyNumber}</td>
                   <td style="padding: 8px 0; color: #1f2937;">${datosCaso.numeroPoliza}</td>
                 </tr>
                 ` : ''}
@@ -978,21 +1011,21 @@ export const enviarNotificacionCreador = async (datosCaso) => {
             </div>
             
             <div style="background-color: #f0f9ff; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
-              <h3 style="color: #0369a1; margin: 0 0 15px 0; font-size: 16px;">📧 Notificaciones Enviadas</h3>
+              <h3 style="color: #0369a1; margin: 0 0 15px 0; font-size: 16px;">📧 ${t.notificationsSent}</h3>
               <p style="color: #0c4a6e; margin: 0; line-height: 1.6;">
-                Se han enviado notificaciones por correo electrónico a:
+                ${t.notificationsSentBody}
               </p>
               <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #0c4a6e;">
-                <li>✅ Tú (creador del caso)</li>
-                <li>✅ ${datosCaso.nombreResponsable || 'Responsable asignado'}</li>
-                ${datosCaso.funcionarioAseguradora ? `<li>✅ Funcionario de aseguradora</li>` : ''}
+                <li>✅ ${t.youCreator}</li>
+                <li>✅ ${datosCaso.nombreResponsable || t.assignedResponsibleItem}</li>
+                ${datosCaso.funcionarioAseguradora ? `<li>✅ ${t.insurerOfficerItem}</li>` : ''}
               </ul>
             </div>
             
             <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
               <p style="color: #6b7280; font-size: 12px; margin: 0;">
-                Este es un mensaje automático del Sistema de Gestión de Casos de Grupo Proser.<br>
-                No responda a este correo. Para consultas, contacte al administrador del sistema.
+                ${t.footerAuto}<br>
+                ${t.footerNoReply}
               </p>
             </div>
           </div>
@@ -1129,6 +1162,8 @@ export const enviarNotificacionControlHoras = async (datos) => {
     
     const tieneArchivos = (datos.archivosConRuta?.length > 0) || (datos.archivos?.length > 0);
     const resumen = datos.resumenControlHoras || null;
+    // Callers deben pasar datos.locale ('es'|'en').
+    const t = getEmailText(datos);
 
     const htmlArchivos = tieneArchivos
       ? (archivosConEnlaces || archivos)
@@ -1137,14 +1172,14 @@ export const enviarNotificacionControlHoras = async (datos) => {
     const htmlResumenControlHoras = resumen
       ? `
             <div style="background-color:#ecfdf5; padding:15px; border-radius:8px; border-left:4px solid #10b981; margin:20px 0;">
-              <h3 style="margin:0 0 10px 0; color:#065f46;">Control de horas registrado en el sistema</h3>
+              <h3 style="margin:0 0 10px 0; color:#065f46;">${t.hoursRegisteredTitle}</h3>
               <table style="width:100%; border-collapse:collapse;">
-                <tr><td style="padding:4px 0; font-weight:bold; color:#047857;">Total horas:</td><td style="padding:4px 0; color:#064e3b;">${Number(resumen.total_horas || 0).toFixed(2)}</td></tr>
-                ${resumen.valor_hora ? `<tr><td style="padding:4px 0; font-weight:bold; color:#047857;">Valor hora:</td><td style="padding:4px 0; color:#064e3b;">$${Number(resumen.valor_hora).toLocaleString('es-CO')}</td></tr>` : ''}
-                ${resumen.subtotal_honorarios != null ? `<tr><td style="padding:4px 0; font-weight:bold; color:#047857;">Honorarios:</td><td style="padding:4px 0; color:#064e3b;">$${Number(resumen.subtotal_honorarios).toLocaleString('es-CO')}</td></tr>` : ''}
-                ${resumen.total != null ? `<tr><td style="padding:4px 0; font-weight:bold; color:#047857;">Total liquidación:</td><td style="padding:4px 0; color:#064e3b;">$${Number(resumen.total).toLocaleString('es-CO')}</td></tr>` : ''}
+                <tr><td style="padding:4px 0; font-weight:bold; color:#047857;">${t.totalHours}</td><td style="padding:4px 0; color:#064e3b;">${Number(resumen.total_horas || 0).toFixed(2)}</td></tr>
+                ${resumen.valor_hora ? `<tr><td style="padding:4px 0; font-weight:bold; color:#047857;">${t.hourlyRate}</td><td style="padding:4px 0; color:#064e3b;">$${Number(resumen.valor_hora).toLocaleString('es-CO')}</td></tr>` : ''}
+                ${resumen.subtotal_honorarios != null ? `<tr><td style="padding:4px 0; font-weight:bold; color:#047857;">${t.fees}</td><td style="padding:4px 0; color:#064e3b;">$${Number(resumen.subtotal_honorarios).toLocaleString('es-CO')}</td></tr>` : ''}
+                ${resumen.total != null ? `<tr><td style="padding:4px 0; font-weight:bold; color:#047857;">${t.settlementTotal}</td><td style="padding:4px 0; color:#064e3b;">$${Number(resumen.total).toLocaleString('es-CO')}</td></tr>` : ''}
               </table>
-              <p style="margin:10px 0 0 0; color:#065f46; font-size:13px;">Los detalles completos están disponibles en el caso en la plataforma.</p>
+              <p style="margin:10px 0 0 0; color:#065f46; font-size:13px;">${t.hoursDetailsInPlatform}</p>
             </div>`
       : '';
 
@@ -1199,11 +1234,11 @@ export const enviarNotificacionControlHoras = async (datos) => {
     const htmlSeccionArchivos = tieneArchivos
       ? `
             <div style="background-color:#fef3c7; padding:15px; border-radius:8px; border-left:4px solid #f59e0b;">
-              <h3 style="margin:0 0 10px 0; color:#92400e;">Archivos cargados:</h3>
+              <h3 style="margin:0 0 10px 0; color:#92400e;">${t.uploadedFiles}</h3>
               <ul style="margin:0; padding-left:20px; color:#78350f;">
                 ${htmlArchivos}
               </ul>
-              ${attachments.length > 0 ? `<p style="margin:10px 0 0 0; color:#92400e; font-size:13px; font-weight:500;">📎 Los archivos también están adjuntos a este correo para su descarga directa.</p>` : ''}
+              ${attachments.length > 0 ? `<p style="margin:10px 0 0 0; color:#92400e; font-size:13px; font-weight:500;">📎 ${t.filesAlsoAttached}</p>` : ''}
             </div>`
       : '';
 
@@ -1219,36 +1254,36 @@ export const enviarNotificacionControlHoras = async (datos) => {
     
     // Construir URL del caso - usar ID si está disponible, sino usar número de caso para búsqueda
     let urlCaso = null;
-    let textoEnlace = 'Ver Casos';
+    let textoEnlace = t.viewCases;
     
     if (datos.casoId) {
       // Si tenemos el ID, usar ruta directa
       urlCaso = `${frontendUrl}/editar-caso/${datos.casoId}`;
-      textoEnlace = datos.numeroCaso && datos.numeroCaso !== 'Sin número' 
-        ? `Ver Caso #${datos.numeroCaso}` 
-        : 'Ver Caso';
+      textoEnlace = !isMissingCaseNumber(datos.numeroCaso)
+        ? fillEmailTemplate(t.viewCaseNum, { numero: datos.numeroCaso })
+        : t.viewCase;
       console.log('✅ [Enlace Caso] URL construida con ID:', urlCaso);
-    } else if (datos.numeroCaso && datos.numeroCaso !== 'Sin número') {
+    } else if (!isMissingCaseNumber(datos.numeroCaso)) {
       // Si no hay ID pero hay número de caso, usar ruta de búsqueda
       urlCaso = `${frontendUrl}/complex/excel?buscar=${encodeURIComponent(datos.numeroCaso)}`;
-      textoEnlace = `Buscar Caso #${datos.numeroCaso}`;
+      textoEnlace = fillEmailTemplate(t.searchCaseNum, { numero: datos.numeroCaso });
       console.log('✅ [Enlace Caso] URL construida con número de caso:', urlCaso);
     } else {
       // Si no hay ID ni número de caso, mostrar enlace genérico a la lista de casos
       urlCaso = `${frontendUrl}/complex/excel`;
-      textoEnlace = 'Ver Casos Complex';
+      textoEnlace = t.viewCasesComplex;
       console.log('✅ [Enlace Caso] URL construida genérica (sin ID ni número):', urlCaso);
     }
     
     // HTML del enlace directo - SIEMPRE mostrar el enlace
     const htmlEnlaceCaso = `
       <div style="background-color:#dbeafe; padding:20px; border-radius:8px; border-left:4px solid #2563eb; margin:25px 0; text-align:center;">
-        <p style="margin:0 0 15px 0; color:#1e40af; font-weight:600; font-size:16px;">🔗 Acceso Directo al Caso</p>
+        <p style="margin:0 0 15px 0; color:#1e40af; font-weight:600; font-size:16px;">🔗 ${t.directAccess}</p>
         <a href="${urlCaso}" 
            style="display:inline-block; background-color:#2563eb; color:#ffffff; padding:12px 24px; text-decoration:none; border-radius:6px; font-weight:600; font-size:14px;">
           ${textoEnlace}
         </a>
-        <p style="margin:15px 0 0 0; color:#1e3a8a; font-size:12px;">Haz clic en el botón para acceder ${datos.casoId ? 'directamente al caso' : 'a la plataforma de casos'}</p>
+        <p style="margin:15px 0 0 0; color:#1e3a8a; font-size:12px;">${datos.casoId ? t.clickToAccessDirect : t.clickToAccessPlatform}</p>
       </div>
     `;
     
@@ -1259,30 +1294,30 @@ export const enviarNotificacionControlHoras = async (datos) => {
       from: `"Grupo Proser - Sistema de Casos" <${process.env.EMAIL_USER}>`,
       to: emails[0],
       subject: tieneArchivos
-        ? `⏰ Nuevo documento de control de horas - Caso ${datos.numeroCaso || 'sin número'}`
-        : `⏰ Control de horas registrado - Caso ${datos.numeroCaso || 'sin número'}`,
+        ? getEmailSubject(datos, 'subjectControlHorasDoc', { numero: datos.numeroCaso || t.noNumberLower })
+        : getEmailSubject(datos, 'subjectControlHorasReg', { numero: datos.numeroCaso || t.noNumberLower }),
       attachments: attachments.length > 0 ? attachments : undefined, // Adjuntar archivos si existen
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9fafb; padding: 20px;">
           <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08);">
-            <h2 style="color: #1f2937; margin-top: 0; text-align:center;">⏰ ${tieneArchivos ? 'Nuevo documento de control de horas recibido' : 'Control de horas registrado en el sistema'}</h2>
+            <h2 style="color: #1f2937; margin-top: 0; text-align:center;">⏰ ${tieneArchivos ? t.hoursDocReceived : t.hoursRegisteredTitle}</h2>
             <p style="color: #4b5563;">${tieneArchivos
-              ? 'Se ha cargado un nuevo documento de control de horas en la sección de facturación.'
-              : 'Se ha registrado un control de horas en el sistema para este caso. Revise los detalles en la plataforma.'}</p>
+              ? t.hoursDocBody
+              : t.hoursRegisteredBody}</p>
             <table style="width:100%; border-collapse:collapse; margin:20px 0;">
               <tr>
-                <td style="padding:8px 0; font-weight:bold; color:#111827;">Número de Caso:</td>
-                <td style="padding:8px 0; color:#1f2937;">${datos.numeroCaso || 'Sin especificar'}</td>
+                <td style="padding:8px 0; font-weight:bold; color:#111827;">${t.caseNumber}</td>
+                <td style="padding:8px 0; color:#1f2937;">${datos.numeroCaso || t.notSpecified}</td>
               </tr>
-              ${datos.numeroSiniestro ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">Número de Siniestro:</td><td style="padding:8px 0; color:#1f2937;">${datos.numeroSiniestro}</td></tr>` : ''}
-              ${datos.responsable ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">Responsable:</td><td style="padding:8px 0; color:#1f2937;">${datos.responsable}</td></tr>` : ''}
-              ${datos.usuario ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">Usuario que cargó:</td><td style="padding:8px 0; color:#1f2937;">${datos.usuario}</td></tr>` : ''}
+              ${datos.numeroSiniestro ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">${t.claimNumber}</td><td style="padding:8px 0; color:#1f2937;">${datos.numeroSiniestro}</td></tr>` : ''}
+              ${datos.responsable ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">${t.responsibleLabel}</td><td style="padding:8px 0; color:#1f2937;">${datos.responsable}</td></tr>` : ''}
+              ${datos.usuario ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">${t.uploadedBy}</td><td style="padding:8px 0; color:#1f2937;">${datos.usuario}</td></tr>` : ''}
             </table>
             ${htmlResumenControlHoras}
             ${htmlSeccionArchivos}
             ${htmlEnlaceCaso}
             <p style="color:#6b7280; font-size:12px; margin-top:25px; text-align:center;">
-              Este es un mensaje automático del Sistema de Gestión de Casos de Grupo Proser.
+              ${t.footerAuto}
             </p>
           </div>
         </div>
@@ -1316,7 +1351,7 @@ export const enviarSolicitudCorreccionControlHoras = async (datos) => {
       return { success: false, message: 'No se encontró correo del ajustador' };
     }
 
-    const numeroCaso = datos.numeroCaso || datos.nmroAjste || 'Sin número';
+    const numeroCaso = datos.numeroCaso || datos.nmroAjste || getEmailText(datos).noNumber;
     const numeroSiniestro = datos.numeroSiniestro || datos.nmroSinstro || 'N/A';
     const nombreAjustador = datos.nombreAjustador || datos.responsable || 'Ajustador';
     const mensaje =
@@ -1327,35 +1362,37 @@ export const enviarSolicitudCorreccionControlHoras = async (datos) => {
     const enlaceCaso = datos.casoId
       ? `${frontendUrl}/editar-caso/${datos.casoId}`
       : frontendUrl;
+    // Callers deben pasar datos.locale ('es'|'en').
+    const t = getEmailText(datos);
 
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #1f2937;">
         <div style="background:#DC2626; color:#fff; padding:16px 20px; border-radius:8px 8px 0 0;">
-          <h2 style="margin:0; font-size:18px;">Solicitud de corrección — Control de horas</h2>
+          <h2 style="margin:0; font-size:18px;">${t.correctionHoursTitle}</h2>
         </div>
         <div style="border:1px solid #e5e7eb; border-top:none; padding:20px; border-radius:0 0 8px 8px;">
-          <p>Hola <strong>${nombreAjustador}</strong>,</p>
+          <p>${t.hello} <strong>${nombreAjustador}</strong>,</p>
           <p>
-            Se encontró un problema en el <strong>control de horas</strong> del caso
-            <strong>${numeroCaso}</strong> (siniestro <strong>${numeroSiniestro}</strong>).
+            ${t.correctionHoursBody}
+            <strong>${numeroCaso}</strong> ${t.claimParen} <strong>${numeroSiniestro}</strong>).
           </p>
           <div style="background:#fff7ed; border-left:4px solid #f59e0b; padding:12px 14px; margin:16px 0;">
-            <p style="margin:0 0 6px; font-weight:bold;">Observación:</p>
+            <p style="margin:0 0 6px; font-weight:bold;">${t.observationLabel}</p>
             <p style="margin:0; white-space:pre-wrap;">${mensaje.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
           </div>
-          <p style="margin-bottom:8px;"><strong>Qué debe hacer:</strong></p>
+          <p style="margin-bottom:8px;"><strong>${t.whatToDo}</strong></p>
           <ol style="margin-top:0; padding-left:20px;">
-            <li>Abrir el caso en ARNALD y corregir el control de horas desde Facturación, <em>o</em></li>
-            <li>Reemplazar el archivo Excel/adjunto del control de horas y volver a notificar.</li>
+            <li>${t.correctionStep1}</li>
+            <li>${t.correctionStep2}</li>
           </ol>
           <p style="margin:20px 0;">
             <a href="${enlaceCaso}"
                style="display:inline-block; background:#DC2626; color:#fff; text-decoration:none; padding:10px 16px; border-radius:6px; font-weight:600;">
-              Abrir caso en ARNALD
+              ${t.openCaseArnald}
             </a>
           </p>
           <p style="font-size:12px; color:#6b7280; margin-top:24px;">
-            Solicitado por: ${solicitadoPor}
+            ${t.requestedBy} ${solicitadoPor}
           </p>
         </div>
       </div>
@@ -1364,7 +1401,7 @@ export const enviarSolicitudCorreccionControlHoras = async (datos) => {
     const mailOptions = {
       from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
       to: emailDestino,
-      subject: `Corregir control de horas — Caso ${numeroCaso}`,
+      subject: getEmailSubject(datos, 'subjectCorreccionHoras', { numero: numeroCaso }),
       html,
     };
 
@@ -1532,6 +1569,9 @@ export const enviarNotificacionGerencia = async (datos) => {
     
     console.log('📎 Total archivos a adjuntar:', attachments.length);
 
+    // Callers deben pasar datos.locale ('es'|'en').
+    const t = getEmailText(datos);
+
     // Construir URL del frontend para el enlace directo al caso
     // IMPORTANTE: Para correos, siempre usar URL accesible (producción o FRONTEND_URL configurado)
     // No usar localhost porque los usuarios no pueden acceder desde sus máquinas
@@ -1541,61 +1581,61 @@ export const enviarNotificacionGerencia = async (datos) => {
     console.log('🔗 [Enlace Caso Gerencia] NODE_ENV:', process.env.NODE_ENV);
     
     let urlCaso = null;
-    let textoEnlace = 'Ver Casos';
+    let textoEnlace = t.viewCases;
     
     if (datos.casoId) {
       urlCaso = `${frontendUrl}/editar-caso/${datos.casoId}`;
-      textoEnlace = datos.numeroCaso && datos.numeroCaso !== 'Sin número' 
-        ? `Ver Caso #${datos.numeroCaso}` 
-        : 'Ver Caso';
-    } else if (datos.numeroCaso && datos.numeroCaso !== 'Sin número') {
+      textoEnlace = !isMissingCaseNumber(datos.numeroCaso)
+        ? fillEmailTemplate(t.viewCaseNum, { numero: datos.numeroCaso })
+        : t.viewCase;
+    } else if (!isMissingCaseNumber(datos.numeroCaso)) {
       urlCaso = `${frontendUrl}/complex/excel?buscar=${encodeURIComponent(datos.numeroCaso)}`;
-      textoEnlace = `Buscar Caso #${datos.numeroCaso}`;
+      textoEnlace = fillEmailTemplate(t.searchCaseNum, { numero: datos.numeroCaso });
     } else {
       urlCaso = `${frontendUrl}/complex/excel`;
-      textoEnlace = 'Ver Casos Complex';
+      textoEnlace = t.viewCasesComplex;
     }
     
     const htmlEnlaceCaso = `
       <div style="background-color:#dbeafe; padding:20px; border-radius:8px; border-left:4px solid #2563eb; margin:25px 0; text-align:center;">
-        <p style="margin:0 0 15px 0; color:#1e40af; font-weight:600; font-size:16px;">🔗 Acceso Directo al Caso</p>
+        <p style="margin:0 0 15px 0; color:#1e40af; font-weight:600; font-size:16px;">🔗 ${t.directAccess}</p>
         <a href="${urlCaso}" 
            style="display:inline-block; background-color:#2563eb; color:#ffffff; padding:12px 24px; text-decoration:none; border-radius:6px; font-weight:600; font-size:14px;">
           ${textoEnlace}
         </a>
-        <p style="margin:15px 0 0 0; color:#1e3a8a; font-size:12px;">Haz clic en el botón para acceder ${datos.casoId ? 'directamente al caso' : 'a la plataforma de casos'}</p>
+        <p style="margin:15px 0 0 0; color:#1e3a8a; font-size:12px;">${datos.casoId ? t.clickToAccessDirect : t.clickToAccessPlatform}</p>
       </div>
     `;
 
     const mailOptions = {
       from: `"Grupo Proser - Sistema de Casos" <${process.env.EMAIL_USER}>`,
       to: emails[0],
-      subject: `👔 Nueva evidencia de gerencia - Caso ${datos.numeroCaso || 'sin número'}`,
+      subject: getEmailSubject(datos, 'subjectGerencia', { numero: datos.numeroCaso || t.noNumberLower }),
       attachments: attachments.length > 0 ? attachments : undefined,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9fafb; padding: 20px;">
           <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08);">
-            <h2 style="color: #1f2937; margin-top: 0; text-align:center;">👔 Nueva evidencia de gerencia recibida</h2>
-            <p style="color: #4b5563;">Se ha cargado una nueva evidencia en la sección de gerencia.</p>
+            <h2 style="color: #1f2937; margin-top: 0; text-align:center;">👔 ${t.gerenciaReceived}</h2>
+            <p style="color: #4b5563;">${t.gerenciaBody}</p>
             <table style="width:100%; border-collapse:collapse; margin:20px 0;">
               <tr>
-                <td style="padding:8px 0; font-weight:bold; color:#111827;">Número de Caso:</td>
-                <td style="padding:8px 0; color:#1f2937;">${datos.numeroCaso || 'Sin especificar'}</td>
+                <td style="padding:8px 0; font-weight:bold; color:#111827;">${t.caseNumber}</td>
+                <td style="padding:8px 0; color:#1f2937;">${datos.numeroCaso || t.notSpecified}</td>
               </tr>
-              ${datos.numeroSiniestro ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">Número de Siniestro:</td><td style="padding:8px 0; color:#1f2937;">${datos.numeroSiniestro}</td></tr>` : ''}
-              ${datos.responsable ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">Responsable:</td><td style="padding:8px 0; color:#1f2937;">${datos.responsable}</td></tr>` : ''}
-              ${datos.usuario ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">Usuario que cargó:</td><td style="padding:8px 0; color:#1f2937;">${datos.usuario}</td></tr>` : ''}
+              ${datos.numeroSiniestro ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">${t.claimNumber}</td><td style="padding:8px 0; color:#1f2937;">${datos.numeroSiniestro}</td></tr>` : ''}
+              ${datos.responsable ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">${t.responsibleLabel}</td><td style="padding:8px 0; color:#1f2937;">${datos.responsable}</td></tr>` : ''}
+              ${datos.usuario ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">${t.uploadedBy}</td><td style="padding:8px 0; color:#1f2937;">${datos.usuario}</td></tr>` : ''}
             </table>
             <div style="background-color:#fef3c7; padding:15px; border-radius:8px; border-left:4px solid #f59e0b;">
-              <h3 style="margin:0 0 10px 0; color:#92400e;">Archivos cargados:</h3>
+              <h3 style="margin:0 0 10px 0; color:#92400e;">${t.uploadedFiles}</h3>
               <ul style="margin:0; padding-left:20px; color:#78350f;">
                 ${htmlArchivos}
               </ul>
-              ${attachments.length > 0 ? `<p style="margin:10px 0 0 0; color:#92400e; font-size:13px; font-weight:500;">📎 Los archivos también están adjuntos a este correo para su descarga directa.</p>` : ''}
+              ${attachments.length > 0 ? `<p style="margin:10px 0 0 0; color:#92400e; font-size:13px; font-weight:500;">📎 ${t.filesAlsoAttached}</p>` : ''}
             </div>
             ${htmlEnlaceCaso}
             <p style="color:#6b7280; font-size:12px; margin-top:25px; text-align:center;">
-              Este es un mensaje automático del Sistema de Gestión de Casos de Grupo Proser.
+              ${t.footerAuto}
             </p>
           </div>
         </div>
@@ -1634,35 +1674,37 @@ export const enviarNotificacionHonorarios = async (datos) => {
       return { success: false, message: 'No hay destinatarios configurados' };
     }
 
+    // Callers deben pasar datos.locale ('es'|'en').
+    const t = getEmailText(datos);
     const archivos = (datos.archivos || []).map(nombre => `<li style="margin-bottom:4px;">📎 ${nombre}</li>`).join('');
-    const htmlArchivos = archivos || '<li>No se adjuntaron nombres de archivos</li>';
+    const htmlArchivos = archivos || `<li>${t.noFileNames}</li>`;
 
     const mailOptions = {
       from: `"Grupo Proser - Sistema de Casos" <${process.env.EMAIL_USER}>`,
       to: emails.join(', '),
-      subject: `📎 Nuevo documento de honorarios - Caso ${datos.numeroCaso || 'sin número'}`,
+      subject: getEmailSubject(datos, 'subjectHonorarios', { numero: datos.numeroCaso || t.noNumberLower }),
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9fafb; padding: 20px;">
           <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08);">
-            <h2 style="color: #1f2937; margin-top: 0; text-align:center;">📎 Nuevo documento de honorarios recibido</h2>
-            <p style="color: #4b5563;">Se ha cargado un nuevo documento en la sección de honorarios.</p>
+            <h2 style="color: #1f2937; margin-top: 0; text-align:center;">📎 ${t.honorariosReceived}</h2>
+            <p style="color: #4b5563;">${t.honorariosBody}</p>
             <table style="width:100%; border-collapse:collapse; margin:20px 0;">
               <tr>
-                <td style="padding:8px 0; font-weight:bold; color:#111827;">Número de Caso:</td>
-                <td style="padding:8px 0; color:#1f2937;">${datos.numeroCaso || 'Sin especificar'}</td>
+                <td style="padding:8px 0; font-weight:bold; color:#111827;">${t.caseNumber}</td>
+                <td style="padding:8px 0; color:#1f2937;">${datos.numeroCaso || t.notSpecified}</td>
               </tr>
-              ${datos.numeroSiniestro ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">Número de Siniestro:</td><td style="padding:8px 0; color:#1f2937;">${datos.numeroSiniestro}</td></tr>` : ''}
-              ${datos.responsable ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">Responsable:</td><td style="padding:8px 0; color:#1f2937;">${datos.responsable}</td></tr>` : ''}
-              ${datos.usuario ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">Usuario que cargó:</td><td style="padding:8px 0; color:#1f2937;">${datos.usuario}</td></tr>` : ''}
+              ${datos.numeroSiniestro ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">${t.claimNumber}</td><td style="padding:8px 0; color:#1f2937;">${datos.numeroSiniestro}</td></tr>` : ''}
+              ${datos.responsable ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">${t.responsibleLabel}</td><td style="padding:8px 0; color:#1f2937;">${datos.responsable}</td></tr>` : ''}
+              ${datos.usuario ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">${t.uploadedBy}</td><td style="padding:8px 0; color:#1f2937;">${datos.usuario}</td></tr>` : ''}
             </table>
             <div style="background-color:#f0f9ff; padding:15px; border-radius:8px;">
-              <h3 style="margin:0 0 10px 0; color:#0c4a6e;">Archivos cargados:</h3>
+              <h3 style="margin:0 0 10px 0; color:#0c4a6e;">${t.uploadedFiles}</h3>
               <ul style="margin:0; padding-left:20px; color:#0f172a;">
                 ${htmlArchivos}
               </ul>
             </div>
             <p style="color:#6b7280; font-size:12px; margin-top:25px; text-align:center;">
-              Este es un mensaje automático del Sistema de Gestión de Casos de Grupo Proser.
+              ${t.footerAuto}
             </p>
           </div>
         </div>
@@ -1700,17 +1742,18 @@ export const enviarEmailPrueba = async (emailDestino) => {
     }
     
     
+    const t = getEmailText({});
     const mailOptions = {
       from: `"Grupo Proser - Sistema de Casos" <${process.env.EMAIL_USER}>`,
       to: emailDestino || 'danalyst@proserpuertos.com.co',
-      subject: '🧪 Prueba de Email - Sistema de Casos',
+      subject: getEmailSubject({}, 'subjectEmailPrueba'),
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #2563eb;">🧪 Prueba de Email</h2>
-          <p>Este es un email de prueba para verificar que el sistema de notificaciones funciona correctamente.</p>
-          <p><strong>Fecha:</strong> ${new Date().toLocaleString()}</p>
+          <h2 style="color: #2563eb;">🧪 ${t.testEmailTitle}</h2>
+          <p>${t.testEmailBody}</p>
+          <p><strong>${t.dateLabel}</strong> ${new Date().toLocaleString()}</p>
           <p style="color: #6b7280; font-size: 12px; margin-top: 30px;">
-            Este es un mensaje de prueba automático del Sistema de Gestión de Casos.
+            ${t.footerTest}
           </p>
         </div>
       `
@@ -1762,41 +1805,44 @@ export const enviarAlertaTarea = async (datosTarea) => {
     
     
     console.log('📧 Enviando alerta de tarea a:', datosTarea.emailResponsable);
+
+    // Callers deben pasar datosTarea.locale ('es'|'en').
+    const t = getEmailText(datosTarea);
     
            // Determinar el tipo de alerta y el color
            const tiposAlerta = {
              'NUEVA_TAREA': {
-               titulo: '📋 Nueva Tarea Asignada',
+               titulo: `📋 ${t.taskNueva}`,
                color: '#2563eb',
                icono: '📋'
              },
              'TAREA_ACTUALIZADA': {
-               titulo: '✏️ Tarea Actualizada',
+               titulo: `✏️ ${t.taskActualizada}`,
                color: '#ea580c',
                icono: '✏️'
              },
              'TAREA_COMPLETADA': {
-               titulo: '✅ Tarea Completada',
+               titulo: `✅ ${t.taskCompletada}`,
                color: '#059669',
                icono: '✅'
              },
              'TAREA_REABIERTA': {
-               titulo: '🔄 Tarea Reabierta',
+               titulo: `🔄 ${t.taskReabierta}`,
                color: '#dc2626',
                icono: '🔄'
              },
              'TAREA_ELIMINADA': {
-               titulo: '🗑️ Tarea Eliminada',
+               titulo: `🗑️ ${t.taskEliminada}`,
                color: '#6b7280',
                icono: '🗑️'
              },
              'ALERTA_DIARIA': {
-               titulo: '⏰ Recordatorio de Tarea Pendiente',
+               titulo: `⏰ ${t.taskAlertaDiaria}`,
                color: '#f59e0b',
                icono: '⏰'
              },
              'ALERTA_FINAL': {
-               titulo: '⚠️ TAREA VENCIDA - Acción Requerida',
+               titulo: `⚠️ ${t.taskAlertaFinal}`,
                color: '#dc2626',
                icono: '⚠️'
              }
@@ -1807,28 +1853,32 @@ export const enviarAlertaTarea = async (datosTarea) => {
     const mailOptions = {
       from: `"Grupo Proser - Sistema de Tareas" <${process.env.EMAIL_USER}>`,
       to: datosTarea.emailResponsable,
-      subject: `${tipoInfo.icono} ${tipoInfo.titulo} - ${datosTarea.tarea?.texto?.substring(0, 50) || 'Tarea'}`,
+      subject: getEmailSubject(datosTarea, 'subjectAlertaTarea', {
+        icono: tipoInfo.icono,
+        titulo: tipoInfo.titulo.replace(/^[^\s]+\s/, ''),
+        texto: datosTarea.tarea?.texto?.substring(0, 50) || t.taskFallback,
+      }),
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f8f9fa; padding: 20px;">
           <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
             <div style="text-align: center; margin-bottom: 30px;">
-              <h1 style="color: ${tipoInfo.color}; margin: 0; font-size: 24px;">${tipoInfo.icono} ${tipoInfo.titulo}</h1>
-              <p style="color: #6b7280; margin: 10px 0 0 0;">Sistema de Gestión de Tareas - Grupo Proser</p>
+              <h1 style="color: ${tipoInfo.color}; margin: 0; font-size: 24px;">${tipoInfo.icono} ${tipoInfo.titulo.replace(/^[^\s]+\s/, '')}</h1>
+              <p style="color: #6b7280; margin: 10px 0 0 0;">${t.taskSystemSubtitle}</p>
             </div>
             
             <div style="background-color: #f0f9ff; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
-              <h2 style="color: #0369a1; margin: 0 0 15px 0; font-size: 18px;">📋 Información de la Tarea</h2>
+              <h2 style="color: #0369a1; margin: 0 0 15px 0; font-size: 18px;">📋 ${t.taskInfo}</h2>
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📝 Descripción:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosTarea.tarea?.texto || 'No especificada'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📝 ${t.taskDescription}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosTarea.tarea?.texto || t.notSpecifiedF}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📅 Fecha Límite:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosTarea.tarea?.fecha ? new Date(datosTarea.tarea.fecha).toLocaleDateString() : 'No especificada'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📅 ${t.deadline}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosTarea.tarea?.fecha ? new Date(datosTarea.tarea.fecha).toLocaleDateString() : t.notSpecifiedF}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">⚡ Prioridad:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">⚡ ${t.priority}</td>
                   <td style="padding: 8px 0; color: #1f2937;">
                     <span style="padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; background-color: ${
                       datosTarea.tarea?.prioridad === 'ALTA' ? '#fecaca' : 
@@ -1840,32 +1890,32 @@ export const enviarAlertaTarea = async (datosTarea) => {
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">✅ Estado:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">✅ ${t.status}</td>
                   <td style="padding: 8px 0; color: #1f2937;">
                     <span style="padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; background-color: ${
                       datosTarea.tarea?.cumplida ? '#d1fae5' : '#fef2f2'
                     }; color: ${
                       datosTarea.tarea?.cumplida ? '#059669' : '#dc2626'
-                    };">${datosTarea.tarea?.cumplida ? 'COMPLETADA' : 'PENDIENTE'}</span>
+                    };">${datosTarea.tarea?.cumplida ? t.completed : t.pending}</span>
                   </td>
                 </tr>
                 ${datosTarea.tarea?.fechaCumplimiento ? `
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🎯 Fecha de Completado:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">🎯 ${t.completedDate}</td>
                   <td style="padding: 8px 0; color: #1f2937;">${new Date(datosTarea.tarea.fechaCumplimiento).toLocaleString()}</td>
                 </tr>
                 ` : ''}
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👤 Asignado a:</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosTarea.nombreResponsable || 'No especificado'}</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">👤 ${t.assignedTo}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${datosTarea.nombreResponsable || t.notSpecified}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📧 Email:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">📧 ${t.email}</td>
                   <td style="padding: 8px 0; color: #1f2937;">${datosTarea.emailResponsable}</td>
                 </tr>
                 ${datosTarea.tarea?.diasRestantes !== undefined ? `
                 <tr>
-                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">⏰ Días Restantes:</td>
+                  <td style="padding: 8px 0; font-weight: bold; color: #374151;">⏰ ${t.daysRemaining}</td>
                   <td style="padding: 8px 0; color: #1f2937;">
                     <span style="padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; background-color: ${
                       datosTarea.tarea.diasRestantes <= 0 ? '#fecaca' : 
@@ -1873,7 +1923,7 @@ export const enviarAlertaTarea = async (datosTarea) => {
                     }; color: ${
                       datosTarea.tarea.diasRestantes <= 0 ? '#dc2626' : 
                       datosTarea.tarea.diasRestantes <= 1 ? '#ca8a04' : '#059669'
-                    };">${datosTarea.tarea.diasRestantes <= 0 ? 'VENCIDA' : `${datosTarea.tarea.diasRestantes} días`}</span>
+                    };">${datosTarea.tarea.diasRestantes <= 0 ? t.overdue : `${datosTarea.tarea.diasRestantes} ${t.daysUnit}`}</span>
                   </td>
                 </tr>
                 ` : ''}
@@ -1882,13 +1932,13 @@ export const enviarAlertaTarea = async (datosTarea) => {
             
             ${datosTarea.tarea?.observaciones ? `
             <div style="background-color: #fef3c7; padding: 15px; border-radius: 8px; margin-bottom: 25px;">
-              <h3 style="color: #92400e; margin: 0 0 10px 0; font-size: 16px;">📝 Observaciones</h3>
+              <h3 style="color: #92400e; margin: 0 0 10px 0; font-size: 16px;">📝 ${t.observations}</h3>
               <p style="color: #78350f; margin: 0; line-height: 1.5;">${datosTarea.tarea.observaciones}</p>
             </div>
             ` : ''}
             
             <div style="background-color: #f0fdf4; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
-              <h3 style="color: #059669; margin: 0 0 15px 0; font-size: 16px;">💡 Acciones Recomendadas</h3>
+              <h3 style="color: #059669; margin: 0 0 15px 0; font-size: 16px;">💡 ${t.recommendedActions}</h3>
               <ul style="margin: 0; padding-left: 20px; color: #065f46;">
                 ${datosTarea.tipoAlerta === 'NUEVA_TAREA' ? '<li>Revisa los detalles de la tarea asignada</li><li>Planifica el tiempo necesario para completarla</li><li>Marca como completada cuando termines</li>' : ''}
                 ${datosTarea.tipoAlerta === 'TAREA_ACTUALIZADA' ? '<li>Revisa los cambios realizados en la tarea</li><li>Actualiza tu plan de trabajo si es necesario</li>' : ''}
@@ -1902,8 +1952,8 @@ export const enviarAlertaTarea = async (datosTarea) => {
             
             <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
               <p style="color: #6b7280; font-size: 12px; margin: 0;">
-                Este es un mensaje automático del Sistema de Gestión de Tareas de Grupo Proser.<br>
-                No responda a este correo. Para consultas, contacte al administrador del sistema.
+                ${t.footerTasks}<br>
+                ${t.footerNoReply}
               </p>
             </div>
           </div>
@@ -1930,10 +1980,12 @@ export const enviarAlertaTarea = async (datosTarea) => {
   }
 };
 
-function formatearFechaCortaCorreo(fecha) {
-  if (!fecha) return 'Sin fecha límite';
+function formatearFechaCortaCorreo(fecha, datos = {}) {
+  const t = getEmailText(datos);
+  if (!fecha) return t.noDeadline;
   try {
-    return new Date(fecha).toLocaleDateString('es-CO', {
+    const locale = normalizeEmailLocale(datos) === 'en' ? 'en-US' : 'es-CO';
+    return new Date(fecha).toLocaleDateString(locale, {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
@@ -1961,6 +2013,8 @@ export const enviarNotificacionSubtareaInterna = async (datos = {}) => {
     return { success: false, message: 'Sin email de destino' };
   }
 
+  // Callers deben pasar datos.locale ('es'|'en').
+  const t = getEmailText(datos);
   const frontendUrl = frontendUrlSubtareas(datos);
   const urlSubtarea = datos.subtareaId
     ? `${frontendUrl}/complex/mis-subtareas?abrir=${datos.subtareaId}`
@@ -1969,23 +2023,25 @@ export const enviarNotificacionSubtareaInterna = async (datos = {}) => {
   const mailOptions = {
     from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
     to: email,
-    subject: `Subtarea Complex asignada — ${datos.nmroAjste || 'Caso'}`,
+    subject: getEmailSubject(datos, 'subjectSubtareaInterna', {
+      caso: datos.nmroAjste || t.caseFallback,
+    }),
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background:#f8f9fa; padding:20px;">
         <div style="background:#fff; padding:28px; border-radius:10px;">
-          <h1 style="color:#1f2937; font-size:22px; margin:0 0 8px;">Nueva subtarea Complex</h1>
-          <p style="color:#6b7280; margin:0 0 20px;">Te asignaron una subtarea en un caso conjunto.</p>
+          <h1 style="color:#1f2937; font-size:22px; margin:0 0 8px;">${t.subtaskInternalTitle}</h1>
+          <p style="color:#6b7280; margin:0 0 20px;">${t.subtaskInternalIntro}</p>
           <table style="width:100%; border-collapse:collapse; margin-bottom:20px;">
-            <tr><td style="padding:6px 0; color:#6b7280;">Caso</td><td style="padding:6px 0; font-weight:bold;">${datos.nmroAjste || '—'}</td></tr>
-            <tr><td style="padding:6px 0; color:#6b7280;">Subtarea</td><td style="padding:6px 0; font-weight:bold;">${datos.titulo || '—'}</td></tr>
-            <tr><td style="padding:6px 0; color:#6b7280;">Asignado por</td><td style="padding:6px 0;">${datos.creadoPorNombre || datos.creadoPorLogin || '—'}</td></tr>
-            <tr><td style="padding:6px 0; color:#6b7280;">Fecha límite</td><td style="padding:6px 0;">${formatearFechaCortaCorreo(datos.fechaLimite)}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">${t.caseCol}</td><td style="padding:6px 0; font-weight:bold;">${datos.nmroAjste || '—'}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">${t.subtaskLabel}</td><td style="padding:6px 0; font-weight:bold;">${datos.titulo || '—'}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">${t.assignedByCol}</td><td style="padding:6px 0;">${datos.creadoPorNombre || datos.creadoPorLogin || '—'}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">${t.deadlineCol}</td><td style="padding:6px 0;">${formatearFechaCortaCorreo(datos.fechaLimite, datos)}</td></tr>
           </table>
-          ${datos.descripcion ? `<p style="color:#374151;"><strong>Descripción:</strong><br>${datos.descripcion}</p>` : ''}
-          ${datos.instrucciones ? `<p style="color:#374151;"><strong>Instrucciones:</strong><br>${datos.instrucciones}</p>` : ''}
+          ${datos.descripcion ? `<p style="color:#374151;"><strong>${t.descriptionStrong}</strong><br>${datos.descripcion}</p>` : ''}
+          ${datos.instrucciones ? `<p style="color:#374151;"><strong>${t.instructionsStrong}</strong><br>${datos.instrucciones}</p>` : ''}
           <div style="text-align:center; margin-top:28px;">
             <a href="${urlSubtarea}" style="display:inline-block; background:#c8102e; color:#fff; text-decoration:none; padding:12px 22px; border-radius:8px; font-weight:bold;">
-              Ir a mi subtarea
+              ${t.goToMySubtask}
             </a>
           </div>
         </div>
@@ -2005,35 +2061,39 @@ export const enviarNotificacionSubtareaExterna = async (datos = {}) => {
     return { success: false, message: 'Email o token faltante' };
   }
 
+  // Callers deben pasar datos.locale ('es'|'en').
+  const t = getEmailText(datos);
   const frontendUrl = frontendUrlSubtareas(datos);
   const urlPublica = `${frontendUrl}/complex/subtarea/${token}`;
 
   const mailOptions = {
     from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
     to: email,
-    subject: `Solicitud de apoyo — Caso ${datos.nmroAjste || 'Complex'}`,
+    subject: getEmailSubject(datos, 'subjectSubtareaExterna', {
+      caso: datos.nmroAjste || 'Complex',
+    }),
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background:#f8f9fa; padding:20px;">
         <div style="background:#fff; padding:28px; border-radius:10px;">
-          <h1 style="color:#1f2937; font-size:22px; margin:0 0 8px;">Grupo Proser — Apoyo en inspección</h1>
+          <h1 style="color:#1f2937; font-size:22px; margin:0 0 8px;">${t.supportTitle}</h1>
           <p style="color:#6b7280; margin:0 0 20px;">
-            Hola ${datos.nombreDestino || 'ajustador'}, te solicitaron diligenciar información de un caso.
+            ${fillEmailTemplate(t.supportIntro, { nombre: datos.nombreDestino || t.adjusterFallback })}
           </p>
           <table style="width:100%; border-collapse:collapse; margin-bottom:20px;">
-            <tr><td style="padding:6px 0; color:#6b7280;">Caso</td><td style="padding:6px 0; font-weight:bold;">${datos.nmroAjste || '—'}</td></tr>
-            <tr><td style="padding:6px 0; color:#6b7280;">Tarea</td><td style="padding:6px 0; font-weight:bold;">${datos.titulo || '—'}</td></tr>
-            <tr><td style="padding:6px 0; color:#6b7280;">Solicita</td><td style="padding:6px 0;">${datos.creadoPorNombre || 'Ajustador Grupo Proser'}</td></tr>
-            <tr><td style="padding:6px 0; color:#6b7280;">Fecha límite</td><td style="padding:6px 0;">${formatearFechaCortaCorreo(datos.fechaLimite)}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">${t.caseCol}</td><td style="padding:6px 0; font-weight:bold;">${datos.nmroAjste || '—'}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">${t.taskLabel}</td><td style="padding:6px 0; font-weight:bold;">${datos.titulo || '—'}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">${t.requestsCol}</td><td style="padding:6px 0;">${datos.creadoPorNombre || t.defaultRequester}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">${t.deadlineCol}</td><td style="padding:6px 0;">${formatearFechaCortaCorreo(datos.fechaLimite, datos)}</td></tr>
           </table>
-          ${datos.descripcion ? `<p style="color:#374151;"><strong>Descripción:</strong><br>${datos.descripcion}</p>` : ''}
-          ${datos.instrucciones ? `<p style="color:#374151;"><strong>Qué debe diligenciar:</strong><br>${datos.instrucciones}</p>` : ''}
+          ${datos.descripcion ? `<p style="color:#374151;"><strong>${t.descriptionStrong}</strong><br>${datos.descripcion}</p>` : ''}
+          ${datos.instrucciones ? `<p style="color:#374151;"><strong>${t.whatToFill}</strong><br>${datos.instrucciones}</p>` : ''}
           <div style="text-align:center; margin-top:28px;">
             <a href="${urlPublica}" style="display:inline-block; background:#c8102e; color:#fff; text-decoration:none; padding:12px 22px; border-radius:8px; font-weight:bold;">
-              Abrir formulario
+              ${t.openForm}
             </a>
           </div>
           <p style="color:#9ca3af; font-size:12px; margin-top:24px; text-align:center;">
-            Este enlace es personal y puede vencer. No requiere usuario de la plataforma.
+            ${t.magicLinkNote}
           </p>
         </div>
       </div>
@@ -2051,6 +2111,8 @@ export const enviarNotificacionSubtareaCompletada = async (datos = {}) => {
     return { success: false, message: 'Sin email de destino' };
   }
 
+  // Callers deben pasar datos.locale ('es'|'en').
+  const t = getEmailText(datos);
   const frontendUrl = resolveFrontendUrl();
   const urlCaso = datos.casoId
     ? `${frontendUrl}/complex/excel`
@@ -2059,19 +2121,24 @@ export const enviarNotificacionSubtareaCompletada = async (datos = {}) => {
   const mailOptions = {
     from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
     to: email,
-    subject: `Subtarea completada — ${datos.nmroAjste || 'Caso Complex'}`,
+    subject: getEmailSubject(datos, 'subjectSubtareaCompletada', {
+      caso: datos.nmroAjste || t.caseComplexFallback,
+    }),
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background:#f8f9fa; padding:20px;">
         <div style="background:#fff; padding:28px; border-radius:10px;">
-          <h1 style="color:#059669; font-size:22px; margin:0 0 8px;">Subtarea completada</h1>
+          <h1 style="color:#059669; font-size:22px; margin:0 0 8px;">${t.subtaskCompletedTitle}</h1>
           <p style="color:#374151;">
-            <strong>${datos.nombreCompletoPor || 'El asignado'}</strong> marcó como completada la subtarea
-            <strong>${datos.titulo || ''}</strong> del caso <strong>${datos.nmroAjste || '—'}</strong>.
+            ${fillEmailTemplate(t.subtaskCompletedBody, {
+              nombre: datos.nombreCompletoPor || t.assigneeFallback,
+              titulo: datos.titulo || '',
+              caso: datos.nmroAjste || '—',
+            })}
           </p>
-          ${datos.observacionesAsignado ? `<p style="color:#6b7280;"><strong>Observaciones:</strong><br>${datos.observacionesAsignado}</p>` : ''}
+          ${datos.observacionesAsignado ? `<p style="color:#6b7280;"><strong>${t.observations}:</strong><br>${datos.observacionesAsignado}</p>` : ''}
           <div style="text-align:center; margin-top:24px;">
             <a href="${urlCaso}" style="display:inline-block; background:#111827; color:#fff; text-decoration:none; padding:12px 22px; border-radius:8px; font-weight:bold;">
-              Ver en el caso
+              ${t.viewInCase}
             </a>
           </div>
         </div>
@@ -2090,6 +2157,8 @@ export const enviarNotificacionSubtareaReabierta = async (datos = {}) => {
     return { success: false, message: 'Sin email de destino' };
   }
 
+  // Callers deben pasar datos.locale ('es'|'en').
+  const t = getEmailText(datos);
   const frontendUrl = frontendUrlSubtareas(datos);
   const urlSubtarea = datos.subtareaId
     ? `${frontendUrl}/complex/mis-subtareas?abrir=${datos.subtareaId}`
@@ -2098,29 +2167,33 @@ export const enviarNotificacionSubtareaReabierta = async (datos = {}) => {
   const mailOptions = {
     from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
     to: email,
-    subject: `Subtarea reabierta — ${datos.nmroAjste || 'Caso Complex'}`,
+    subject: getEmailSubject(datos, 'subjectSubtareaReabierta', {
+      caso: datos.nmroAjste || t.caseComplexFallback,
+    }),
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background:#f8f9fa; padding:20px;">
         <div style="background:#fff; padding:28px; border-radius:10px;">
-          <h1 style="color:#b45309; font-size:22px; margin:0 0 8px;">Subtarea reabierta</h1>
+          <h1 style="color:#b45309; font-size:22px; margin:0 0 8px;">${t.subtaskReopenedTitle}</h1>
           <p style="color:#374151;">
-            <strong>${datos.reabiertaPorNombre || 'El responsable del caso'}</strong> reabrió la subtarea
-            <strong>${datos.titulo || ''}</strong> del caso <strong>${datos.nmroAjste || '—'}</strong>.
-            Vuelve a estar pendiente en tu bandeja.
+            ${fillEmailTemplate(t.subtaskReopenedBody, {
+              nombre: datos.reabiertaPorNombre || t.caseOwnerFallback,
+              titulo: datos.titulo || '',
+              caso: datos.nmroAjste || '—',
+            })}
           </p>
           <div style="background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; padding:14px 16px; margin:18px 0;">
-            <p style="color:#92400e; margin:0; font-size:13px; font-weight:bold; text-transform:uppercase;">Motivo de la reapertura</p>
+            <p style="color:#92400e; margin:0; font-size:13px; font-weight:bold; text-transform:uppercase;">${t.reopenReason}</p>
             <p style="color:#78350f; margin:6px 0 0; white-space:pre-wrap;">${datos.motivo || '—'}</p>
           </div>
           <table style="width:100%; border-collapse:collapse; margin-bottom:20px;">
-            <tr><td style="padding:6px 0; color:#6b7280;">Caso</td><td style="padding:6px 0; font-weight:bold;">${datos.nmroAjste || '—'}</td></tr>
-            <tr><td style="padding:6px 0; color:#6b7280;">Subtarea</td><td style="padding:6px 0; font-weight:bold;">${datos.titulo || '—'}</td></tr>
-            <tr><td style="padding:6px 0; color:#6b7280;">Reabierta por</td><td style="padding:6px 0; font-weight:bold;">${datos.reabiertaPorNombre || '—'}</td></tr>
-            <tr><td style="padding:6px 0; color:#6b7280;">Fecha límite</td><td style="padding:6px 0;">${formatearFechaCortaCorreo(datos.fechaLimite)}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">${t.caseCol}</td><td style="padding:6px 0; font-weight:bold;">${datos.nmroAjste || '—'}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">${t.subtaskLabel}</td><td style="padding:6px 0; font-weight:bold;">${datos.titulo || '—'}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">${t.reopenedByCol}</td><td style="padding:6px 0; font-weight:bold;">${datos.reabiertaPorNombre || '—'}</td></tr>
+            <tr><td style="padding:6px 0; color:#6b7280;">${t.deadlineCol}</td><td style="padding:6px 0;">${formatearFechaCortaCorreo(datos.fechaLimite, datos)}</td></tr>
           </table>
           <div style="text-align:center; margin-top:28px;">
             <a href="${urlSubtarea}" style="display:inline-block; background:#c8102e; color:#fff; text-decoration:none; padding:12px 22px; border-radius:8px; font-weight:bold;">
-              Ir a mi subtarea
+              ${t.goToMySubtask}
             </a>
           </div>
         </div>

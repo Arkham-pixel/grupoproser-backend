@@ -23,18 +23,19 @@ const openai = new OpenAI({
 // Endpoint para enviar mensajes a ChatGPT
 router.post('/chat', verificarToken, async (req, res) => {
   try {
-    const { message, formData, conversationHistory } = req.body;
+    const { message, formData, conversationHistory, locale } = req.body;
+    const responseLanguage = locale === 'en' || req.locale === 'en' ? 'English' : 'Spanish';
 
     if (!message || !message.trim()) {
       return res.status(400).json({ 
-        error: 'El mensaje es requerido' 
+        error: req.t('messageRequired') 
       });
     }
 
     if (!process.env.OPENAI_API_KEY) {
       console.error('❌ OPENAI_API_KEY no está configurada');
       return res.status(500).json({ 
-        error: 'OpenAI API Key no configurada. Configure OPENAI_API_KEY en el archivo .env' 
+        error: req.t('openaiNotConfigured') 
       });
     }
 
@@ -275,7 +276,7 @@ Respuesta: "He registrado el tipo de evento, fecha y aseguradora."
 - Siempre incluye el JSON de acciones cuando vayas a llenar campos
 - Si no estás seguro de qué campo usar, pregunta al usuario
 
-Responde en español y sé específico con ejemplos cuando sea apropiado.`
+Respond in ${responseLanguage} and be specific with examples when appropriate.`
     });
 
     // Agregar historial de conversación si existe
@@ -358,16 +359,16 @@ Responde en español y sé específico con ejemplos cuando sea apropiado.`
       // Manejar error 429 (quota exceeded) de forma especial
       if (statusCode === 429) {
         return res.status(429).json({
-          error: 'Cuota de OpenAI excedida',
-          mensaje: 'Has excedido tu cuota actual de OpenAI. Por favor, verifica tu plan y detalles de facturación.',
+          error: req.t('openaiQuotaExceeded'),
+          mensaje: req.t('openaiQuotaExceededDetail'),
           detalles: errorData.message || 'Quota exceeded',
           codigo: errorData.code || 'rate_limit_exceeded',
-          solucion: 'Agrega créditos en https://platform.openai.com/account/billing o actualiza tu plan'
+          solucion: req.t('openaiQuotaSolution')
         });
       }
       
       return res.status(statusCode).json({
-        error: errorData.message || 'Error al comunicarse con ChatGPT',
+        error: errorData.message || req.t('chatgptCommunicationError'),
         detalles: errorData,
         codigo: errorData.code
       });
@@ -379,10 +380,45 @@ Responde en español y sé específico con ejemplos cuando sea apropiado.`
     }
 
     res.status(500).json({
-      error: 'Error interno del servidor al procesar la solicitud',
+      error: req.t('serverErrorProcessing'),
       detalles: error.message || 'Error desconocido',
       tipo: error.name || 'Error'
     });
+  }
+});
+
+// Traducción de texto libre para vistas previas editables en formularios.
+router.post('/translate', verificarToken, async (req, res) => {
+  const { text, source = 'es', target = 'en' } = req.body;
+  if (!text || !String(text).trim()) return res.status(400).json({ error: req.t('messageRequired') });
+  if (!['es', 'en'].includes(source) || !['es', 'en'].includes(target)) {
+    return res.status(400).json({ error: req.t('unsupportedTranslationLanguage') });
+  }
+  if (String(text).length > 10000) {
+    return res.status(413).json({ error: req.t('textTooLong') });
+  }
+  if (source === target) return res.json({ translation: text });
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(503).json({ error: req.t('translationNotConfigured') });
+  }
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
+      temperature: 0,
+      max_tokens: 3000,
+      messages: [
+        {
+          role: 'system',
+          content: `Translate ${source === 'es' ? 'Spanish' : 'English'} to ${target === 'en' ? 'English' : 'Spanish'}. Preserve names, numbers, identifiers and formatting. Return only the translation.`,
+        },
+        { role: 'user', content: String(text) },
+      ],
+    });
+    return res.json({ translation: completion.choices[0]?.message?.content?.trim() || '' });
+  } catch (error) {
+    console.error('Translation error:', error.message);
+    return res.status(502).json({ error: req.t('translationFailed') });
   }
 });
 
@@ -393,8 +429,8 @@ router.get('/status', verificarToken, (req, res) => {
     configurado: tieneApiKey,
     modelo: process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
     mensaje: tieneApiKey 
-      ? 'ChatGPT está configurado y listo para usar' 
-      : 'OpenAI API Key no configurada. Configure OPENAI_API_KEY en el archivo .env'
+      ? req.t('chatgptConfigured') 
+      : req.t('chatgptNotConfigured')
   });
 });
 

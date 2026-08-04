@@ -46,7 +46,8 @@ const SecurUserSchema = new mongoose.Schema({
   aportesARL: { type: String },
   aportesCCF: { type: String },
   evaluacionPeriodoPrueba: { type: String },
-  sucursal: { type: String }
+  sucursal: { type: String },
+  locale: { type: String, enum: ['es', 'en'], default: 'es' }
 }, {
   timestamps: true,
   collection: 'securUsers' // Especificar la colección exacta

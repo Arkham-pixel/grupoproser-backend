@@ -4,7 +4,10 @@
   "type": "module",
   "main": "prueba.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node scripts/test-bilingual-quality.mjs",
+    "test:locale": "node scripts/test-locale-middleware.mjs",
+    "test:email-i18n": "node scripts/test-email-i18n.mjs",
+    "test:i18n": "node scripts/test-bilingual-quality.mjs && node scripts/test-locale-middleware.mjs && node scripts/test-email-i18n.mjs",
     "start": "set NODE_ENV=development && node server.js",
     "start:prod": "set NODE_ENV=production && node server.js",
     "generar-sesiones-historicas": "node generar_sesiones_historicas.js",
@@ -19,6 +22,8 @@
     "reparar-rutas-express-s3:apply": "node scripts/repararRutasExpressS3.js --apply",
     "seed-estados-express": "node scripts/seedEstadosExpress.js --remap",
     "seed-catalogos-express": "node scripts/seedExpressCatalogos.js --intermediarios-excel",
+    "seed-puertos-sucursales": "node scripts/seedPuertosSucursalesCapturas.js",
+    "backfill-sucursal-aseguradora": "node scripts/backfillSucursalAseguradora.js",
     "s3-maintenance": "node scripts/s3-storage-maintenance.js"
   },
   "keywords": [],

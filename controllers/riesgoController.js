@@ -7,6 +7,7 @@ import Estado from '../models/Estado.js';
 import ClasificacionRiesgo from '../models/ClasificacionRiesgo.js';
 import Ciudad from '../models/Ciudad.js';
 import { enviarNotificacionAsignacion, enviarNotificacionAseguradora, enviarNotificacionCreador } from '../services/emailService.js';
+import { withRecipientLocale } from '../utils/resolveUserLocale.js';
 import {
   RIESGO_ATTACHMENT_FIELDS,
   deleteAttachmentsFromRecord,
@@ -338,7 +339,12 @@ export const crearRiesgo = async (req, res) => {
         console.log('📧 DATOS PARA NOTIFICACIÓN:', datosNotificacion);
         
         // Enviar notificación principal
-        const resultadoEmail = await enviarNotificacionAsignacion(datosNotificacion);
+        const resultadoEmail = await enviarNotificacionAsignacion(
+          await withRecipientLocale(datosNotificacion, {
+            login: datosNotificacion.codiRespnsble,
+            email: datosNotificacion.emailResponsable,
+          })
+        );
         
         console.log('✅ NOTIFICACIÓN PRINCIPAL ENVIADA:', resultadoEmail);
         
@@ -422,7 +428,9 @@ export const crearRiesgo = async (req, res) => {
               funcionarioAseguradora: nuevoRiesgo.codiAsgrdra || null
             };
             
-            resultadoEmailCreador = await enviarNotificacionCreador(datosNotificacionCreador);
+            resultadoEmailCreador = await enviarNotificacionCreador(
+              await withRecipientLocale(datosNotificacionCreador, { email: emailCreador })
+            );
             console.log('✅ Notificación al creador enviada:', resultadoEmailCreador);
           } else {
             console.log('⚠️ No se pudo obtener email del creador, saltando notificación');
@@ -788,7 +796,12 @@ export const actualizarRiesgo = async (req, res) => {
         console.log('📧 DATOS PARA NOTIFICACIÓN:', datosNotificacion);
         
         // Enviar notificación principal
-        const resultadoEmail = await enviarNotificacionAsignacion(datosNotificacion);
+        const resultadoEmail = await enviarNotificacionAsignacion(
+          await withRecipientLocale(datosNotificacion, {
+            login: datosNotificacion.codiRespnsble,
+            email: datosNotificacion.emailResponsable,
+          })
+        );
         
         console.log('✅ NOTIFICACIÓN PRINCIPAL ENVIADA:', resultadoEmail);
         

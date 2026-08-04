@@ -37,11 +37,11 @@ export const listarTodosCatalogosPuertos = async (req, res) => {
 
 export const crearCatalogoPuertos = async (req, res) => {
   try {
-    const { tipo, nombre } = req.body ?? {};
-    const item = await crearItem({ tipo, nombre });
+    const { tipo, nombre, aseguradoraNombre } = req.body ?? {};
+    const item = await crearItem({ tipo, nombre, aseguradoraNombre });
     res.status(201).json({ success: true, data: item });
   } catch (error) {
-    const status = /obligatorio|válido|existe/i.test(error.message) ? 400 : 500;
+    const status = /obligatorio|válido|existe|aseguradora/i.test(error.message) ? 400 : 500;
     res.status(status).json({ error: error.message });
   }
 };
@@ -49,11 +49,11 @@ export const crearCatalogoPuertos = async (req, res) => {
 export const actualizarCatalogoPuertos = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre } = req.body ?? {};
-    const item = await actualizarItem(id, { nombre });
+    const { nombre, aseguradoraNombre } = req.body ?? {};
+    const item = await actualizarItem(id, { nombre, aseguradoraNombre });
     res.json({ success: true, data: item });
   } catch (error) {
-    const status = /obligatorio|encontrado|existe/i.test(error.message) ? 400 : 500;
+    const status = /obligatorio|encontrado|existe|aseguradora/i.test(error.message) ? 400 : 500;
     res.status(status).json({ error: error.message });
   }
 };

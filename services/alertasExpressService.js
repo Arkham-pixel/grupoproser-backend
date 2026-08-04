@@ -9,6 +9,7 @@ import {
 import { evaluarProtocoloCaso } from './protocoloSiniestrosUtils.js';
 import { DIAS_ENTRE_RECORDATORIOS_EMAIL } from './alertasService.js';
 import { enviarEmailAlertas } from './emailService.js';
+import { withRecipientLocale } from '../utils/resolveUserLocale.js';
 import {
   getResponsableResolverIndex,
   resolverResponsableConIndice,
@@ -427,7 +428,12 @@ export async function enviarAlertasEmailExpress(codigoResponsable, opciones = {}
     alertas,
   };
 
-  const resultado = await enviarEmailAlertas(datosEmail);
+  const resultado = await enviarEmailAlertas(
+    await withRecipientLocale(datosEmail, {
+      email: responsable.email,
+      login: codigo,
+    })
+  );
 
   if (resultado?.success !== false) {
     await Responsable.updateOne(

@@ -8,6 +8,7 @@ import Estado from '../models/Estado.js';
 import FuncionarioAseguradora from '../models/FuncionarioAseguradora.js';
 import Cliente from '../models/Cliente.js';
 import { enviarNotificacionAsignacion, enviarNotificacionAseguradora, enviarNotificacionCreador, enviarNotificacionHonorarios, enviarNotificacionControlHoras, enviarNotificacionGerencia, enviarSolicitudCorreccionControlHoras } from '../services/emailService.js';
+import { withRecipientLocale } from '../utils/resolveUserLocale.js';
 import {
   listarBandejaFacturacion,
   persistirEnvioFacturacionTrasCorreo,
@@ -854,7 +855,12 @@ export const crearComplex = async (req, res) => {
        console.log('📧 Datos para notificación:', JSON.stringify(datosNotificacion, null, 2));
        
        // Enviar notificación de asignación (protocolo fase 1)
-       const resultadoEmail = await enviarNotificacionAsignacion(datosNotificacion);
+       const resultadoEmail = await enviarNotificacionAsignacion(
+         await withRecipientLocale(datosNotificacion, {
+           login: nuevo.codiRespnsble,
+           email: emailResponsable,
+         })
+       );
        console.log('✅ Notificación de asignación enviada:', resultadoEmail);
        notificacionesResumen = {
          asignacion: {
@@ -917,7 +923,9 @@ export const crearComplex = async (req, res) => {
              funcionarioAseguradora: nuevo.funcAsgrdra || null
            };
            
-           const resultadoEmailCreador = await enviarNotificacionCreador(datosNotificacionCreador);
+           const resultadoEmailCreador = await enviarNotificacionCreador(
+             await withRecipientLocale(datosNotificacionCreador, { email: emailCreador })
+           );
            console.log('✅ Notificación al creador enviada:', resultadoEmailCreador);
            notificacionesResumen = {
              ...notificacionesResumen,
@@ -2237,7 +2245,12 @@ export const actualizarComplex = async (req, res) => {
          
          // Enviar notificación de asignación
          console.log('📧 📧 📧 INTENTANDO ENVIAR NOTIFICACIÓN 📧 📧 📧');
-         const resultadoEmail = await enviarNotificacionAsignacion(datosNotificacion);
+         const resultadoEmail = await enviarNotificacionAsignacion(
+           await withRecipientLocale(datosNotificacion, {
+             login: datosNotificacion.codiRespnsble,
+             email: datosNotificacion.emailResponsable,
+           })
+         );
          console.log('📧 📧 📧 RESULTADO DEL ENVÍO 📧 📧 📧');
          console.log('📧 Resultado completo:', JSON.stringify(resultadoEmail, null, 2));
          if (resultadoEmail.success) {

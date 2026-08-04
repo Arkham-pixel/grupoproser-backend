@@ -47,7 +47,7 @@ router.get("/usuarios/:id/perfil", async (req, res) => {
   
   try {
     if (!token) {
-      return res.status(401).json({ message: "Token requerido" });
+      return res.status(401).json({ message: req.t('tokenRequired') });
     }
     
     const decoded = jwt.verify(token, JWT_SECRET);
@@ -55,13 +55,13 @@ router.get("/usuarios/:id/perfil", async (req, res) => {
     // Verificar que el usuario tenga permisos (admin o soporte)
     const usuarioActual = await SecurUser.findById(decoded.id);
     if (!usuarioActual || !['admin', 'soporte'].includes(usuarioActual.role)) {
-      return res.status(403).json({ message: "No tienes permisos para acceder a este recurso" });
+      return res.status(403).json({ message: req.t('insufficientPermissions') });
     }
     
     const usuario = await SecurUser.findById(id).lean();
     
     if (!usuario) {
-      return res.status(404).json({ message: "Usuario no encontrado" });
+      return res.status(404).json({ message: req.t('userNotFound') });
     }
     
     const perfilResponse = {
@@ -70,6 +70,7 @@ router.get("/usuarios/:id/perfil", async (req, res) => {
       name: usuario.name,
       email: usuario.email,
       role: usuario.role,
+      locale: usuario.locale || 'es',
       phone: usuario.phone,
       active: usuario.active,
       privAdmin: usuario.privAdmin,
@@ -104,7 +105,7 @@ router.get("/usuarios/:id/perfil", async (req, res) => {
     res.json(perfilResponse);
   } catch (error) {
     console.error('Error obteniendo perfil de usuario:', error);
-    res.status(500).json({ message: "Error en el servidor" });
+    res.status(500).json({ message: req.t('serverError') });
   }
 });
 
@@ -128,7 +129,7 @@ router.get("/usuarios", async (req, res) => {
   } catch (error) {
     console.error("❌ Error al listar usuarios secur:", error);
     console.error("📋 Stack trace:", error.stack);
-    res.status(500).json({ message: "Error al obtener usuarios" });
+    res.status(500).json({ message: req.t('errorFetchingUsers') });
   }
 });
 
@@ -147,7 +148,7 @@ router.get("/test-db", async (req, res) => {
     
     res.json({
       success: true,
-      message: "Conexión a la base de datos exitosa",
+      message: req.t('dbConnectionSuccess'),
       userCount: count,
       dbState: "connected"
     });
@@ -156,7 +157,7 @@ router.get("/test-db", async (req, res) => {
     console.error("📋 Stack trace:", error.stack);
     res.status(500).json({ 
       success: false,
-      message: "Error en la conexión a la base de datos",
+      message: req.t('dbConnectionError'),
       error: error.message
     });
   }
@@ -178,7 +179,7 @@ router.post("/cambiar-password", async (req, res) => {
     // Validar datos requeridos
     if (!login || !nuevaPassword || !adminLogin || !adminPassword) {
       console.log('❌ Datos faltantes:', { login: !!login, nuevaPassword: !!nuevaPassword, adminLogin: !!adminLogin, adminPassword: !!adminPassword });
-      return res.status(400).json({ message: "Todos los campos son requeridos" });
+      return res.status(400).json({ message: req.t('allFieldsRequired') });
     }
     
     console.log('🔍 Buscando administrador:', adminLogin);
@@ -186,7 +187,7 @@ router.post("/cambiar-password", async (req, res) => {
     const admin = await SecurUser.findOne({ login: adminLogin });
     if (!admin) {
       console.log('❌ Administrador no encontrado:', adminLogin);
-      return res.status(404).json({ message: "Administrador no encontrado" });
+      return res.status(404).json({ message: req.t('adminNotFound') });
     }
     
     console.log('✅ Administrador encontrado:', { name: admin.name, role: admin.role, active: admin.active });
@@ -194,7 +195,7 @@ router.post("/cambiar-password", async (req, res) => {
     // Verificar que el administrador está activo
     if (admin.active !== "Y") {
       console.log('❌ Administrador inactivo:', adminLogin);
-      return res.status(401).json({ message: "Administrador inactivo" });
+      return res.status(401).json({ message: req.t('inactiveAdmin') });
     }
     
     console.log('🔐 Verificando contraseña del administrador...');
@@ -202,7 +203,7 @@ router.post("/cambiar-password", async (req, res) => {
     const isAdminPasswordValid = await bcrypt.compare(adminPassword, admin.pswd);
     if (!isAdminPasswordValid) {
       console.log('❌ Contraseña de administrador incorrecta');
-      return res.status(401).json({ message: "Contraseña de administrador incorrecta" });
+      return res.status(401).json({ message: req.t('incorrectAdminPassword') });
     }
     
     console.log('✅ Contraseña de administrador válida');
@@ -210,7 +211,7 @@ router.post("/cambiar-password", async (req, res) => {
     // Verificar que el administrador tiene permisos (admin o soporte)
     if (!["admin", "soporte"].includes(admin.role)) {
       console.log('❌ Administrador sin permisos:', admin.role);
-      return res.status(403).json({ message: "No tienes permisos para cambiar contraseñas" });
+      return res.status(403).json({ message: req.t('noPermissionChangePasswords') });
     }
     
     console.log('🔍 Buscando usuario a cambiar:', login);
@@ -218,7 +219,7 @@ router.post("/cambiar-password", async (req, res) => {
     const usuario = await SecurUser.findOne({ login });
     if (!usuario) {
       console.log('❌ Usuario no encontrado:', login);
-      return res.status(404).json({ message: "Usuario no encontrado" });
+      return res.status(404).json({ message: req.t('userNotFound') });
     }
     
     console.log('✅ Usuario encontrado:', { name: usuario.name, role: usuario.role });
@@ -246,7 +247,7 @@ router.post("/cambiar-password", async (req, res) => {
     
     res.json({ 
       success: true, 
-      message: `Contraseña actualizada para ${usuario.name}`,
+      message: req.t('passwordUpdatedForUser', { name: usuario.name }),
       usuario: {
         login: usuario.login,
         name: usuario.name,
@@ -259,7 +260,7 @@ router.post("/cambiar-password", async (req, res) => {
     console.error("❌ Error al cambiar contraseña:", error);
     console.error("📋 Stack trace:", error.stack);
     res.status(500).json({ 
-      message: "Error en el servidor",
+      message: req.t('serverError'),
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
@@ -284,7 +285,7 @@ router.post("/login", async (req, res) => {
     if (!usuario) {
       console.log('❌ Usuario no encontrado:', correo);
       console.log('🔍 Buscado por login (cedula), email o cedula:', busqueda);
-      return res.status(404).json({ message: "Usuario no encontrado" });
+      return res.status(404).json({ message: req.t('userNotFound') });
     }
     
     console.log('✅ Usuario encontrado:', { 
@@ -297,14 +298,14 @@ router.post("/login", async (req, res) => {
     // Verificar si el usuario está activo
     if (usuario.active !== "Y") {
       console.log('❌ Usuario inactivo:', correo);
-      return res.status(401).json({ message: "Usuario inactivo" });
+      return res.status(401).json({ message: req.t('inactiveUser') });
     }
     
     // Comparar contraseña usando bcrypt
     const isPasswordValid = await bcrypt.compare(password, usuario.pswd);
     if (!isPasswordValid) {
       console.log('❌ Contraseña incorrecta para:', correo);
-      return res.status(401).json({ message: "Contraseña incorrecta" });
+      return res.status(401).json({ message: req.t('incorrectPassword') });
     }
     
     console.log('✅ Credenciales válidas para:', correo);
@@ -325,7 +326,7 @@ router.post("/login", async (req, res) => {
         twoFARequired: true,
         method: "totp",
         tempToken,
-        message: "Ingresa el código de tu app de autenticación"
+        message: req.t('enterAuthenticatorCode')
       });
     }
     
@@ -404,7 +405,7 @@ router.post("/login", async (req, res) => {
       res.json({ 
         twoFARequired: true, 
         email: usuario.email,
-        message: "Código de verificación enviado al correo corporativo"
+        message: req.t('verificationCodeSent')
       });
       
     } catch (emailError) {
@@ -413,7 +414,7 @@ router.post("/login", async (req, res) => {
       res.json({ 
         twoFARequired: true, 
         email: usuario.email,
-        message: "Código de verificación enviado al correo corporativo"
+        message: req.t('verificationCodeSent')
       });
     }
     */
@@ -427,7 +428,7 @@ router.post("/login", async (req, res) => {
     
     // Generar token JWT
     const token = jwt.sign(
-      { id: usuario._id, login: usuario.login, role: usuario.role },
+      { id: usuario._id, login: usuario.login, role: usuario.role, locale: usuario.locale || 'es' },
       JWT_SECRET,
       { expiresIn: "4h" }
     );
@@ -461,16 +462,17 @@ router.post("/login", async (req, res) => {
         login: usuario.login,
         name: usuario.name,
         email: usuario.email,
-        role: usuario.role
+        role: usuario.role,
+        locale: usuario.locale || 'es'
       },
       twoFASetupRecommended: !usuario.totpEnabled,
       twoFASetupPending: Boolean(usuario.totpTempSecret && !usuario.totpEnabled),
-      message: "Inicio de sesión exitoso"
+      message: req.t('loginSuccess')
     });
     
   } catch (error) {
     console.error("❌ Error en login secur:", error);
-    res.status(500).json({ message: "Error en el servidor" });
+    res.status(500).json({ message: req.t('serverError') });
   }
 });
 
@@ -480,7 +482,7 @@ router.post("/refresh-token", async (req, res) => {
     const authHeader = req.headers.authorization;
     
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ message: "Token no proporcionado" });
+      return res.status(401).json({ message: req.t('tokenNotProvided') });
     }
     
     const token = authHeader.split(" ")[1];
@@ -490,31 +492,31 @@ router.post("/refresh-token", async (req, res) => {
       const decoded = jwt.decode(token, { complete: true });
       
       if (!decoded || !decoded.payload) {
-        return res.status(401).json({ message: "Token inválido" });
+        return res.status(401).json({ message: req.t('invalidToken') });
       }
       
       // Verificar que el token tenga la estructura correcta
       const payload = decoded.payload;
       
       if (!payload.id) {
-        return res.status(401).json({ message: "Token inválido: falta información del usuario" });
+        return res.status(401).json({ message: req.t('invalidTokenMissingUserInfo') });
       }
       
       // Buscar el usuario en la base de datos
       const usuario = await SecurUser.findById(payload.id);
       
       if (!usuario) {
-        return res.status(404).json({ message: "Usuario no encontrado" });
+        return res.status(404).json({ message: req.t('userNotFound') });
       }
       
       // Verificar que el usuario esté activo
       if (usuario.active !== "Y") {
-        return res.status(401).json({ message: "Usuario inactivo" });
+        return res.status(401).json({ message: req.t('inactiveUser') });
       }
       
       // Generar nuevo token con la misma información
       const newToken = jwt.sign(
-        { id: usuario._id, login: usuario.login, role: usuario.role },
+        { id: usuario._id, login: usuario.login, role: usuario.role, locale: usuario.locale || 'es' },
         JWT_SECRET,
         { expiresIn: "4h" }
       );
@@ -533,11 +535,31 @@ router.post("/refresh-token", async (req, res) => {
       });
     } catch (error) {
       // Si el token está completamente inválido, no podemos renovarlo
-      return res.status(401).json({ message: "Token inválido o no puede ser renovado" });
+      return res.status(401).json({ message: req.t('tokenCannotBeRenewed') });
     }
   } catch (error) {
     console.error("Error en refresh token secur:", error);
-    res.status(500).json({ message: "Error en el servidor" });
+    res.status(500).json({ message: req.t('serverError') });
+  }
+});
+
+// Preferencia de idioma. No requiere volver a iniciar sesión.
+router.patch("/perfil/locale", async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  const { locale } = req.body;
+
+  if (!token) return res.status(401).json({ message: req.t('tokenRequired') });
+  if (!['es', 'en'].includes(locale)) {
+    return res.status(400).json({ message: req.t('invalidLocale') });
+  }
+
+  try {
+    const { id } = jwt.verify(token, JWT_SECRET);
+    const usuario = await SecurUser.findByIdAndUpdate(id, { locale }, { new: true });
+    if (!usuario) return res.status(404).json({ message: req.t('userNotFound') });
+    return res.json({ locale: usuario.locale });
+  } catch {
+    return res.status(401).json({ message: req.t('tokenRequired') });
   }
 });
 
@@ -553,20 +575,20 @@ router.post("/login/2fa", async (req, res) => {
       try {
         decoded = jwt.verify(tempToken, JWT_SECRET);
       } catch (err) {
-        return res.status(401).json({ message: "Sesión de verificación expirada. Inicia sesión de nuevo." });
+        return res.status(401).json({ message: req.t('verificationSessionExpired') });
       }
       
       if (decoded.purpose !== "2fa") {
-        return res.status(401).json({ message: "Token de verificación inválido" });
+        return res.status(401).json({ message: req.t('invalidVerificationToken') });
       }
       
       const usuario = await SecurUser.findById(decoded.id);
       if (!usuario || usuario.active !== "Y") {
-        return res.status(404).json({ message: "Usuario no encontrado o inactivo" });
+        return res.status(404).json({ message: req.t('userNotFoundOrInactive') });
       }
       
       if (!usuario.totpEnabled || !usuario.totpSecret) {
-        return res.status(400).json({ message: "La verificación en dos pasos no está activada" });
+        return res.status(400).json({ message: req.t('twoFactorNotEnabled') });
       }
       
       const { valid: codigoValido } = verifySync({
@@ -577,14 +599,14 @@ router.post("/login/2fa", async (req, res) => {
       
       if (!codigoValido) {
         console.log('❌ Código TOTP incorrecto para:', usuario.login);
-        return res.status(401).json({ message: "Código incorrecto. Verifica tu app de autenticación." });
+        return res.status(401).json({ message: req.t('incorrectAuthenticatorCode') });
       }
       
       console.log('✅ Código TOTP válido para:', usuario.login);
       
       // Generar token JWT definitivo
       const token = jwt.sign(
-        { id: usuario._id, login: usuario.login, role: usuario.role },
+        { id: usuario._id, login: usuario.login, role: usuario.role, locale: usuario.locale || 'es' },
         JWT_SECRET,
         { expiresIn: "4h" }
       );
@@ -617,9 +639,10 @@ router.post("/login/2fa", async (req, res) => {
           login: usuario.login,
           name: usuario.name,
           email: usuario.email,
-          role: usuario.role
+          role: usuario.role,
+          locale: usuario.locale || 'es'
         },
-        message: "Login exitoso"
+        message: req.t('loginSuccess')
       });
     }
     
@@ -628,19 +651,19 @@ router.post("/login/2fa", async (req, res) => {
     const usuario = await SecurUser.findOne({ login: correo });
     if (!usuario) {
       console.log('❌ Usuario no encontrado para verificación 2FA:', correo);
-      return res.status(404).json({ message: "Usuario no encontrado" });
+      return res.status(404).json({ message: req.t('userNotFound') });
     }
     
     // Verificar si hay código MFA
     if (!usuario.mfa) {
       console.log('❌ No hay código MFA para:', correo);
-      return res.status(400).json({ message: "Código no solicitado o expirado" });
+      return res.status(400).json({ message: req.t('codeNotRequestedOrExpired') });
     }
     
     // Verificar si el código coincide
     if (usuario.mfa !== code) {
       console.log('❌ Código incorrecto para:', correo, 'Esperado:', usuario.mfa, 'Recibido:', code);
-      return res.status(401).json({ message: "Código incorrecto" });
+      return res.status(401).json({ message: req.t('incorrectCode') });
     }
     
     // Verificar si el código no ha expirado (10 minutos)
@@ -654,7 +677,7 @@ router.post("/login/2fa", async (req, res) => {
       usuario.mfa = null;
       usuario.mfaLastUpdated = null;
       await usuario.save();
-      return res.status(401).json({ message: "Código expirado" });
+      return res.status(401).json({ message: req.t('codeExpired') });
     }
     
     console.log('✅ Código 2FA válido para:', correo);
@@ -666,7 +689,7 @@ router.post("/login/2fa", async (req, res) => {
     
     // Generar token JWT
     const token = jwt.sign(
-      { id: usuario._id, login: usuario.login, role: usuario.role },
+      { id: usuario._id, login: usuario.login, role: usuario.role, locale: usuario.locale || 'es' },
       JWT_SECRET,
       { expiresIn: "4h" }
     );
@@ -680,14 +703,15 @@ router.post("/login/2fa", async (req, res) => {
         login: usuario.login,
         name: usuario.name,
         email: usuario.email,
-        role: usuario.role
+        role: usuario.role,
+        locale: usuario.locale || 'es'
       },
-      message: "Login exitoso"
+      message: req.t('loginSuccess')
     });
     
   } catch (error) {
     console.error("❌ Error en verificación 2FA:", error);
-    res.status(500).json({ message: "Error en el servidor" });
+    res.status(500).json({ message: req.t('serverError') });
   }
 });
 
@@ -718,19 +742,20 @@ const generarDatosTotp = async (usuario, secret) => {
 // Helper: obtener el usuario autenticado desde el token Bearer
 const obtenerUsuarioDesdeToken = async (req) => {
   const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return { error: { status: 401, message: "Token requerido" } };
+  const t = typeof req.t === 'function' ? req.t.bind(req) : (key) => key;
+  if (!token) return { error: { status: 401, message: t('tokenRequired') } };
   
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     // No aceptar tokens temporales de 2FA para gestionar la configuración
     if (decoded.purpose === "2fa") {
-      return { error: { status: 401, message: "Token inválido" } };
+      return { error: { status: 401, message: t('invalidToken') } };
     }
     const usuario = await SecurUser.findById(decoded.id);
-    if (!usuario) return { error: { status: 404, message: "Usuario no encontrado" } };
+    if (!usuario) return { error: { status: 404, message: t('userNotFound') } };
     return { usuario };
   } catch (err) {
-    return { error: { status: 401, message: "Token inválido o expirado" } };
+    return { error: { status: 401, message: t('invalidOrExpiredToken') } };
   }
 };
 
@@ -754,7 +779,7 @@ router.post("/2fa/setup", async (req, res) => {
   
   try {
     if (usuario.totpEnabled && usuario.totpSecret) {
-      return res.status(400).json({ message: "La verificación en dos pasos ya está activada" });
+      return res.status(400).json({ message: req.t('twoFactorAlreadyEnabled') });
     }
     
     const reutilizarPendiente = Boolean(usuario.totpTempSecret);
@@ -775,11 +800,11 @@ router.post("/2fa/setup", async (req, res) => {
     res.json({
       ...datosTotp,
       pending: true,
-      message: "Escanea el código QR con Google Authenticator o Microsoft Authenticator. Luego confirma con el código de 6 dígitos."
+      message: req.t('scanQrThenConfirm')
     });
   } catch (err) {
     console.error("❌ Error generando configuración 2FA:", err);
-    res.status(500).json({ message: "Error en el servidor" });
+    res.status(500).json({ message: req.t('serverError') });
   }
 });
 
@@ -792,7 +817,7 @@ router.post("/2fa/activate", async (req, res) => {
     const { code } = req.body;
     
     if (!usuario.totpTempSecret) {
-      return res.status(400).json({ message: "Primero debes generar el código QR" });
+      return res.status(400).json({ message: req.t('generateQrFirst') });
     }
     
     const { valid: codigoValido } = verifySync({
@@ -802,7 +827,7 @@ router.post("/2fa/activate", async (req, res) => {
     });
     
     if (!codigoValido) {
-      return res.status(401).json({ message: "Código incorrecto. Verifica tu app de autenticación e intenta de nuevo." });
+      return res.status(401).json({ message: req.t('incorrectAuthenticatorCodeRetry') });
     }
     
     usuario.totpSecret = usuario.totpTempSecret;
@@ -813,10 +838,10 @@ router.post("/2fa/activate", async (req, res) => {
     
     console.log('✅ 2FA (TOTP) activado para:', usuario.login);
     
-    res.json({ enabled: true, message: "Verificación en dos pasos activada correctamente" });
+    res.json({ enabled: true, message: req.t('twoFactorEnabledSuccess') });
   } catch (err) {
     console.error("❌ Error activando 2FA:", err);
-    res.status(500).json({ message: "Error en el servidor" });
+    res.status(500).json({ message: req.t('serverError') });
   }
 });
 
@@ -829,7 +854,7 @@ router.post("/2fa/disable", async (req, res) => {
     const { code } = req.body;
     
     if (!usuario.totpEnabled || !usuario.totpSecret) {
-      return res.status(400).json({ message: "La verificación en dos pasos no está activada" });
+      return res.status(400).json({ message: req.t('twoFactorNotEnabled') });
     }
     
     const { valid: codigoValido } = verifySync({
@@ -839,7 +864,7 @@ router.post("/2fa/disable", async (req, res) => {
     });
     
     if (!codigoValido) {
-      return res.status(401).json({ message: "Código incorrecto. No se desactivó la verificación en dos pasos." });
+      return res.status(401).json({ message: req.t('incorrectCodeTwoFactorNotDisabled') });
     }
     
     usuario.totpSecret = null;
@@ -850,10 +875,10 @@ router.post("/2fa/disable", async (req, res) => {
     
     console.log('⚠️ 2FA (TOTP) desactivado para:', usuario.login);
     
-    res.json({ enabled: false, message: "Verificación en dos pasos desactivada" });
+    res.json({ enabled: false, message: req.t('twoFactorDisabled') });
   } catch (err) {
     console.error("❌ Error desactivando 2FA:", err);
-    res.status(500).json({ message: "Error en el servidor" });
+    res.status(500).json({ message: req.t('serverError') });
   }
 });
 
@@ -877,7 +902,7 @@ router.post("/forgot-password", async (req, res) => {
     });
     
     if (!correo) {
-      return res.status(400).json({ message: "Correo electrónico es requerido" });
+      return res.status(400).json({ message: req.t('emailRequired') });
     }
     
     // Buscar usuario por email, login o cédula
@@ -905,7 +930,7 @@ router.post("/forgot-password", async (req, res) => {
       console.log('⚠️ Usuario no encontrado para recuperación:', correo);
       // Devolvemos mensaje genérico por seguridad
       return res.json({ 
-        message: "Si el correo está registrado, recibirás un enlace de recuperación."
+        message: req.t('passwordResetLinkSent')
       });
     }
     
@@ -913,7 +938,7 @@ router.post("/forgot-password", async (req, res) => {
     if (usuario.active !== "Y") {
       console.log('⚠️ Usuario inactivo intentó recuperar contraseña:', correo);
       return res.json({ 
-        message: "Si el correo está registrado, recibirás un enlace de recuperación."
+        message: req.t('passwordResetLinkSent')
       });
     }
     
@@ -981,7 +1006,7 @@ router.post("/forgot-password", async (req, res) => {
     if (!isDevelopment && !isEmailConfigured) {
       console.error('❌ Variables de entorno de email no configuradas en PRODUCCIÓN');
       return res.json({
-        message: "Si el correo está registrado, recibirás un enlace de recuperación.",
+        message: req.t('passwordResetLinkSent'),
         success: true,
         environment: 'production',
         emailSent: false
@@ -993,7 +1018,7 @@ router.post("/forgot-password", async (req, res) => {
       console.warn('⚠️ Email no configurado en DESARROLLO. No se enviará correo y no se expondrá token al cliente.');
       
       return res.json({ 
-        message: "Si el correo está registrado, recibirás un enlace de recuperación.",
+        message: req.t('passwordResetLinkSent'),
         success: true,
         environment: 'development',
         emailSent: false
@@ -1042,7 +1067,7 @@ router.post("/forgot-password", async (req, res) => {
       
       // Preparar respuesta según el entorno
       const responseData = {
-        message: "Si el correo está registrado, recibirás un enlace de recuperación.",
+        message: req.t('passwordResetLinkSent'),
         success: true,
         environment: isDevelopment ? 'development' : 'production', // Informar al frontend del entorno real
         emailError: true // Indicar que hubo un error de email
@@ -1133,7 +1158,7 @@ router.post("/forgot-password", async (req, res) => {
       
       // Preparar respuesta según el entorno
       const responseData = {
-        message: "Si el correo está registrado, recibirás un enlace de recuperación.",
+        message: req.t('passwordResetLinkSent'),
         success: true,
         environment: isDevelopment ? 'development' : 'production', // Informar al frontend del entorno real
         emailError: true // Indicar que hubo un error de email
@@ -1146,7 +1171,7 @@ router.post("/forgot-password", async (req, res) => {
     
     // Respuesta cuando el correo se envía exitosamente
     res.json({ 
-      message: "Si el correo está registrado, recibirás un enlace de recuperación.",
+      message: req.t('passwordResetLinkSent'),
       success: true,
       environment: isDevelopment ? 'development' : 'production', // Informar al frontend del entorno real
       emailSent: true // Indicar que el correo se envió exitosamente
@@ -1160,7 +1185,7 @@ router.post("/forgot-password", async (req, res) => {
     console.error('❌ Mensaje de error:', error.message);
     
     res.status(500).json({ 
-      message: "Error al procesar la solicitud. Intenta nuevamente."
+      message: req.t('requestProcessingError')
     });
   }
 });
@@ -1175,11 +1200,11 @@ router.post("/reset-password", async (req, res) => {
     console.log('🔑 Intento de restablecer contraseña con token');
     
     if (!token || !newPassword) {
-      return res.status(400).json({ message: "Token y nueva contraseña son requeridos" });
+      return res.status(400).json({ message: req.t('tokenAndNewPasswordRequired') });
     }
     
     if (newPassword.length < 6) {
-      return res.status(400).json({ message: "La contraseña debe tener al menos 6 caracteres" });
+      return res.status(400).json({ message: req.t('passwordMinLength') });
     }
     
     // Hashear el token recibido para comparar con el guardado
@@ -1194,7 +1219,7 @@ router.post("/reset-password", async (req, res) => {
     if (!usuario) {
       console.log('❌ Token inválido, expirado o ya usado');
       return res.status(400).json({ 
-        message: "El enlace de recuperación es inválido, ha expirado o ya fue utilizado. Por seguridad, cada enlace solo funciona una vez y expira en 30 minutos. Solicita un nuevo enlace si aún necesitas cambiar tu contraseña."
+        message: req.t('resetLinkInvalidOrExpired')
       });
     }
     
@@ -1269,14 +1294,14 @@ router.post("/reset-password", async (req, res) => {
     }
     
     res.json({ 
-      message: "Contraseña actualizada exitosamente. Ya puedes iniciar sesión.",
+      message: req.t('passwordUpdatedLoginReady'),
       success: true
     });
     
   } catch (error) {
     console.error('❌ Error al restablecer contraseña:', error);
     res.status(500).json({ 
-      message: "Error al restablecer la contraseña. Intenta nuevamente.",
+      message: req.t('passwordResetError'),
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
@@ -1289,20 +1314,20 @@ router.post("/cambiar-password-propia", async (req, res) => {
   
   try {
     if (!token) {
-      return res.status(401).json({ message: "Token requerido" });
+      return res.status(401).json({ message: req.t('tokenRequired') });
     }
     
     const decoded = jwt.verify(token, JWT_SECRET);
     const usuario = await SecurUser.findById(decoded.id);
     
     if (!usuario) {
-      return res.status(404).json({ message: "Usuario no encontrado" });
+      return res.status(404).json({ message: req.t('userNotFound') });
     }
     
     // Verificar contraseña antigua usando bcrypt
     const isOldPasswordValid = await bcrypt.compare(oldPassword, usuario.pswd);
     if (!isOldPasswordValid) {
-      return res.status(401).json({ message: "Contraseña actual incorrecta" });
+      return res.status(401).json({ message: req.t('currentPasswordIncorrect') });
     }
     
     // Actualizar contraseña con hash
@@ -1313,13 +1338,13 @@ router.post("/cambiar-password-propia", async (req, res) => {
     
     res.json({ 
       success: true,
-      message: "Contraseña cambiada correctamente", 
+      message: req.t('passwordChangedSuccess'), 
       user: { login: usuario.login } 
     });
     
   } catch (error) {
     console.error("Error cambiando contraseña:", error);
-    res.status(500).json({ message: "Error en el servidor" });
+    res.status(500).json({ message: req.t('serverError') });
   }
 });
 
@@ -1340,7 +1365,7 @@ router.put("/usuarios/:id/perfil", async (req, res) => {
   
   try {
     if (!token) {
-      return res.status(401).json({ message: "Token requerido" });
+      return res.status(401).json({ message: req.t('tokenRequired') });
     }
     
     const decoded = jwt.verify(token, JWT_SECRET);
@@ -1348,21 +1373,21 @@ router.put("/usuarios/:id/perfil", async (req, res) => {
     // Verificar que el usuario tenga permisos (admin o soporte)
     const usuarioActual = await SecurUser.findById(decoded.id);
     if (!usuarioActual || !['admin', 'soporte'].includes(usuarioActual.role)) {
-      return res.status(403).json({ message: "No tienes permisos para acceder a este recurso" });
+      return res.status(403).json({ message: req.t('insufficientPermissions') });
     }
     
     // Verificar contraseña del administrador si se proporciona
     if (passwordConfirm) {
       const isMatch = await bcrypt.compare(passwordConfirm, usuarioActual.pswd);
       if (!isMatch) {
-        return res.status(401).json({ message: "Contraseña incorrecta. No se guardaron los cambios." });
+        return res.status(401).json({ message: req.t('incorrectPasswordChangesNotSaved') });
       }
     }
     
     const usuario = await SecurUser.findById(id);
     
     if (!usuario) {
-      return res.status(404).json({ message: "Usuario no encontrado" });
+      return res.status(404).json({ message: req.t('userNotFound') });
     }
     
     // Actualizar campos
@@ -1432,10 +1457,10 @@ router.put("/usuarios/:id/perfil", async (req, res) => {
       sucursal: usuario.sucursal ?? null
     };
     
-    res.json({ message: "Perfil actualizado exitosamente", usuario: userResponse });
+    res.json({ message: req.t('profileUpdated'), usuario: userResponse });
   } catch (error) {
     console.error('Error actualizando perfil de usuario:', error);
-    res.status(500).json({ message: "Error en el servidor" });
+    res.status(500).json({ message: req.t('serverError') });
   }
 });
 
@@ -1448,7 +1473,7 @@ router.get("/perfil", async (req, res) => {
     console.log('🔐 Token recibido:', token ? 'SÍ' : 'NO');
     
     if (!token) {
-      return res.status(401).json({ message: "Token requerido" });
+      return res.status(401).json({ message: req.t('tokenRequired') });
     }
     
     const decoded = jwt.verify(token, JWT_SECRET);
@@ -1459,7 +1484,7 @@ router.get("/perfil", async (req, res) => {
     
     if (!usuario) {
       console.log('❌ Usuario no encontrado en BD');
-      return res.status(404).json({ message: "Usuario no encontrado" });
+      return res.status(404).json({ message: req.t('userNotFound') });
     }
     
     console.log('✅ Usuario encontrado en BD:', {
@@ -1555,7 +1580,7 @@ router.get("/perfil", async (req, res) => {
   } catch (error) {
     console.error("❌ Error obteniendo perfil:", error);
     console.error("📋 Stack trace:", error.stack);
-    res.status(500).json({ message: "Error en el servidor" });
+    res.status(500).json({ message: req.t('serverError') });
   }
 });
 
@@ -1579,7 +1604,7 @@ router.put("/perfil", async (req, res) => {
     console.log('🔐 Token recibido:', token ? 'SÍ' : 'NO');
     
     if (!token) {
-      return res.status(401).json({ message: "Token requerido" });
+      return res.status(401).json({ message: req.t('tokenRequired') });
     }
     
     const decoded = jwt.verify(token, JWT_SECRET);
@@ -1589,7 +1614,7 @@ router.put("/perfil", async (req, res) => {
     
     if (!usuario) {
       console.log('❌ Usuario no encontrado');
-      return res.status(404).json({ message: "Usuario no encontrado" });
+      return res.status(404).json({ message: req.t('userNotFound') });
     }
     
     console.log('✅ Usuario encontrado:', usuario.name);
@@ -1600,7 +1625,7 @@ router.put("/perfil", async (req, res) => {
       const isMatch = await bcrypt.compare(passwordConfirm, usuario.pswd);
       if (!isMatch) {
         console.log('❌ Contraseña incorrecta');
-        return res.status(401).json({ message: "Contraseña incorrecta. No se guardaron los cambios." });
+        return res.status(401).json({ message: req.t('incorrectPasswordChangesNotSaved') });
       }
       console.log('✅ Contraseña correcta');
     }
@@ -1832,14 +1857,14 @@ router.put("/perfil", async (req, res) => {
     console.log('📤 Respuesta completa del PUT:', JSON.stringify(userResponse, null, 2));
     
     res.json({ 
-      message: "Perfil actualizado correctamente",
+      message: req.t('profileUpdatedOk'),
       user: userResponse
     });
     
   } catch (error) {
     console.error("❌ Error actualizando perfil:", error);
     console.error("📋 Stack trace:", error.stack);
-    res.status(500).json({ message: "Error en el servidor", error: error.message });
+    res.status(500).json({ message: req.t('serverError'), error: error.message });
   }
 });
 
@@ -1852,7 +1877,7 @@ router.put("/perfil/foto", upload.single("foto"), persistFoto, async (req, res) 
     console.log('🔐 Token recibido:', token ? 'SÍ' : 'NO');
     
     if (!token) {
-      return res.status(401).json({ message: "Token requerido" });
+      return res.status(401).json({ message: req.t('tokenRequired') });
     }
     
     const decoded = jwt.verify(token, JWT_SECRET);
@@ -1862,7 +1887,7 @@ router.put("/perfil/foto", upload.single("foto"), persistFoto, async (req, res) 
     
     if (!usuario) {
       console.log('❌ Usuario no encontrado en BD');
-      return res.status(404).json({ message: "Usuario no encontrado" });
+      return res.status(404).json({ message: req.t('userNotFound') });
     }
     
     console.log('✅ Usuario encontrado:', { 
@@ -1874,7 +1899,7 @@ router.put("/perfil/foto", upload.single("foto"), persistFoto, async (req, res) 
     // Verificar si se recibió un archivo
     if (!req.file) {
       console.log('❌ No se recibió ningún archivo');
-      return res.status(400).json({ message: "No se recibió ningún archivo" });
+      return res.status(400).json({ message: req.t('noFileReceived') });
     }
     
     console.log('📁 Archivo recibido:', {
@@ -1914,7 +1939,7 @@ router.put("/perfil/foto", upload.single("foto"), persistFoto, async (req, res) 
   } catch (error) {
     console.error('❌ Error actualizando foto:', error);
     console.error('📋 Stack trace:', error.stack);
-    res.status(500).json({ message: "Error interno al actualizar foto" });
+    res.status(500).json({ message: req.t('photoUpdateError') });
   }
 });
 
@@ -1929,7 +1954,7 @@ router.delete("/usuarios", async (req, res) => {
   try {
     if (!token) {
       console.log('❌ No hay token en la petición');
-      return res.status(401).json({ message: "Token requerido" });
+      return res.status(401).json({ message: req.t('tokenRequired') });
     }
     
     console.log('🔐 Verificando token...');
@@ -1940,7 +1965,7 @@ router.delete("/usuarios", async (req, res) => {
     
     if (!usuarioActual) {
       console.log('❌ Usuario actual no encontrado en la base de datos');
-      return res.status(404).json({ message: "Usuario no encontrado" });
+      return res.status(404).json({ message: req.t('userNotFound') });
     }
     
     console.log('✅ Usuario actual encontrado:', { 
@@ -1952,12 +1977,12 @@ router.delete("/usuarios", async (req, res) => {
     // Solo admin puede eliminar usuarios
     if (usuarioActual.role !== "admin") {
       console.log('❌ Usuario no es admin, rol actual:', usuarioActual.role);
-      return res.status(403).json({ message: "No tienes permisos para eliminar usuarios" });
+      return res.status(403).json({ message: req.t('noPermissionDeleteUsers') });
     }
     
     if (!loginOrEmail) {
       console.log('❌ No se proporcionó loginOrEmail');
-      return res.status(400).json({ message: "Login o email requerido" });
+      return res.status(400).json({ message: req.t('loginOrEmailRequired') });
     }
     
     console.log('🔍 Buscando usuario a eliminar:', loginOrEmail);
@@ -1971,7 +1996,7 @@ router.delete("/usuarios", async (req, res) => {
     
     if (!usuarioAEliminar) {
       console.log('❌ Usuario a eliminar no encontrado:', loginOrEmail);
-      return res.status(404).json({ message: "Usuario a eliminar no encontrado" });
+      return res.status(404).json({ message: req.t('userToDeleteNotFound') });
     }
     
     console.log('✅ Usuario a eliminar encontrado:', { 
@@ -1983,7 +2008,7 @@ router.delete("/usuarios", async (req, res) => {
     // No permitir eliminar al propio usuario
     if (usuarioAEliminar._id.toString() === usuarioActual._id.toString()) {
       console.log('❌ Intento de eliminar propia cuenta');
-      return res.status(400).json({ message: "No puedes eliminar tu propia cuenta" });
+      return res.status(400).json({ message: req.t('cannotDeleteOwnAccount') });
     }
     
     console.log('🗑️ Procediendo a eliminar usuario...');
@@ -1991,7 +2016,7 @@ router.delete("/usuarios", async (req, res) => {
     console.log('✅ Usuario eliminado exitosamente');
     
     res.json({ 
-      message: "Usuario eliminado correctamente",
+      message: req.t('userDeletedSuccess'),
       usuarioEliminado: {
         login: usuarioAEliminar.login,
         email: usuarioAEliminar.email
@@ -2000,7 +2025,7 @@ router.delete("/usuarios", async (req, res) => {
     
   } catch (error) {
     console.error("Error eliminando usuario:", error);
-    res.status(500).json({ message: "Error en el servidor" });
+    res.status(500).json({ message: req.t('serverError') });
   }
 });
 
@@ -2017,7 +2042,7 @@ router.post("/register", upload.single("foto"), persistFoto, async (req, res) =>
     
     if (!token) {
       console.log('❌ No hay token');
-      return res.status(401).json({ message: "Token requerido" });
+      return res.status(401).json({ message: req.t('tokenRequired') });
     }
     
     const decoded = jwt.verify(token, JWT_SECRET);
@@ -2027,7 +2052,7 @@ router.post("/register", upload.single("foto"), persistFoto, async (req, res) =>
     
     if (!usuarioActual) {
       console.log('❌ Usuario no encontrado en BD');
-      return res.status(404).json({ message: "Usuario no encontrado" });
+      return res.status(404).json({ message: req.t('userNotFound') });
     }
     
     console.log('✅ Usuario actual:', { 
@@ -2041,25 +2066,25 @@ router.post("/register", upload.single("foto"), persistFoto, async (req, res) =>
     if (usuarioActual.role !== "admin" && usuarioActual.role !== "soporte") {
       console.log('❌ Usuario sin permisos. Rol:', usuarioActual.role);
       return res.status(403).json({ 
-        message: "No tienes permisos para crear usuarios. Solo administradores y soporte pueden crear usuarios." 
+        message: req.t('noPermissionCreateUsers') 
       });
     }
     
     if (!nombre || !correo || !password || !cedula) {
       console.log('❌ Faltan campos obligatorios');
-      return res.status(400).json({ message: "Nombre, correo, cédula y contraseña son obligatorios" });
+      return res.status(400).json({ message: req.t('nameEmailCedulaPasswordRequired') });
     }
 
     const rolAsignado = rol || "usuario";
     if (!esRolValido(rolAsignado)) {
-      return res.status(400).json({ message: `Rol inválido. Valores permitidos: admin, soporte, usuario, visualizador, puertos` });
+      return res.status(400).json({ message: req.t('invalidRole') });
     }
     
     // Validar que la cédula no esté vacía
     const cedulaTrim = cedula.trim();
     if (!cedulaTrim) {
       console.log('❌ Cédula vacía');
-      return res.status(400).json({ message: "La cédula es obligatoria" });
+      return res.status(400).json({ message: req.t('cedulaRequired') });
     }
     
     // Verificar si el usuario ya existe (por login/cedula o email)
@@ -2073,7 +2098,7 @@ router.post("/register", upload.single("foto"), persistFoto, async (req, res) =>
     
     if (usuarioExistente) {
       console.log('❌ Usuario ya existe:', { email: correo, cedula: cedulaTrim });
-      return res.status(409).json({ message: "El usuario ya existe (correo o cédula ya registrados)" });
+      return res.status(409).json({ message: req.t('userAlreadyExists') });
     }
     
     // Crear nuevo usuario usando la cédula como login
@@ -2107,7 +2132,7 @@ router.post("/register", upload.single("foto"), persistFoto, async (req, res) =>
     console.log('📝 === FIN REGISTRO DE USUARIO ===');
     
     res.status(201).json({ 
-      message: "Usuario creado correctamente",
+      message: req.t('userCreatedSuccess'),
       usuario: {
         id: nuevoUsuario._id,
         name: nuevoUsuario.name,
@@ -2122,11 +2147,11 @@ router.post("/register", upload.single("foto"), persistFoto, async (req, res) =>
     
     // Si es un error de JWT, retornar 401
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-      return res.status(401).json({ message: "Token inválido o expirado" });
+      return res.status(401).json({ message: req.t('invalidOrExpiredToken') });
     }
     
     res.status(500).json({ 
-      message: "Error en el servidor",
+      message: req.t('serverError'),
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
@@ -2182,7 +2207,7 @@ router.post("/test-email", async (req, res) => {
     
     res.json({ 
       success: true, 
-      message: "Email de prueba enviado correctamente",
+      message: req.t('testEmailSent'),
       messageId: info.messageId
     });
     
@@ -2190,7 +2215,7 @@ router.post("/test-email", async (req, res) => {
     console.error('❌ Error en prueba de email:', error);
     res.status(500).json({ 
       success: false, 
-      message: "Error enviando email de prueba",
+      message: req.t('testEmailError'),
       error: error.message 
     });
   }
@@ -2206,7 +2231,7 @@ router.get("/verificar-sesion", async (req, res) => {
     
     if (!token) {
       console.log('⚠️ Heartbeat sin token');
-      return res.status(401).json({ message: "Token no proporcionado" });
+      return res.status(401).json({ message: req.t('tokenNotProvided') });
     }
     
     let decoded;
@@ -2215,13 +2240,13 @@ router.get("/verificar-sesion", async (req, res) => {
       console.log('✅ Token válido para heartbeat:', decoded.login);
     } catch (error) {
       console.log('⚠️ Token inválido en heartbeat:', error.message);
-      return res.status(401).json({ message: "Token inválido o expirado" });
+      return res.status(401).json({ message: req.t('invalidOrExpiredToken') });
     }
 
     // Sesión limitada del enlace de subtarea: no hay SecurUser / SesionUsuario
     if (decoded?.externo || decoded?.role === 'externo') {
       return res.json({
-        message: "Sesión externa activa",
+        message: req.t('externalSessionActive'),
         externo: true,
         usuario: {
           id: decoded.id,
@@ -2235,7 +2260,7 @@ router.get("/verificar-sesion", async (req, res) => {
     const usuario = await SecurUser.findById(decoded.id);
     if (!usuario || usuario.active !== "Y") {
       console.log('⚠️ Usuario no encontrado o inactivo en heartbeat');
-      return res.status(401).json({ message: "Usuario no encontrado o inactivo" });
+      return res.status(401).json({ message: req.t('userNotFoundOrInactive') });
     }
     
     // Actualizar última actividad de la sesión activa
@@ -2254,7 +2279,7 @@ router.get("/verificar-sesion", async (req, res) => {
     }
     
     res.json({ 
-      message: "Sesión activa",
+      message: req.t('sessionActive'),
       usuario: {
         id: usuario._id,
         login: usuario.login,
@@ -2263,7 +2288,7 @@ router.get("/verificar-sesion", async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error en verificar-sesion:', error);
-    res.status(500).json({ message: "Error al verificar sesión" });
+    res.status(500).json({ message: req.t('sessionCheckError') });
   }
 });
 
@@ -2275,21 +2300,21 @@ router.get("/usuario/:login", async (req, res) => {
     // Verificar que el usuario que hace la petición sea admin o soporte
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) {
-      return res.status(401).json({ message: "Token no proporcionado" });
+      return res.status(401).json({ message: req.t('tokenNotProvided') });
     }
 
     const decoded = jwt.verify(token, JWT_SECRET);
     const usuarioActual = await SecurUser.findOne({ login: decoded.login });
     
     if (!usuarioActual || (usuarioActual.role !== 'admin' && usuarioActual.role !== 'soporte')) {
-      return res.status(403).json({ message: "No tienes permisos para realizar esta acción" });
+      return res.status(403).json({ message: req.t('noPermissionForAction') });
     }
 
     // Buscar el usuario por login
     const usuario = await SecurUser.findOne({ login: login });
     if (!usuario) {
       console.log('❌ Usuario no encontrado con login:', login);
-      return res.status(404).json({ message: "Usuario no encontrado" });
+      return res.status(404).json({ message: req.t('userNotFound') });
     }
 
     console.log('✅ Usuario encontrado por login:', usuario.login);
@@ -2310,7 +2335,7 @@ router.get("/usuario/:login", async (req, res) => {
     res.json(usuarioSinPassword);
   } catch (error) {
     console.error("Error al obtener usuario:", error);
-    res.status(500).json({ message: "Error en el servidor" });
+    res.status(500).json({ message: req.t('serverError') });
   }
 });
 
@@ -2323,21 +2348,21 @@ router.put("/actualizar-usuario/:login", async (req, res) => {
     // Verificar que el usuario que hace la petición sea admin o soporte
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) {
-      return res.status(401).json({ message: "Token no proporcionado" });
+      return res.status(401).json({ message: req.t('tokenNotProvided') });
     }
 
     const decoded = jwt.verify(token, JWT_SECRET);
     const usuarioActual = await SecurUser.findOne({ login: decoded.login });
     
     if (!usuarioActual || (usuarioActual.role !== 'admin' && usuarioActual.role !== 'soporte')) {
-      return res.status(403).json({ message: "No tienes permisos para realizar esta acción" });
+      return res.status(403).json({ message: req.t('noPermissionForAction') });
     }
 
     // Buscar el usuario por login
     const usuario = await SecurUser.findOne({ login: login });
     if (!usuario) {
       console.log('❌ Usuario no encontrado con login:', login);
-      return res.status(404).json({ message: "Usuario no encontrado" });
+      return res.status(404).json({ message: req.t('userNotFound') });
     }
 
     // Actualizar campos permitidos
@@ -2346,7 +2371,7 @@ router.put("/actualizar-usuario/:login", async (req, res) => {
     if (phone !== undefined) usuario.phone = phone;
     if (role !== undefined) {
       if (!esRolValido(role)) {
-        return res.status(400).json({ message: 'Rol inválido. Valores permitidos: admin, soporte, usuario, visualizador, puertos' });
+        return res.status(400).json({ message: req.t('invalidRole') });
       }
       usuario.role = role;
     }
@@ -2363,7 +2388,7 @@ router.put("/actualizar-usuario/:login", async (req, res) => {
 
     res.json({
       success: true,
-      message: `Usuario ${usuario.name} actualizado exitosamente`,
+      message: req.t('userUpdatedSuccess', { name: usuario.name }),
       usuario: {
         _id: usuario._id,
         login: usuario.login,
@@ -2377,7 +2402,7 @@ router.put("/actualizar-usuario/:login", async (req, res) => {
 
   } catch (error) {
     console.error("Error al actualizar usuario:", error);
-    res.status(500).json({ message: "Error en el servidor" });
+    res.status(500).json({ message: req.t('serverError') });
   }
 });
 
@@ -2391,7 +2416,7 @@ router.get("/test-foto/:userId", async (req, res) => {
     const usuario = await SecurUser.findById(userId);
     if (!usuario) {
       console.log('❌ Usuario no encontrado');
-      return res.status(404).json({ message: "Usuario no encontrado" });
+      return res.status(404).json({ message: req.t('userNotFound') });
     }
     
     console.log('✅ Usuario encontrado:', {
@@ -2421,7 +2446,7 @@ router.get("/test-foto/:userId", async (req, res) => {
     
   } catch (error) {
     console.error('❌ Error en prueba de foto:', error);
-    res.status(500).json({ message: "Error en el servidor", error: error.message });
+    res.status(500).json({ message: req.t('serverError'), error: error.message });
   }
 });
 
@@ -2446,9 +2471,9 @@ router.post("/logout", async (req, res) => {
       if (req.headers['content-type']?.includes('multipart/form-data') || 
           req.headers['content-type']?.includes('application/x-www-form-urlencoded') ||
           Object.keys(req.body || {}).length > 0) {
-        return res.json({ message: "Sesión cerrada" });
+        return res.json({ message: req.t('sessionClosed') });
       }
-      return res.status(401).json({ message: "Token no proporcionado" });
+      return res.status(401).json({ message: req.t('tokenNotProvided') });
     }
     
     let decoded;
@@ -2468,17 +2493,17 @@ router.post("/logout", async (req, res) => {
         if (partialDecoded && partialDecoded.id) {
           decoded = partialDecoded;
         } else {
-          return res.json({ message: "Sesión cerrada" });
+          return res.json({ message: req.t('sessionClosed') });
         }
       } catch (e) {
-        return res.json({ message: "Sesión cerrada" });
+        return res.json({ message: req.t('sessionClosed') });
       }
     }
     
     // Sesiones externas (enlace de subtarea) no se registran en SesionUsuario
     // y su id no es un ObjectId; no hay nada que cerrar en BD.
     if (decoded?.externo || !mongoose.Types.ObjectId.isValid(String(decoded?.id || ''))) {
-      return res.json({ message: "Sesión cerrada" });
+      return res.json({ message: req.t('sessionClosed') });
     }
 
     // Buscar la sesión activa más reciente del usuario
@@ -2502,11 +2527,11 @@ router.post("/logout", async (req, res) => {
       console.log(`✅ Sesión cerrada para usuario ID: ${decoded.id}, duración: ${duracionMinutos}m ${duracionSegundos}s`);
     }
     
-    res.json({ message: "Sesión cerrada correctamente" });
+    res.json({ message: req.t('sessionClosedSuccess') });
   } catch (error) {
     console.error("❌ Error en logout:", error);
     // Aún responder OK para no bloquear el cierre del navegador
-    res.json({ message: "Sesión cerrada" });
+    res.json({ message: req.t('sessionClosed') });
   }
 });
 
@@ -2519,14 +2544,14 @@ router.post("/cerrar-sesiones-inactivas", async (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     
     if (!token) {
-      return res.status(401).json({ message: "Token no proporcionado" });
+      return res.status(401).json({ message: req.t('tokenNotProvided') });
     }
     
     const decoded = jwt.verify(token, JWT_SECRET);
     
     // Solo admin puede ejecutar esta acción
     if (decoded.role !== 'admin') {
-      return res.status(403).json({ message: "No tienes permisos" });
+      return res.status(403).json({ message: req.t('noPermissions') });
     }
     
     // Cerrar sesiones que han estado activas por más de 7 horas 50 minutos
@@ -2557,12 +2582,12 @@ router.post("/cerrar-sesiones-inactivas", async (req, res) => {
     console.log(`✅ ${cerradas} sesiones inactivas cerradas automáticamente`);
     
     res.json({ 
-      message: `${cerradas} sesiones inactivas cerradas`,
+      message: req.t('inactiveSessionsClosed', { count: cerradas }),
       cerradas: cerradas
     });
   } catch (error) {
     console.error("❌ Error cerrando sesiones inactivas:", error);
-    res.status(500).json({ message: "Error al cerrar sesiones inactivas" });
+    res.status(500).json({ message: req.t('closeInactiveSessionsError') });
   }
 });
 
@@ -2572,14 +2597,14 @@ router.get("/estadisticas-tiempo-uso", async (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     
     if (!token) {
-      return res.status(401).json({ message: "Token no proporcionado" });
+      return res.status(401).json({ message: req.t('tokenNotProvided') });
     }
     
     const decoded = jwt.verify(token, JWT_SECRET);
     
     // Verificar que el usuario sea admin o soporte
     if (decoded.role !== 'admin' && decoded.role !== 'soporte') {
-      return res.status(403).json({ message: "No tienes permisos para ver estas estadísticas" });
+      return res.status(403).json({ message: req.t('noPermissionViewStats') });
     }
     
     // IMPORTANTE: Obtener TODOS los usuarios activos primero
@@ -2844,7 +2869,7 @@ router.get("/estadisticas-tiempo-uso", async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error al obtener estadísticas:", error);
-    res.status(500).json({ message: "Error al obtener estadísticas de tiempo de uso" });
+    res.status(500).json({ message: req.t('usageStatsError') });
   }
 });
 
@@ -2854,14 +2879,14 @@ router.get("/debug-sesiones", async (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     
     if (!token) {
-      return res.status(401).json({ message: "Token no proporcionado" });
+      return res.status(401).json({ message: req.t('tokenNotProvided') });
     }
     
     const decoded = jwt.verify(token, JWT_SECRET);
     
     // Verificar que el usuario sea admin o soporte
     if (decoded.role !== 'admin' && decoded.role !== 'soporte') {
-      return res.status(403).json({ message: "No tienes permisos" });
+      return res.status(403).json({ message: req.t('noPermissions') });
     }
     
     const totalSesiones = await SesionUsuario.countDocuments();
@@ -2981,7 +3006,7 @@ router.get("/debug-sesiones", async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error en debug sesiones:", error);
-    res.status(500).json({ message: "Error al obtener información de debug" });
+    res.status(500).json({ message: req.t('debugInfoError') });
   }
 });
 
@@ -2991,7 +3016,7 @@ router.get("/tiempo-uso/:usuarioId", async (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     
     if (!token) {
-      return res.status(401).json({ message: "Token no proporcionado" });
+      return res.status(401).json({ message: req.t('tokenNotProvided') });
     }
     
     const decoded = jwt.verify(token, JWT_SECRET);
@@ -2999,7 +3024,7 @@ router.get("/tiempo-uso/:usuarioId", async (req, res) => {
     
     // Verificar que el usuario sea admin, soporte, o esté consultando su propio tiempo
     if (decoded.role !== 'admin' && decoded.role !== 'soporte' && decoded.id !== usuarioId) {
-      return res.status(403).json({ message: "No tienes permisos para ver esta información" });
+      return res.status(403).json({ message: req.t('noPermissionViewInfo') });
     }
     
     // Obtener todas las sesiones del usuario
@@ -3056,7 +3081,7 @@ router.get("/tiempo-uso/:usuarioId", async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error al obtener tiempo de uso:", error);
-    res.status(500).json({ message: "Error al obtener tiempo de uso" });
+    res.status(500).json({ message: req.t('usageTimeError') });
   }
 });
 
@@ -3075,34 +3100,34 @@ router.put("/usuarios/:id/vacaciones", async (req, res) => {
   
   try {
     if (!token) {
-      return res.status(401).json({ message: "Token requerido" });
+      return res.status(401).json({ message: req.t('tokenRequired') });
     }
     
     const decoded = jwt.verify(token, JWT_SECRET);
     const usuarioActual = await SecurUser.findById(decoded.id);
     
     if (!usuarioActual) {
-      return res.status(404).json({ message: "Usuario no encontrado" });
+      return res.status(404).json({ message: req.t('userNotFound') });
     }
     
     // Verificar que el usuario esté en la lista de permitidos
     if (!USUARIOS_PERMITIDOS_VACACIONES.includes(usuarioActual.login)) {
       console.log(`❌ Usuario ${usuarioActual.login} intentó cambiar estado de vacaciones pero no está autorizado`);
       return res.status(403).json({ 
-        message: "No tienes permisos para gestionar el estado de vacaciones. Solo usuarios autorizados pueden realizar esta acción." 
+        message: req.t('noPermissionManageVacations') 
       });
     }
     
     console.log(`✅ Usuario ${usuarioActual.login} autorizado para gestionar vacaciones`);
     
     if (typeof enVacaciones !== 'boolean') {
-      return res.status(400).json({ message: "El campo enVacaciones debe ser un booleano" });
+      return res.status(400).json({ message: req.t('enVacacionesMustBeBoolean') });
     }
     
     const usuario = await SecurUser.findById(id);
     
     if (!usuario) {
-      return res.status(404).json({ message: "Usuario a modificar no encontrado" });
+      return res.status(404).json({ message: req.t('userToModifyNotFound') });
     }
     
     usuario.enVacaciones = enVacaciones;
@@ -3124,7 +3149,7 @@ router.put("/usuarios/:id/vacaciones", async (req, res) => {
     
   } catch (error) {
     console.error("Error cambiando estado de vacaciones:", error);
-    res.status(500).json({ message: "Error en el servidor" });
+    res.status(500).json({ message: req.t('serverError') });
   }
 });
 

@@ -52,15 +52,29 @@ async function upsertNombre(tipo, nombre) {
   await PuertosCatalogo.create({ tipo, nombre: limpio, activo: true });
 }
 
-export async function crearItem({ tipo, nombre }) {
+export async function crearItem({ tipo, nombre, aseguradoraNombre = null }) {
   const limpio = String(nombre ?? '').trim();
   if (!limpio) throw new Error('El nombre es obligatorio');
   if (!TIPOS.includes(tipo)) throw new Error('Tipo de catálogo no válido');
 
+  let padre = null;
+  if (tipo === 'sucursal') {
+    padre = String(aseguradoraNombre ?? '').trim() || null;
+    if (!padre) throw new Error('Debe indicar la aseguradora de la sucursal');
+  }
+
   const existente = await PuertosCatalogo.findOne({ tipo, nombre: limpio });
   if (existente) {
+    // Si ya existe la sucursal, actualizar el vínculo con la aseguradora (no bloquear).
+    if (tipo === 'sucursal' && padre) {
+      existente.activo = true;
+      existente.aseguradoraNombre = padre;
+      await existente.save();
+      return existente.toObject();
+    }
     if (!existente.activo) {
       existente.activo = true;
+      if (tipo === 'sucursal') existente.aseguradoraNombre = padre;
       await existente.save();
       return existente.toObject();
     }
@@ -70,14 +84,26 @@ export async function crearItem({ tipo, nombre }) {
   const todos = await PuertosCatalogo.find({ tipo }).lean();
   const duplicado = todos.find((i) => normCatalogoNombre(i.nombre) === normCatalogoNombre(limpio));
   if (duplicado) {
+    if (tipo === 'sucursal' && padre) {
+      await PuertosCatalogo.updateOne(
+        { _id: duplicado._id },
+        { $set: { activo: true, nombre: limpio, aseguradoraNombre: padre } }
+      );
+      return PuertosCatalogo.findById(duplicado._id).lean();
+    }
     if (!duplicado.activo) {
-      await PuertosCatalogo.updateOne({ _id: duplicado._id }, { $set: { activo: true, nombre: limpio } });
+      await PuertosCatalogo.updateOne(
+        { _id: duplicado._id },
+        { $set: { activo: true, nombre: limpio, ...(tipo === 'sucursal' ? { aseguradoraNombre: padre } : {}) } }
+      );
       return PuertosCatalogo.findById(duplicado._id).lean();
     }
     throw new Error('Ya existe en el catálogo de Puertos');
   }
 
-  const doc = await PuertosCatalogo.create({ tipo, nombre: limpio, activo: true });
+  const payload = { tipo, nombre: limpio, activo: true };
+  if (tipo === 'sucursal') payload.aseguradoraNombre = padre;
+  const doc = await PuertosCatalogo.create(payload);
   return doc.toObject();
 }
 
@@ -99,7 +125,7 @@ const CAMPOS_ACTA_POR_TIPO = {
   estado_acta: 'estado',
 };
 
-export async function actualizarItem(id, { nombre }) {
+export async function actualizarItem(id, { nombre, aseguradoraNombre }) {
   const limpio = String(nombre ?? '').trim();
   if (!limpio) throw new Error('El nombre es obligatorio');
 
@@ -107,17 +133,31 @@ export async function actualizarItem(id, { nombre }) {
   if (!item) throw new Error('Registro no encontrado');
 
   const nombreAnterior = item.nombre;
-  if (normCatalogoNombre(nombreAnterior) === normCatalogoNombre(limpio)) {
-    return item.toObject();
+  const mismoNombre = normCatalogoNombre(nombreAnterior) === normCatalogoNombre(limpio);
+
+  if (!mismoNombre) {
+    const todos = await PuertosCatalogo.find({ tipo: item.tipo, _id: { $ne: item._id } }).lean();
+    const duplicado = todos.find((i) => normCatalogoNombre(i.nombre) === normCatalogoNombre(limpio));
+    if (duplicado) {
+      throw new Error('Ya existe otro ítem con ese nombre en el catálogo');
+    }
+    item.nombre = limpio;
   }
 
-  const todos = await PuertosCatalogo.find({ tipo: item.tipo, _id: { $ne: item._id } }).lean();
-  const duplicado = todos.find((i) => normCatalogoNombre(i.nombre) === normCatalogoNombre(limpio));
-  if (duplicado) {
-    throw new Error('Ya existe otro ítem con ese nombre en el catálogo');
+  if (item.tipo === 'sucursal' && aseguradoraNombre !== undefined) {
+    const padre = String(aseguradoraNombre ?? '').trim() || null;
+    if (!padre) throw new Error('Debe indicar la aseguradora de la sucursal');
+    item.aseguradoraNombre = padre;
   }
 
-  item.nombre = limpio;
+  // Si se renombra una aseguradora, propagar el nombre a sucursales vinculadas
+  if (item.tipo === 'aseguradora' && !mismoNombre) {
+    await PuertosCatalogo.updateMany(
+      { tipo: 'sucursal', aseguradoraNombre: nombreAnterior },
+      { $set: { aseguradoraNombre: limpio } }
+    );
+  }
+
   await item.save();
 
   const campo = CAMPOS_ACTA_POR_TIPO[item.tipo];

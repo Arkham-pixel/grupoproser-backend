@@ -2,6 +2,7 @@ import Complex from '../models/Complex.js';
 import Estado from '../models/Estado.js';
 import Responsable from '../models/Responsable.js';
 import { enviarEmailAlertas } from './emailService.js';
+import { withRecipientLocale } from '../utils/resolveUserLocale.js';
 import { obtenerProtocoloActivo } from './protocoloConfigService.js';
 import { evaluarProtocoloCaso, horasEntre, tieneDocumentoEnHistorialDocs } from './protocoloSiniestrosUtils.js';
 import { CAMPO_ANEXO_A_TIPO_HISTORIAL, alinearCamposProtocoloDesdeHistorialDocs } from '../config/ajusteTrazabilidadComplexMap.js';
@@ -707,7 +708,12 @@ export const enviarAlertasEmail = async (codigoResponsable, opciones = {}) => {
     };
     
     // Enviar email
-    const resultado = await enviarEmailAlertas(datosEmail);
+    const resultado = await enviarEmailAlertas(
+      await withRecipientLocale(datosEmail, {
+        email: responsable.email,
+        login: codigoResponsable,
+      })
+    );
 
     if (resultado?.success !== false) {
       await Responsable.updateOne(

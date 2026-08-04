@@ -10,6 +10,7 @@ import { corsMiddleware } from "./config/corsConfig.js";
 import { helmetMiddleware, loginRateLimitMiddleware } from "./config/httpSecurity.js";
 import { restringirExterno } from "./middleware/restringirExterno.js";
 import { resolveFrontendUrl } from "./config/platformUrls.js";
+import { localeMiddleware } from './middleware/locale.js';
 
 import authRoutes from "./routes/auth.js";
 import securAuthRoutes from "./routes/securAuth.js";
@@ -98,6 +99,7 @@ app.use((req, res, next) => {
 // Aumentado a 500mb para permitir más de 22 fotos en formularios
 app.use(express.json({ limit: '500mb' }));
 app.use(express.urlencoded({ limit: '500mb', extended: true }));
+app.use(localeMiddleware);
 
 // 2️ Carpeta uploads fija respecto a este proyecto (backend/uploads), no depende del cwd.
 const uploadsDir = UPLOADS_ROOT;
