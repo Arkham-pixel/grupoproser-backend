@@ -24,9 +24,20 @@ const esInspeccionAsegurado = (doc = {}) => {
   return labor.includes('INSPECCIÓN ASEGURADO') || labor.includes('INSPECCION ASEGURADO');
 };
 
+/** Casos de inspección Motorysa. */
+const esInspeccionMotorysa = (doc = {}) => {
+  if (doc.tipoRegistro === 'inspeccion_motorysa') return true;
+  const informe = doc.informeInspeccionMotorysa;
+  if (informe && typeof informe === 'object' && Object.keys(informe).length > 0) return true;
+  const labor = String(doc.laborRealizada || '').toUpperCase();
+  return labor.includes('INSPECCIÓN MOTORYSA') || labor.includes('INSPECCION MOTORYSA');
+};
+
 const esCasoGranel = (doc = {}) => {
   if (doc.tipoRegistro === 'caso_granel') return true;
-  if (doc.tipoRegistro === 'inspeccion_asegurado') return false;
+  if (doc.tipoRegistro === 'inspeccion_asegurado' || doc.tipoRegistro === 'inspeccion_motorysa') {
+    return false;
+  }
 
   const labor = String(doc.laborRealizada || '').toUpperCase();
   if (labor.includes('GRANEL')) return true;
@@ -62,6 +73,9 @@ const normalizarTipoRegistroCaso = (datos = {}) => {
       return { ...datos, tipoRegistro: 'caso_granel' };
     }
     return { ...datos, tipoRegistro: 'caso_exportacion' };
+  }
+  if (datos.tipoRegistro === 'inspeccion_motorysa' || esInspeccionMotorysa(datos)) {
+    return { ...datos, tipoRegistro: 'inspeccion_motorysa' };
   }
   if (esInspeccionAsegurado(datos)) {
     return { ...datos, tipoRegistro: 'inspeccion_asegurado' };
@@ -324,6 +338,8 @@ function sanitizarInformeInspeccionAsegurado(informe = {}) {
   return out;
 }
 
+const sanitizarInformeInspeccionMotorysa = sanitizarInformeInspeccionAsegurado;
+
 const generarConsecutivoCaso = async () => {
   const year = new Date().getFullYear();
   const prefix = `BT${year}`;
@@ -346,6 +362,41 @@ const generarConsecutivoCaso = async () => {
 };
 
 const mapCasoALista = (doc) => {
+  if (esInspeccionMotorysa(doc)) {
+    const informe = doc.informeInspeccionMotorysa || {};
+    const estado = doc.descripcionEstado || 'En curso';
+    return {
+      id: doc._id?.toString(),
+      tipoRegistro: 'inspeccion_motorysa',
+      nroReferencia: doc.consecutivo || informe.numeroPoliza || '',
+      consecutivo: doc.consecutivo || '',
+      numeroSolicitud: doc.numeroSolicitud || informe.numeroPoliza || '',
+      tipoInspeccion: doc.laborRealizada || 'INSPECCIÓN MOTORYSA',
+      tipoAveria: '',
+      regional: doc.ciudadRiesgo || informe.municipio || '',
+      lugar: doc.lugar || informe.patioOperacion || '',
+      actividad: informe.nombreMotonave ? `Motonave ${informe.nombreMotonave}` : '',
+      fecha: formatearFechaLista(doc.fechaInforme || informe.fecha || doc.createdAt),
+      fechaAsignacion: '',
+      fechaInforme: formatearFechaLista(doc.fechaInforme),
+      asegurado: doc.asgrBenfcro || informe.asegurado || informe.nombreCliente || '',
+      aseguradora:
+        doc.nombreAseguradora || informe.empresaCliente || doc.codiAsgrdra || '',
+      mercancia: informe.nombreMotonave || informe.modelosVehiculos || '',
+      estado,
+      estadoCodigo: doc.codiEstdo || 'en_curso',
+      estadoProgreso: 0,
+      estadoTotal: 0,
+      estadoDetalle: '',
+      avance: '',
+      beneficiario: doc.asgrBenfcro || informe.asegurado || '',
+      inspector: informe.inspectores || '',
+      creadoPor: doc.creadoPor || '',
+      actualizadoPor: doc.actualizadoPor || '',
+      fechaCreacion: formatearFechaLista(doc.createdAt),
+      fechaActualizacion: formatearFechaLista(doc.updatedAt),
+    };
+  }
   if (esInspeccionAsegurado(doc)) {
     const informe = doc.informeInspeccionAsegurado || {};
     const estado = doc.descripcionEstado || 'En curso';
@@ -556,7 +607,8 @@ export const listarRegistrosPuertos = async (req, res) => {
       tipo === 'caso_exportacion' ||
       tipo === 'caso' ||
       tipo === 'caso_granel' ||
-      tipo === 'inspeccion_asegurado';
+      tipo === 'inspeccion_asegurado' ||
+      tipo === 'inspeccion_motorysa';
     const incluirActas = !tipo || tipo === 'acta';
 
     const [casosRaw, actas] = await Promise.all([
@@ -569,7 +621,9 @@ export const listarRegistrosPuertos = async (req, res) => {
     ]);
 
     let casos = casosRaw;
-    if (tipo === 'inspeccion_asegurado') {
+    if (tipo === 'inspeccion_motorysa') {
+      casos = casosRaw.filter((c) => esInspeccionMotorysa(c));
+    } else if (tipo === 'inspeccion_asegurado') {
       casos = casosRaw.filter((c) => esInspeccionAsegurado(c));
     } else if (tipo === 'caso_granel') {
       casos = casosRaw.filter((c) => esCasoGranel(c));
@@ -577,13 +631,19 @@ export const listarRegistrosPuertos = async (req, res) => {
       casos = casosRaw.filter(
         (c) =>
           !esInspeccionAsegurado(c) &&
+          !esInspeccionMotorysa(c) &&
           !esCasoGranel(c) &&
           (!c.tipoRegistro || c.tipoRegistro === 'caso_exportacion')
       );
     }
 
     casos.forEach((doc) => {
-      if (esInspeccionAsegurado(doc) && doc.tipoRegistro !== 'inspeccion_asegurado') {
+      if (esInspeccionMotorysa(doc) && doc.tipoRegistro !== 'inspeccion_motorysa') {
+        doc.tipoRegistro = 'inspeccion_motorysa';
+        PuertosCaso.findByIdAndUpdate(doc._id, { tipoRegistro: 'inspeccion_motorysa' }, {
+          timestamps: false,
+        }).catch(() => {});
+      } else if (esInspeccionAsegurado(doc) && doc.tipoRegistro !== 'inspeccion_asegurado') {
         doc.tipoRegistro = 'inspeccion_asegurado';
         PuertosCaso.findByIdAndUpdate(doc._id, { tipoRegistro: 'inspeccion_asegurado' }, {
           timestamps: false,
@@ -643,7 +703,12 @@ export const crearPuertosCaso = async (req, res) => {
         datos.informeInspeccionAsegurado
       );
     }
-    if (datos.tipoRegistro === 'inspeccion_asegurado') {
+    if (datos.informeInspeccionMotorysa) {
+      datos.informeInspeccionMotorysa = sanitizarInformeInspeccionMotorysa(
+        datos.informeInspeccionMotorysa
+      );
+    }
+    if (datos.tipoRegistro === 'inspeccion_asegurado' || datos.tipoRegistro === 'inspeccion_motorysa') {
       datos.codiEstdo = datos.codiEstdo || 'en_curso';
       datos.descripcionEstado = datos.descripcionEstado || 'En curso';
     } else if (datos.tipoRegistro === 'caso_granel') {
@@ -711,7 +776,12 @@ export const actualizarPuertosCaso = async (req, res) => {
         datos.informeInspeccionAsegurado
       );
     }
-    if (datos.tipoRegistro === 'inspeccion_asegurado') {
+    if (datos.informeInspeccionMotorysa) {
+      datos.informeInspeccionMotorysa = sanitizarInformeInspeccionMotorysa(
+        datos.informeInspeccionMotorysa
+      );
+    }
+    if (datos.tipoRegistro === 'inspeccion_asegurado' || datos.tipoRegistro === 'inspeccion_motorysa') {
       datos.codiEstdo = datos.codiEstdo || 'en_curso';
       datos.descripcionEstado = datos.descripcionEstado || 'En curso';
     } else if (datos.tipoRegistro === 'caso_granel') {
