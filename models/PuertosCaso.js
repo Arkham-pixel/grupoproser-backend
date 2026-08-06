@@ -67,6 +67,9 @@ const PuertosCasoSchema = new mongoose.Schema(
     // Cuerpo del informe exportación (Precocidos y similares)
     informeExportacion: { type: mongoose.Schema.Types.Mixed, default: {} },
 
+    // Cuerpo del informe inspección granel
+    informeGranel: { type: mongoose.Schema.Types.Mixed, default: {} },
+
     // Facturación
     vlorServcios: Number,
     vlorGastos: Number,

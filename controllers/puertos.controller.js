@@ -10,6 +10,10 @@ import {
   aplicarEstadoCasoExportacion,
   estadoListaDesdeCaso,
 } from '../services/puertosEstadoExportacion.js';
+import {
+  aplicarEstadoCasoGranel,
+  estadoListaDesdeCasoGranel,
+} from '../services/puertosEstadoGranel.js';
 
 /** Casos de inspección asegurado (RII-CP-004) — también detecta registros antiguos sin tipoRegistro. */
 const esInspeccionAsegurado = (doc = {}) => {
@@ -20,9 +24,50 @@ const esInspeccionAsegurado = (doc = {}) => {
   return labor.includes('INSPECCIÓN ASEGURADO') || labor.includes('INSPECCION ASEGURADO');
 };
 
+const esCasoGranel = (doc = {}) => {
+  if (doc.tipoRegistro === 'caso_granel') return true;
+  if (doc.tipoRegistro === 'inspeccion_asegurado') return false;
+
+  const labor = String(doc.laborRealizada || '').toUpperCase();
+  if (labor.includes('GRANEL')) return true;
+
+  const informe = doc.informeGranel;
+  if (informe && typeof informe === 'object') {
+    if (
+      Array.isArray(informe.seguimientoGranel) ||
+      Array.isArray(informe.movimientoMercancia) ||
+      Array.isArray(informe.resumenEmails)
+    ) {
+      return true;
+    }
+    // Informe granel con contenido y sin tipo exportación forzado
+    if (
+      Object.keys(informe).length > 0 &&
+      (!doc.tipoRegistro || doc.tipoRegistro === 'caso_granel')
+    ) {
+      return true;
+    }
+  }
+  return false;
+};
+
 const normalizarTipoRegistroCaso = (datos = {}) => {
+  // Priorizar tipo explícito del cliente (granel / exportación) antes de heurísticas.
+  if (datos.tipoRegistro === 'caso_granel') {
+    return { ...datos, tipoRegistro: 'caso_granel' };
+  }
+  if (datos.tipoRegistro === 'caso_exportacion') {
+    // Si el payload dice exportación pero el contenido es granel, corregir.
+    if (esCasoGranel({ ...datos, tipoRegistro: undefined })) {
+      return { ...datos, tipoRegistro: 'caso_granel' };
+    }
+    return { ...datos, tipoRegistro: 'caso_exportacion' };
+  }
   if (esInspeccionAsegurado(datos)) {
     return { ...datos, tipoRegistro: 'inspeccion_asegurado' };
+  }
+  if (esCasoGranel(datos)) {
+    return { ...datos, tipoRegistro: 'caso_granel' };
   }
   if (!datos.tipoRegistro) {
     return { ...datos, tipoRegistro: 'caso_exportacion' };
@@ -182,6 +227,75 @@ function sanitizarInformeExportacion(informe = {}) {
   return out;
 }
 
+function collectPathsFromInformeGranel(informe = {}) {
+  const paths = [];
+  const buqueImg = informe.buque?.imagenBuque;
+  if (buqueImg?.ruta && isStoredFileReference(buqueImg.ruta)) {
+    paths.push(buqueImg.ruta);
+  }
+  const arraysImagenes = [
+    'imagenesMercancia',
+    'imagenesCondicionCarga',
+    'imagenesNovedadesAverias',
+    'imagenesEquiposOperacion',
+    'imagenesCondicionesMeteo',
+  ];
+  for (const key of arraysImagenes) {
+    for (const img of informe[key] || []) {
+      if (img?.ruta && isStoredFileReference(img.ruta)) paths.push(img.ruta);
+    }
+  }
+  for (const reg of informe.registrosFotograficosBodegas || []) {
+    for (const img of reg.imagenes || []) {
+      if (img?.ruta && isStoredFileReference(img.ruta)) paths.push(img.ruta);
+    }
+  }
+  for (const email of informe.resumenEmails || []) {
+    for (const img of email.imagenes || []) {
+      if (img?.ruta && isStoredFileReference(img.ruta)) paths.push(img.ruta);
+    }
+  }
+  return paths;
+}
+
+function sanitizarInformeGranel(informe = {}) {
+  if (!informe || typeof informe !== 'object') return informe;
+  const buque = { ...(informe.buque || {}) };
+  if (buque.imagenBuque) {
+    buque.imagenBuque = sanitizarImagenPersistida(buque.imagenBuque);
+  }
+  const sanitizarArrayImgs = (arr) => (arr || []).map(sanitizarImagenPersistida).filter(Boolean);
+
+  return {
+    ...informe,
+    buque,
+    imagenesMercancia: sanitizarArrayImgs(informe.imagenesMercancia),
+    imagenesCondicionCarga: sanitizarArrayImgs(informe.imagenesCondicionCarga),
+    imagenesNovedadesAverias: sanitizarArrayImgs(informe.imagenesNovedadesAverias),
+    imagenesEquiposOperacion: sanitizarArrayImgs(informe.imagenesEquiposOperacion),
+    imagenesCondicionesMeteo: sanitizarArrayImgs(informe.imagenesCondicionesMeteo),
+    equiposOperacionPuntos: sanitizarPuntos(informe.equiposOperacionPuntos),
+    novedadesAveriasPuntos: sanitizarPuntos(informe.novedadesAveriasPuntos),
+    conclusionesTexto: informe.conclusionesTexto || '',
+    conclusionesPuntos: sanitizarPuntos(informe.conclusionesPuntos),
+    registrosFotograficosBodegas: (informe.registrosFotograficosBodegas || [])
+      .filter((r) => r && typeof r === 'object')
+      .map((r) => ({
+        id: r.id,
+        titulo: r.titulo || '',
+        imagenes: sanitizarArrayImgs(r.imagenes),
+      })),
+    resumenEmails: (informe.resumenEmails || [])
+      .filter((e) => e && typeof e === 'object')
+      .map((e) => ({
+        id: e.id,
+        fecha: e.fecha || '',
+        evento: e.evento || '',
+        imagenes: sanitizarArrayImgs(e.imagenes),
+      })),
+  };
+}
+
 function sanitizarInformeInspeccionAsegurado(informe = {}) {
   if (!informe || typeof informe !== 'object') return informe;
   const sanitizarArrayImgs = (arr) => (arr || []).map(sanitizarImagenPersistida).filter(Boolean);
@@ -213,21 +327,22 @@ function sanitizarInformeInspeccionAsegurado(informe = {}) {
 const generarConsecutivoCaso = async () => {
   const year = new Date().getFullYear();
   const prefix = `BT${year}`;
-  const ultimo = await PuertosCaso.findOne({
-    consecutivo: { $regex: `^${prefix}` },
+  // Solo consecutivos bien formados: BT2026001/2026 (seq 3–4 dígitos). Ignora corruptos tipo BT202620262026003/2026.
+  const reValido = new RegExp(`^${prefix}(\\d{3,4})/${year}$`, 'i');
+  const candidatos = await PuertosCaso.find({
+    consecutivo: { $regex: `^${prefix}\\d{3,4}/${year}$` },
   })
-    .sort({ consecutivo: -1 })
     .select('consecutivo')
     .lean();
 
-  let secuencia = 1;
-  if (ultimo?.consecutivo) {
-    const match = ultimo.consecutivo.match(/(\d+)(?:\/\d+)?$/);
+  let maxSeq = 0;
+  for (const c of candidatos) {
+    const match = String(c.consecutivo || '').match(reValido);
     if (match) {
-      secuencia = parseInt(match[1], 10) + 1;
+      maxSeq = Math.max(maxSeq, parseInt(match[1], 10) || 0);
     }
   }
-  return `${prefix}${String(secuencia).padStart(3, '0')}/${year}`;
+  return `${prefix}${String(maxSeq + 1).padStart(3, '0')}/${year}`;
 };
 
 const mapCasoALista = (doc) => {
@@ -268,17 +383,22 @@ const mapCasoALista = (doc) => {
     };
   }
 
-  const estado = estadoListaDesdeCaso(doc);
+  const esGranel = esCasoGranel(doc);
+  const estado = esGranel ? estadoListaDesdeCasoGranel(doc) : estadoListaDesdeCaso(doc);
   const nombreAseguradora = String(doc.nombreAseguradora || '').trim();
   const codigoAseguradora = String(doc.codiAsgrdra || '').trim();
   const exportador = String(doc.asgrBenfcro || '').trim();
   return {
     id: doc._id?.toString(),
-    tipoRegistro: 'caso_exportacion',
+    tipoRegistro: esGranel ? 'caso_granel' : 'caso_exportacion',
     nroReferencia: doc.consecutivo || doc.numeroSolicitud || '',
     consecutivo: doc.consecutivo || '',
     numeroSolicitud: doc.numeroSolicitud || '',
-    tipoInspeccion: doc.laborRealizada || 'INSPECCIÓN EXPORTACIÓN',
+    tipoInspeccion:
+      doc.laborRealizada ||
+      (esGranel
+        ? 'INSPECCIÓN Y CONTROL PORTUARIO - MOTONAVE CON CARGA A GRANEL'
+        : 'INSPECCIÓN EXPORTACIÓN'),
     tipoAveria: '',
     regional: doc.ciudadRiesgo || '',
     lugar: doc.lugar || '',
@@ -432,7 +552,11 @@ export const listarRegistrosPuertos = async (req, res) => {
     }
 
     const incluirCasos =
-      !tipo || tipo === 'caso_exportacion' || tipo === 'caso' || tipo === 'inspeccion_asegurado';
+      !tipo ||
+      tipo === 'caso_exportacion' ||
+      tipo === 'caso' ||
+      tipo === 'caso_granel' ||
+      tipo === 'inspeccion_asegurado';
     const incluirActas = !tipo || tipo === 'acta';
 
     const [casosRaw, actas] = await Promise.all([
@@ -447,9 +571,14 @@ export const listarRegistrosPuertos = async (req, res) => {
     let casos = casosRaw;
     if (tipo === 'inspeccion_asegurado') {
       casos = casosRaw.filter((c) => esInspeccionAsegurado(c));
+    } else if (tipo === 'caso_granel') {
+      casos = casosRaw.filter((c) => esCasoGranel(c));
     } else if (tipo === 'caso_exportacion' || tipo === 'caso') {
       casos = casosRaw.filter(
-        (c) => !esInspeccionAsegurado(c) && (!c.tipoRegistro || c.tipoRegistro === 'caso_exportacion')
+        (c) =>
+          !esInspeccionAsegurado(c) &&
+          !esCasoGranel(c) &&
+          (!c.tipoRegistro || c.tipoRegistro === 'caso_exportacion')
       );
     }
 
@@ -459,10 +588,18 @@ export const listarRegistrosPuertos = async (req, res) => {
         PuertosCaso.findByIdAndUpdate(doc._id, { tipoRegistro: 'inspeccion_asegurado' }, {
           timestamps: false,
         }).catch(() => {});
+      } else if (esCasoGranel(doc) && doc.tipoRegistro !== 'caso_granel') {
+        doc.tipoRegistro = 'caso_granel';
+        PuertosCaso.findByIdAndUpdate(doc._id, { tipoRegistro: 'caso_granel' }, {
+          timestamps: false,
+        }).catch(() => {});
       }
       const desc = String(doc.descripcionEstado || doc.codiEstdo || '').trim();
       if (/^x{3,}$/i.test(desc)) {
-        PuertosCaso.findByIdAndUpdate(doc._id, aplicarEstadoCasoExportacion(doc), {
+        const patch = esCasoGranel(doc)
+          ? aplicarEstadoCasoGranel(doc)
+          : aplicarEstadoCasoExportacion(doc);
+        PuertosCaso.findByIdAndUpdate(doc._id, patch, {
           timestamps: false,
         }).catch(() => {});
       }
@@ -498,6 +635,9 @@ export const crearPuertosCaso = async (req, res) => {
     if (datos.informeExportacion) {
       datos.informeExportacion = sanitizarInformeExportacion(datos.informeExportacion);
     }
+    if (datos.informeGranel) {
+      datos.informeGranel = sanitizarInformeGranel(datos.informeGranel);
+    }
     if (datos.informeInspeccionAsegurado) {
       datos.informeInspeccionAsegurado = sanitizarInformeInspeccionAsegurado(
         datos.informeInspeccionAsegurado
@@ -506,6 +646,8 @@ export const crearPuertosCaso = async (req, res) => {
     if (datos.tipoRegistro === 'inspeccion_asegurado') {
       datos.codiEstdo = datos.codiEstdo || 'en_curso';
       datos.descripcionEstado = datos.descripcionEstado || 'En curso';
+    } else if (datos.tipoRegistro === 'caso_granel') {
+      datos = aplicarEstadoCasoGranel(datos);
     } else {
       datos = aplicarEstadoCasoExportacion(datos);
     }
@@ -561,6 +703,9 @@ export const actualizarPuertosCaso = async (req, res) => {
     if (datos.informeExportacion) {
       datos.informeExportacion = sanitizarInformeExportacion(datos.informeExportacion);
     }
+    if (datos.informeGranel) {
+      datos.informeGranel = sanitizarInformeGranel(datos.informeGranel);
+    }
     if (datos.informeInspeccionAsegurado) {
       datos.informeInspeccionAsegurado = sanitizarInformeInspeccionAsegurado(
         datos.informeInspeccionAsegurado
@@ -569,6 +714,8 @@ export const actualizarPuertosCaso = async (req, res) => {
     if (datos.tipoRegistro === 'inspeccion_asegurado') {
       datos.codiEstdo = datos.codiEstdo || 'en_curso';
       datos.descripcionEstado = datos.descripcionEstado || 'En curso';
+    } else if (datos.tipoRegistro === 'caso_granel') {
+      datos = aplicarEstadoCasoGranel(datos);
     } else {
       datos = aplicarEstadoCasoExportacion(datos);
     }
@@ -579,6 +726,13 @@ export const actualizarPuertosCaso = async (req, res) => {
       const rutasNuevas = collectPathsFromInformeExportacion(datos.informeExportacion);
       await deleteOrphanedStoredFiles(rutasAnteriores, rutasNuevas).catch((err) => {
         console.warn('⚠️ No se pudieron eliminar imágenes huérfanas del caso Puertos:', err.message);
+      });
+    }
+    if (casoAnterior?.informeGranel && datos.informeGranel) {
+      const rutasAnteriores = collectPathsFromInformeGranel(casoAnterior.informeGranel);
+      const rutasNuevas = collectPathsFromInformeGranel(datos.informeGranel);
+      await deleteOrphanedStoredFiles(rutasAnteriores, rutasNuevas).catch((err) => {
+        console.warn('⚠️ No se pudieron eliminar imágenes huérfanas granel:', err.message);
       });
     }
 
