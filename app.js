@@ -44,6 +44,7 @@ import inspeccionPropiedadesRoutes from './routes/inspeccionPropiedades.routes.j
 import puertosRoutes from './routes/puertos.routes.js';
 import documentoRoutes from './routes/documento.routes.js';
 import storageRoutes from './routes/storage.routes.js';
+import sgSstRoutes from './routes/sgSst.routes.js';
 import healthRoutes from './routes/health.routes.js';
 import multer from 'multer';
 import { mapS3ErrorMessage, isS3AccessDeniedError } from './services/s3StorageService.js';
@@ -134,6 +135,12 @@ if (!fs.existsSync(documentosUploadsDir)) {
   console.log("📁 Carpeta 'uploads/documentos/' creada... ✅");
 }
 
+const sgSstUploadsDir = path.join(uploadsDir, "sg-sst");
+if (!fs.existsSync(sgSstUploadsDir)) {
+  fs.mkdirSync(sgSstUploadsDir, { recursive: true });
+  console.log("📁 Carpeta 'uploads/sg-sst/' creada... ✅");
+}
+
 // Para producción: también servir archivos estáticos del frontend
 if (process.env.NODE_ENV === 'production') {
   const frontendPath = path.join(__dirname, '../frontend/dist');
@@ -200,6 +207,8 @@ console.log('✅ Ruta /api/puertos registrada');
 console.log('📝 Registrando ruta /api/documentos...');
 app.use('/api/documentos', documentoRoutes);
 console.log('✅ Ruta /api/documentos registrada exitosamente');
+app.use('/api/sg-sst', sgSstRoutes);
+console.log('✅ Ruta /api/sg-sst registrada exitosamente');
 app.use('/api/storage', storageRoutes);
 console.log('EMAIL_USER:', process.env.EMAIL_USER);
 console.log('EMAIL_PASS:', process.env.EMAIL_PASS ? '***' : 'NO DEFINIDO');

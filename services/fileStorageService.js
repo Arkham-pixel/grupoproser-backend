@@ -33,6 +33,7 @@ export const STORAGE_CATEGORIES = Object.freeze({
   PERFILES: 'perfiles',
   COMPLEX: 'complex',
   PUERTOS: 'puertos',
+  SGSST: 'sg-sst',
   GENERAL: 'general',
 });
 
@@ -79,6 +80,9 @@ export function buildStoredPublicPath({ driver, category, filename, s3Key }) {
   }
   if (category === STORAGE_CATEGORIES.EXPRESS) {
     return `/uploads/express/${filename}`;
+  }
+  if (category === STORAGE_CATEGORIES.SGSST) {
+    return `/uploads/sg-sst/${filename}`;
   }
   return `/uploads/${filename}`;
 }
@@ -393,6 +397,7 @@ export function getLocalMulterDestination(category, subfolder) {
     [STORAGE_CATEGORIES.RIESGOS]: path.join(UPLOADS_ROOT, 'riesgos'),
     [STORAGE_CATEGORIES.EXPRESS]: path.join(UPLOADS_ROOT, 'express'),
     [STORAGE_CATEGORIES.HISTORIAL]: path.join(UPLOADS_ROOT, 'historial'),
+    [STORAGE_CATEGORIES.SGSST]: path.join(UPLOADS_ROOT, 'sg-sst'),
   };
   return map[category] || UPLOADS_ROOT;
 }
