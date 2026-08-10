@@ -1491,7 +1491,7 @@ class HistorialController {
 
       // Log del tipo recibido para debugging
       console.log('🔍 Tipo de formulario recibido:', tipo);
-      console.log('🔍 Tipos válidos:', ['complex', 'riesgos', 'pol', 'inspeccion', 'inspeccion-propiedades', 'inspeccion-puertos', 'acta_inspeccion', 'maquinaria', 'siniestros', 'ajuste', 'ajuste_inicial', 'ajuste_preeliminar', 'ajuste_actualizacion', 'ajuste_informeFinal', 'matriz_riesgo_inicial', 'matriz_riesgo_final']);
+      console.log('🔍 Tipos válidos:', ['complex', 'riesgos', 'pol', 'inspeccion', 'inspeccion-propiedades', 'inspeccion-puertos', 'acta_inspeccion', 'maquinaria', 'siniestros', 'ajuste', 'ajuste_inicial', 'ajuste_preeliminar', 'ajuste_actualizacion', 'ajuste_informeFinal', 'catastrofico', 'matriz_riesgo_inicial', 'matriz_riesgo_final']);
 
       // Calcular tamaño aproximado del documento (solo para logging)
       // Ya no rechazamos por tamaño porque las imágenes se guardan como archivos físicos

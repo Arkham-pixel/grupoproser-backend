@@ -5,7 +5,7 @@ const historialFormularioSchema = new mongoose.Schema({
   tipo: {
     type: String,
     required: true,
-    enum: ['complex', 'riesgos', 'pol', 'inspeccion', 'inspeccion-propiedades', 'inspeccion-puertos', 'acta_inspeccion', 'maquinaria', 'siniestros', 'ajuste', 'ajuste_inicial', 'ajuste_preeliminar', 'ajuste_actualizacion', 'ajuste_informeFinal', 'matriz_riesgo_inicial', 'matriz_riesgo_final'],
+    enum: ['complex', 'riesgos', 'pol', 'inspeccion', 'inspeccion-propiedades', 'inspeccion-puertos', 'acta_inspeccion', 'maquinaria', 'siniestros', 'ajuste', 'ajuste_inicial', 'ajuste_preeliminar', 'ajuste_actualizacion', 'ajuste_informeFinal', 'catastrofico', 'matriz_riesgo_inicial', 'matriz_riesgo_final'],
     index: true
   },
   
