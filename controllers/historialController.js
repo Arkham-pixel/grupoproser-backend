@@ -299,7 +299,9 @@ const adjuntarAseguradoEnListado = async (formularios = []) => {
   if (ids.length === 0) return formularios;
 
   const extras = await HistorialFormulario.find({ _id: { $in: ids } })
-    .select('asegurado datos.asegurado datos.tomador tipo titulo')
+    .select(
+      'asegurado datos.asegurado datos.tomador datos.numeroSiniestro datos.nmroSinstro tipo titulo'
+    )
     .lean();
   const porId = new Map(extras.map((e) => [String(e._id), e]));
 
@@ -313,9 +315,16 @@ const adjuntarAseguradoEnListado = async (formularios = []) => {
     );
     const tipo = f.tipo || extra?.tipo;
     const titulo = enriquecerTituloAjusteConAsegurado(f.titulo || extra?.titulo, asegurado, tipo);
+    const numeroSiniestro = String(
+      f.numeroSiniestro ||
+        extra?.datos?.numeroSiniestro ||
+        extra?.datos?.nmroSinstro ||
+        ''
+    ).trim();
     return {
       ...f,
       asegurado,
+      numeroSiniestro,
       titulo: titulo || f.titulo
     };
   });
