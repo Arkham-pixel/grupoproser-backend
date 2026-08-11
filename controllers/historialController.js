@@ -1491,7 +1491,7 @@ class HistorialController {
 
       // Log del tipo recibido para debugging
       console.log('🔍 Tipo de formulario recibido:', tipo);
-      console.log('🔍 Tipos válidos:', ['complex', 'riesgos', 'pol', 'inspeccion', 'inspeccion-propiedades', 'inspeccion-puertos', 'acta_inspeccion', 'maquinaria', 'siniestros', 'ajuste', 'ajuste_inicial', 'ajuste_preeliminar', 'ajuste_actualizacion', 'ajuste_informeFinal', 'catastrofico', 'matriz_riesgo_inicial', 'matriz_riesgo_final']);
+      console.log('🔍 Tipos válidos:', ['complex', 'riesgos', 'pol', 'inspeccion', 'inspeccion-propiedades', 'inspeccion-puertos', 'acta_inspeccion', 'maquinaria', 'siniestros', 'ajuste', 'ajuste_inicial', 'ajuste_preeliminar', 'ajuste_actualizacion', 'ajuste_informeFinal', 'catastrofico', 'evaluacion_sismica_nsr10', 'matriz_riesgo_inicial', 'matriz_riesgo_final']);
 
       // Calcular tamaño aproximado del documento (solo para logging)
       // Ya no rechazamos por tamaño porque las imágenes se guardan como archivos físicos
@@ -1733,6 +1733,8 @@ class HistorialController {
           : `/uploads/${carpetaCaso}/${nombreArchivoDefecto}`;
 
       // Crear el formulario
+      const operationIdCreate =
+        req.body?.operationId || req.headers['x-operation-id'] || null;
       const nuevoFormulario = new HistorialFormulario({
         tipo,
         titulo: tituloConAsegurado || titulo,
@@ -1754,6 +1756,9 @@ class HistorialController {
           tipoMime: archivo?.tipoMime || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         },
         datos,
+        dataVersion: 1,
+        clientId: req.body?.clientId ? String(req.body.clientId) : undefined,
+        appliedOperationIds: operationIdCreate ? [String(operationIdCreate)] : [],
         metadata: {
           version: metadata.version || '1.0',
           creadoPor: req.user?.id || 'unknown',
@@ -1850,6 +1855,52 @@ class HistorialController {
 
       console.log('✅ Formulario encontrado:', formulario.titulo);
 
+      // --- Offline First: idempotencia + concurrencia optimista ---
+      const operationId =
+        datosActualizacion.operationId ||
+        req.headers['x-operation-id'] ||
+        null;
+      if (
+        operationId &&
+        Array.isArray(formulario.appliedOperationIds) &&
+        formulario.appliedOperationIds.includes(String(operationId))
+      ) {
+        return res.status(200).json({
+          success: true,
+          idempotent: true,
+          formulario,
+        });
+      }
+
+      const ifMatchRaw = req.headers['if-match'];
+      const expectedVersionRaw =
+        datosActualizacion.expectedVersion ??
+        datosActualizacion.dataVersion ??
+        (ifMatchRaw != null ? String(ifMatchRaw).replace(/"/g, '') : null);
+      const expectedVersion =
+        expectedVersionRaw === null || expectedVersionRaw === undefined || expectedVersionRaw === ''
+          ? null
+          : Number(expectedVersionRaw);
+      const currentVersion = Number(formulario.dataVersion ?? 1);
+
+      if (
+        expectedVersion != null &&
+        !Number.isNaN(expectedVersion) &&
+        expectedVersion !== currentVersion
+      ) {
+        return res.status(409).json({
+          success: false,
+          error: 'CONFLICT',
+          conflict: true,
+          message: 'La versión del formulario no coincide con el servidor',
+          serverVersion: currentVersion,
+          expectedVersion,
+          formulario,
+          serverData: formulario.datos,
+          updatedAt: formulario.fechaModificacion,
+        });
+      }
+
       // Calcular tamaño aproximado del documento (solo para logging)
       if (datosActualizacion.datos) {
         const datosString = JSON.stringify(datosActualizacion.datos);
@@ -1920,27 +1971,49 @@ class HistorialController {
         'auditoria.userAgentModificacion': req.get('User-Agent')
       };
       
+      // Campos de control Offline — no se copian crudos al documento
+      const OFFLINE_CONTROL_FIELDS = new Set([
+        'operationId',
+        'expectedVersion',
+        'If-Match',
+      ]);
+
       // Actualizar cada campo (excepto _id y fechaCreacion)
       Object.keys(datosActualizacion).forEach(campo => {
-        if (campo !== '_id' && campo !== 'fechaCreacion') {
-          if (campo === 'datos') {
-            // Para datos, actualizar específicamente el campo
-            updateFields.datos = datosActualizacion.datos;
-            
-            // Calcular tamaño de los nuevos datos
-            const datosString = JSON.stringify(datosActualizacion.datos);
-            const tamanoBytes = Buffer.byteLength(datosString, 'utf8');
-            const tamanoMB = (tamanoBytes / (1024 * 1024)).toFixed(2);
-            console.log(`📊 Tamaño de datos.datos a actualizar: ${tamanoMB} MB`);
-          } else if (campo.includes('.')) {
-            // Campos anidados con notación de punto
-            updateFields[campo] = datosActualizacion[campo];
-          } else {
-            // Campos normales
-            updateFields[campo] = datosActualizacion[campo];
-          }
+        if (campo === '_id' || campo === 'fechaCreacion' || OFFLINE_CONTROL_FIELDS.has(campo)) {
+          return;
+        }
+        if (campo === 'datos') {
+          // Para datos, actualizar específicamente el campo
+          updateFields.datos = datosActualizacion.datos;
+          
+          // Calcular tamaño de los nuevos datos
+          const datosString = JSON.stringify(datosActualizacion.datos);
+          const tamanoBytes = Buffer.byteLength(datosString, 'utf8');
+          const tamanoMB = (tamanoBytes / (1024 * 1024)).toFixed(2);
+          console.log(`📊 Tamaño de datos.datos a actualizar: ${tamanoMB} MB`);
+        } else if (campo.includes('.')) {
+          // Campos anidados con notación de punto
+          updateFields[campo] = datosActualizacion[campo];
+        } else if (campo === 'dataVersion') {
+          // dataVersion se incrementa abajo; ignorar valor cliente
+        } else {
+          // Campos normales
+          updateFields[campo] = datosActualizacion[campo];
         }
       });
+
+      // Incrementar dataVersion (concurrencia optimista)
+      updateFields.dataVersion = currentVersion + 1;
+      if (datosActualizacion.clientId) {
+        updateFields.clientId = String(datosActualizacion.clientId);
+      }
+      if (operationId) {
+        const prevOps = Array.isArray(formulario.appliedOperationIds)
+          ? formulario.appliedOperationIds
+          : [];
+        updateFields.appliedOperationIds = [...prevOps, String(operationId)].slice(-100);
+      }
 
       const aseguradoActualizado = textoAseguradoHistorial(
         datosActualizacion.asegurado,

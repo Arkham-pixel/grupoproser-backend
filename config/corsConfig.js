@@ -96,7 +96,11 @@ export function createCorsOptions() {
       'X-Requested-With',
       'X-CSRF-Token',
       'X-XSRF-Token',
-      'csrf-token'
+      'csrf-token',
+      // Offline First / concurrencia optimista
+      'If-Match',
+      'X-Operation-Id',
+      'X-Client-Id',
     ]
   };
 }

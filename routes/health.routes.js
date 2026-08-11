@@ -4,6 +4,16 @@ import { getEmailOutboxStats } from '../services/emailOutboxService.js';
 
 const router = express.Router();
 
+/** Probe liviano para Offline First / connectivityService */
+router.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    ok: true,
+    service: 'grupoproser-backend',
+    ts: new Date().toISOString(),
+  });
+});
+
 router.get('/email', async (req, res) => {
   try {
     const config = getMailConfigStatus();

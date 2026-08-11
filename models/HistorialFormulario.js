@@ -5,7 +5,7 @@ const historialFormularioSchema = new mongoose.Schema({
   tipo: {
     type: String,
     required: true,
-    enum: ['complex', 'riesgos', 'pol', 'inspeccion', 'inspeccion-propiedades', 'inspeccion-puertos', 'acta_inspeccion', 'maquinaria', 'siniestros', 'ajuste', 'ajuste_inicial', 'ajuste_preeliminar', 'ajuste_actualizacion', 'ajuste_informeFinal', 'catastrofico', 'matriz_riesgo_inicial', 'matriz_riesgo_final'],
+    enum: ['complex', 'riesgos', 'pol', 'inspeccion', 'inspeccion-propiedades', 'inspeccion-puertos', 'acta_inspeccion', 'maquinaria', 'siniestros', 'ajuste', 'ajuste_inicial', 'ajuste_preeliminar', 'ajuste_actualizacion', 'ajuste_informeFinal', 'catastrofico', 'evaluacion_sismica_nsr10', 'matriz_riesgo_inicial', 'matriz_riesgo_final'],
     index: true
   },
   
@@ -131,6 +131,27 @@ const historialFormularioSchema = new mongoose.Schema({
   fechaModificacion: {
     type: Date,
     default: Date.now
+  },
+
+  /** Concurrencia optimista Offline First (entero monotónico). */
+  dataVersion: {
+    type: Number,
+    default: 1,
+    index: true,
+  },
+
+  /** Id de cliente (UUID) para trazabilidad offline — no es el JWT. */
+  clientId: {
+    type: String,
+    trim: true,
+    index: true,
+    sparse: true,
+  },
+
+  /** operationIds ya aplicados (idempotencia; se recorta a los últimos 100). */
+  appliedOperationIds: {
+    type: [String],
+    default: [],
   },
   
   fechaVencimiento: Date,
