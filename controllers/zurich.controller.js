@@ -316,20 +316,18 @@ const buildZurichPayload = (data = {}, base = {}) => ({
   severidadCatNiveles: (() => {
     const incoming = data.severidadCatNiveles;
     const prev = base.severidadCatNiveles;
-    const legacy =
-      data.severidadCat !== undefined ? data.severidadCat : base.severidadCat;
     if (incoming && typeof incoming === 'object') {
-      return normalizeSeveridadCatNiveles({ ...(prev || {}), ...incoming }, legacy);
+      // No mezclar con legacy: el payload CAT ya trae SI/NO por nivel
+      return normalizeSeveridadCatNiveles({ ...(prev || {}), ...incoming }, null);
     }
-    return normalizeSeveridadCatNiveles(prev || {}, legacy);
+    return normalizeSeveridadCatNiveles(prev || {}, base.severidadCat);
   })(),
   severidadCat: (() => {
-    // Preferir derivado desde niveles si vienen en el payload
+    // Preferir derivado desde niveles si vienen en el payload (null = ninguno aplica)
     if (data.severidadCatNiveles && typeof data.severidadCatNiveles === 'object') {
-      const derivados = derivarSeveridadCatDesdeNiveles(
-        normalizeSeveridadCatNiveles(data.severidadCatNiveles, data.severidadCat ?? base.severidadCat)
+      return derivarSeveridadCatDesdeNiveles(
+        normalizeSeveridadCatNiveles(data.severidadCatNiveles, null)
       );
-      if (derivados != null) return derivados;
     }
     const raw = data.severidadCat !== undefined ? data.severidadCat : base.severidadCat;
     if (esValorVacio(raw) || esPlaceholderOPendiente(raw)) return base.severidadCat ?? null;
