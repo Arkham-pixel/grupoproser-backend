@@ -34,6 +34,8 @@ export const STORAGE_CATEGORIES = Object.freeze({
   COMPLEX: 'complex',
   PUERTOS: 'puertos',
   SGSST: 'sg-sst',
+  SEGUROS_ALFA: 'seguros-alfa',
+  ZURICH: 'zurich',
   GENERAL: 'general',
 });
 
@@ -83,6 +85,12 @@ export function buildStoredPublicPath({ driver, category, filename, s3Key }) {
   }
   if (category === STORAGE_CATEGORIES.SGSST) {
     return `/uploads/sg-sst/${filename}`;
+  }
+  if (category === STORAGE_CATEGORIES.SEGUROS_ALFA) {
+    return `/uploads/seguros-alfa/${filename}`;
+  }
+  if (category === STORAGE_CATEGORIES.ZURICH) {
+    return `/uploads/zurich/${filename}`;
   }
   return `/uploads/${filename}`;
 }
@@ -398,6 +406,8 @@ export function getLocalMulterDestination(category, subfolder) {
     [STORAGE_CATEGORIES.EXPRESS]: path.join(UPLOADS_ROOT, 'express'),
     [STORAGE_CATEGORIES.HISTORIAL]: path.join(UPLOADS_ROOT, 'historial'),
     [STORAGE_CATEGORIES.SGSST]: path.join(UPLOADS_ROOT, 'sg-sst'),
+    [STORAGE_CATEGORIES.SEGUROS_ALFA]: path.join(UPLOADS_ROOT, 'seguros-alfa'),
+    [STORAGE_CATEGORIES.ZURICH]: path.join(UPLOADS_ROOT, 'zurich'),
   };
   return map[category] || UPLOADS_ROOT;
 }

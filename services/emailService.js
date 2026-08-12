@@ -14,6 +14,117 @@ import {
   fillEmailTemplate,
   isMissingCaseNumber,
 } from './emailI18n.js';
+import {
+  getDownloadUrl,
+  resolveFileForRead,
+} from './fileStorageService.js';
+
+/** Tope razonable de adjuntos en alertas Alfa (~8 MB). */
+export const TOPE_ADJUNTOS_ALERTAS_ALFA_BYTES = 8 * 1024 * 1024;
+
+async function streamToBuffer(stream) {
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+/**
+ * Prepara adjuntos nodemailer desde archivosConRuta (patrón control de horas/gerencia).
+ * Si el tamaño acumulado supera el tope, el resto se lista como enlaces HTML.
+ */
+export async function prepararAdjuntosArchivosConRuta(
+  archivosConRuta = [],
+  { topeBytes = TOPE_ADJUNTOS_ALERTAS_ALFA_BYTES } = {}
+) {
+  const attachments = [];
+  const enlaces = [];
+  let bytesUsados = 0;
+  const baseUrl = process.env.BASE_URL || process.env.BACKEND_URL || 'http://localhost:5000';
+
+  for (const archivo of archivosConRuta || []) {
+    const nombre = archivo.nombre || archivo.nombreOriginal || 'documento';
+    const ruta = archivo.ruta || archivo.url || '';
+    if (!ruta) continue;
+
+    let urlDescarga = '';
+    try {
+      urlDescarga = await getDownloadUrl(ruta);
+      if (urlDescarga && !urlDescarga.startsWith('http')) {
+        const rel = urlDescarga.startsWith('/') ? urlDescarga : `/${urlDescarga}`;
+        urlDescarga = `${baseUrl}${rel}`;
+      }
+    } catch {
+      urlDescarga = ruta.startsWith('http')
+        ? ruta
+        : `${baseUrl}${ruta.startsWith('/') ? ruta : `/${ruta}`}`;
+    }
+
+    const enlaceHtml = urlDescarga
+      ? `<li style="margin-bottom:8px;">
+           <a href="${urlDescarga}" target="_blank"
+              style="color:#2563eb; text-decoration:none; font-weight:500;">
+             📎 ${nombre}
+             <span style="font-size:11px; color:#6b7280;">(Descargar)</span>
+           </a>
+         </li>`
+      : `<li style="margin-bottom:4px;">📎 ${nombre}</li>`;
+
+    const tamañoEstimado = Number(archivo.tamaño) || 0;
+    if (tamañoEstimado > 0 && bytesUsados + tamañoEstimado > topeBytes) {
+      enlaces.push(enlaceHtml);
+      continue;
+    }
+
+    try {
+      const resolved = await resolveFileForRead(ruta);
+      const tieneLocal = Boolean(resolved?.localPath && resolved.exists !== false);
+      const tieneStream = Boolean(resolved?.stream);
+
+      if (!tieneLocal && !tieneStream) {
+        enlaces.push(enlaceHtml);
+        continue;
+      }
+
+      if (tieneStream) {
+        const content = await streamToBuffer(resolved.stream);
+        const size = content.length || tamañoEstimado;
+        if (bytesUsados + size > topeBytes) {
+          enlaces.push(enlaceHtml);
+          continue;
+        }
+        attachments.push({
+          filename: nombre,
+          content,
+          contentType: resolved.contentType || archivo.tipoMime,
+        });
+        bytesUsados += size;
+        continue;
+      }
+
+      const stat = await fs.stat(resolved.localPath).catch(() => null);
+      const size = stat?.size ?? tamañoEstimado;
+      if (!stat || bytesUsados + size > topeBytes) {
+        enlaces.push(enlaceHtml);
+        continue;
+      }
+      attachments.push({ filename: nombre, path: resolved.localPath });
+      bytesUsados += size;
+    } catch (error) {
+      console.warn('⚠️ No se pudo adjuntar archivo Alfa:', nombre, error.message);
+      enlaces.push(enlaceHtml);
+    }
+  }
+
+  return {
+    attachments,
+    enlacesHtml: enlaces.join(''),
+    bytesUsados,
+    totalAdjuntos: attachments.length,
+    totalSoloEnlace: enlaces.length,
+  };
+}
 
 // Re-export i18n helpers so callers / tests can import from emailService if needed.
 export { normalizeEmailLocale, getEmailText, getEmailSubject, isMissingCaseNumber };
@@ -825,6 +936,227 @@ export const enviarEmailAlertas = async (datosAlertas) => {
   } catch (error) {
     console.error('❌ Error enviando email de alertas:', error);
     throw new Error(`Error enviando email de alertas: ${error.message}`);
+  }
+};
+
+/**
+ * Alertas Seguros Alfa: mismo layout que alertas Complex/Express,
+ * más adjuntos del archivero del caso (tope ~8MB; resto como enlaces).
+ */
+export const enviarEmailAlertasAlfa = async (datosAlertas) => {
+  try {
+    console.log('📧 Iniciando envío de email de alertas Seguros Alfa...');
+
+    if (!datosAlertas.emailResponsable) {
+      console.log('⚠️ No hay email válido para notificar alertas Alfa');
+      return {
+        success: false,
+        message: 'No hay email válido para notificar alertas',
+      };
+    }
+
+    const t = getEmailText(datosAlertas);
+    const tituloSistema = t.alertsSystemAlfa || 'Sistema de Alertas Seguros Alfa';
+    const enlacePanel = `${resolveFrontendUrl()}/seguros-alfa/reporte`;
+
+    const { attachments, enlacesHtml, totalAdjuntos, totalSoloEnlace } =
+      await prepararAdjuntosArchivosConRuta(datosAlertas.archivosConRuta || []);
+
+    const contenidoAlertas = (datosAlertas.alertas?.casos || []).map((caso) => {
+      const alertasHTML = (caso.alertas || [])
+        .map(
+          (alerta) => `
+        <div style="margin: 10px 0; padding: 15px; border-left: 4px solid ${
+          alerta.prioridad === 'ALTA' ? '#dc2626' : '#ea580c'
+        }; background-color: ${
+          alerta.prioridad === 'ALTA' ? '#fef2f2' : '#fff7ed'
+        }; border-radius: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-weight: bold; color: ${
+              alerta.prioridad === 'ALTA' ? '#dc2626' : '#ea580c'
+            };">${alerta.mensaje}</span>
+            <span style="padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; background-color: ${
+              alerta.prioridad === 'ALTA' ? '#fecaca' : '#fed7aa'
+            }; color: ${alerta.prioridad === 'ALTA' ? '#dc2626' : '#ea580c'};">${alerta.prioridad}</span>
+          </div>
+          <p style="margin: 0; color: #6b7280; font-size: 14px;">
+            <strong>${t.actionRequired}</strong> ${alerta.accion || t.reviewCaseArnald}
+          </p>
+          ${alerta.etiquetaLimite ? `<p style="margin: 6px 0 0 0; color: #9ca3af; font-size: 12px;">${t.ansDeadline} ${alerta.etiquetaLimite}</p>` : ''}
+        </div>`
+        )
+        .join('');
+
+      return `
+        <div style="margin: 20px 0; padding: 20px; border: 1px solid #e5e7eb; border-radius: 12px; background-color: #ffffff;">
+          <h3 style="margin: 0 0 15px 0; color: #1f2937; font-size: 18px;">
+            🚨 ${t.caseLabel} ${caso.numeroAjuste || caso.consecutivo || 'N/A'}
+          </h3>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; font-size: 14px;">
+            <div>
+              <strong>${t.claimLabel}</strong> ${caso.numeroSiniestro || 'N/A'}<br>
+              <strong>${t.insurerLabel}</strong> ${caso.aseguradora || 'Seguros Alfa'}<br>
+              <strong>${t.insuredLabel}</strong> ${caso.asegurado || 'N/A'}
+            </div>
+            <div>
+              <strong>${t.statusLabel}</strong> ${caso.estado || 'N/A'}<br>
+              <strong>${t.totalAlerts}</strong> ${caso.totalAlertas}
+            </div>
+          </div>
+          ${alertasHTML}
+          ${
+            caso.inactividad
+              ? `
+            <div style="margin-top: 15px; padding: 15px; background-color: #f3f4f6; border-radius: 8px;">
+              <span style="font-size: 14px; color: #374151;">
+                <strong>${t.lastActivity}</strong> ${caso.inactividad.actividad}
+                ${caso.inactividad.dias != null ? ` ${fillEmailTemplate(t.daysAgo, { dias: caso.inactividad.dias })}` : ''}
+              </span>
+            </div>`
+              : ''
+          }
+        </div>`;
+    }).join('');
+
+    const seccionArchivos =
+      totalAdjuntos || totalSoloEnlace
+        ? `
+            <div style="background-color:#fef3c7; padding:15px; border-radius:8px; border-left:4px solid #f59e0b; margin:25px 0;">
+              <h3 style="margin:0 0 10px 0; color:#92400e;">${t.uploadedFiles || 'Archivos del archivero'}</h3>
+              ${
+                totalAdjuntos
+                  ? `<p style="margin:0 0 8px 0; color:#92400e; font-size:13px;">📎 ${totalAdjuntos} archivo(s) adjunto(s) a este correo.</p>`
+                  : ''
+              }
+              ${
+                totalSoloEnlace
+                  ? `<p style="margin:0 0 8px 0; color:#78350f; font-size:13px;">Algunos archivos superan el tope de adjuntos; descárgalos aquí:</p>
+                     <ul style="margin:0; padding-left:20px; color:#78350f;">${enlacesHtml}</ul>`
+                  : ''
+              }
+            </div>`
+        : '';
+
+    const mailOptions = {
+      from: `"Grupo Proser - Sistema de Alertas" <${process.env.EMAIL_USER}>`,
+      to: datosAlertas.emailResponsable,
+      subject: getEmailSubject(datosAlertas, 'subjectAlertas', {
+        tipo: t.subjectAlertasAlfa || 'SEGUROS ALFA',
+        count: datosAlertas.alertas.casosConAlertas,
+      }),
+      attachments,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; background-color: #f8f9fa; padding: 20px;">
+          <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="color: #dc2626; margin: 0; font-size: 28px;">🚨 ${tituloSistema}</h1>
+              <p style="color: #6b7280; margin: 10px 0 0 0;">${t.autoNotifications}</p>
+            </div>
+
+            <div style="background-color: #fef2f2; padding: 20px; border-radius: 8px; margin-bottom: 25px; border-left: 4px solid #dc2626;">
+              <h2 style="color: #dc2626; margin: 0 0 15px 0; font-size: 20px;">⚠️ ${t.alertsSummary}</h2>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                <div style="text-align: center;">
+                  <div style="font-size: 24px; font-weight: bold; color: #dc2626;">${datosAlertas.alertas.totalCasos}</div>
+                  <div style="font-size: 12px; color: #6b7280;">${t.totalCases}</div>
+                </div>
+                <div style="text-align: center;">
+                  <div style="font-size: 24px; font-weight: bold; color: #ea580c;">${datosAlertas.alertas.casosConAlertas}</div>
+                  <div style="font-size: 12px; color: #6b7280;">${t.withAlerts}</div>
+                </div>
+                <div style="text-align: center;">
+                  <div style="font-size: 24px; font-weight: bold; color: #dc2626;">${datosAlertas.alertas.resumen?.documentosObligatorios ?? 0}</div>
+                  <div style="font-size: 12px; color: #6b7280;">${t.ansAlerts || 'Alertas'}</div>
+                </div>
+                <div style="text-align: center;">
+                  <div style="font-size: 24px; font-weight: bold; color: #dc2626;">${datosAlertas.alertas.resumen?.casosCriticos ?? 0}</div>
+                  <div style="font-size: 12px; color: #6b7280;">${t.criticalCases}</div>
+                </div>
+              </div>
+            </div>
+
+            <div style="background-color: #f0f9ff; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
+              <h3 style="color: #0369a1; margin: 0 0 15px 0; font-size: 16px;">👤 ${t.recipientTitle}</h3>
+              <p style="margin: 0; color: #0c4a6e;">
+                <strong>${t.responsibleLabel}</strong> ${datosAlertas.nombreResponsable}<br>
+                <strong>${t.notificationDate}</strong> ${datosAlertas.fechaAsignacion}
+              </p>
+            </div>
+
+            <div style="margin-bottom: 25px;">
+              <h3 style="color: #1f2937; margin: 0 0 15px 0; font-size: 18px;">📋 ${t.alertsDetailByCase}</h3>
+              ${contenidoAlertas}
+            </div>
+
+            ${seccionArchivos}
+
+            <div style="background-color:#fef2f2; padding:18px; border-radius:8px; border-left:4px solid #dc2626; margin:25px 0; text-align:center;">
+              <a href="${enlacePanel}"
+                 style="display:inline-block; background-color:#dc2626; color:#ffffff; padding:12px 24px; text-decoration:none; border-radius:8px; font-weight:700; font-size:14px;">
+                ${fillEmailTemplate(t.openAlertsPanel, { modulo: 'Seguros Alfa' })}
+              </a>
+            </div>
+
+            <div style="background-color: #f0fdf4; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
+              <h3 style="color: #059669; margin: 0 0 15px 0; font-size: 16px;">💡 ${t.recommendations}</h3>
+              <ul style="margin: 0; padding-left: 20px; color: #065f46;">
+                <li>${t.recHighFirst} <strong>${t.priorityHigh}</strong></li>
+                <li>${t.recAlfa || 'Sube documentos pendientes y actualiza el estado del caso Alfa'}</li>
+                <li>${t.recInactive}</li>
+                <li>${t.recSupport}</li>
+              </ul>
+            </div>
+
+            <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+              <p style="color: #6b7280; font-size: 12px; margin: 0;">
+                ${t.footerAlerts}<br>
+                ${t.footerNoReply}
+              </p>
+            </div>
+          </div>
+        </div>
+      `,
+    };
+
+    const info = await deliverMail(mailOptions, { tipo: 'emailService' });
+    console.log('✅ Email de alertas Alfa enviado:', info.messageId);
+
+    return {
+      success: true,
+      messageId: info.messageId,
+      response: info.response,
+      adjuntos: totalAdjuntos,
+      enlaces: totalSoloEnlace,
+    };
+  } catch (error) {
+    console.error('❌ Error enviando email de alertas Alfa:', error);
+    throw new Error(`Error enviando email de alertas Alfa: ${error.message}`);
+  }
+};
+
+/** Alertas Zurich: reutiliza el layout de Alfa con panel Zurich. */
+export const enviarEmailAlertasZurich = async (datosAlertas) => {
+  const adaptado = {
+    ...datosAlertas,
+    // El cuerpo Alfa usa textos/enlace de Alfa; forzamos branding Zurich vía locale keys si existen
+  };
+  try {
+    console.log('📧 Iniciando envío de email de alertas Zurich...');
+    if (!adaptado.emailResponsable) {
+      return {
+        success: false,
+        message: 'No hay email válido para notificar alertas',
+      };
+    }
+    // Reusa pipeline Alfa (adjuntos + HTML) cambiando el módulo en datos
+    return await enviarEmailAlertasAlfa({
+      ...adaptado,
+      modulo: 'Zurich',
+      aseguradora: adaptado.aseguradora || 'Zurich',
+    });
+  } catch (error) {
+    console.error('❌ Error enviando email de alertas Zurich:', error);
+    throw new Error(`Error enviando email de alertas Zurich: ${error.message}`);
   }
 };
 

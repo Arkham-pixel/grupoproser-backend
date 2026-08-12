@@ -38,6 +38,8 @@ import intermediarioRoutes from './routes/intermediario.routes.js';
 import expressCatalogoRoutes from './routes/expressCatalogo.routes.js';
 import siniestroExpressRoutes from './routes/siniestroExpress.routes.js';
 import equidadFdmRoutes from './routes/equidadFdm.routes.js';
+import segurosAlfaRoutes from './routes/segurosAlfa.routes.js';
+import zurichRoutes from './routes/zurich.routes.js';
 import propiedadesRoutes from './routes/propiedades.routes.js';
 import chatgptRoutes from './routes/chatgpt.routes.js';
 import inspeccionPropiedadesRoutes from './routes/inspeccionPropiedades.routes.js';
@@ -141,6 +143,18 @@ if (!fs.existsSync(sgSstUploadsDir)) {
   console.log("📁 Carpeta 'uploads/sg-sst/' creada... ✅");
 }
 
+const segurosAlfaUploadsDir = path.join(uploadsDir, "seguros-alfa");
+if (!fs.existsSync(segurosAlfaUploadsDir)) {
+  fs.mkdirSync(segurosAlfaUploadsDir, { recursive: true });
+  console.log("📁 Carpeta 'uploads/seguros-alfa/' creada... ✅");
+}
+
+const zurichUploadsDir = path.join(uploadsDir, "zurich");
+if (!fs.existsSync(zurichUploadsDir)) {
+  fs.mkdirSync(zurichUploadsDir, { recursive: true });
+  console.log("📁 Carpeta 'uploads/zurich/' creada... ✅");
+}
+
 // Para producción: también servir archivos estáticos del frontend
 if (process.env.NODE_ENV === 'production') {
   const frontendPath = path.join(__dirname, '../frontend/dist');
@@ -199,6 +213,8 @@ try {
 app.use('/api/express-catalogos', expressCatalogoRoutes);
 app.use('/api/siniestros-express', siniestroExpressRoutes);
 app.use('/api/equidad-fdm', equidadFdmRoutes);
+app.use('/api/seguros-alfa', segurosAlfaRoutes);
+app.use('/api/zurich', zurichRoutes);
 app.use('/api/propiedades', propiedadesRoutes);
 app.use('/api/chatgpt', chatgptRoutes);
 app.use('/api/inspeccion-propiedades', inspeccionPropiedadesRoutes);

@@ -9,6 +9,8 @@ const ResponsableSchema = new mongoose.Schema({
   fchaUltimoRecordatorioAlertas: Date,
   /** Último correo automático de alertas ANS Express (recordatorio cada 30 días). */
   fchaUltimoRecordatorioAlertasExpress: Date,
+  /** Último correo automático de alertas Seguros Alfa (recordatorio cada 30 días). */
+  fchaUltimoRecordatorioAlertasAlfa: Date,
 }, { collection: 'gsk3cAppresponsable' });
 
 const Responsable = mongoose.model('Responsable', ResponsableSchema);

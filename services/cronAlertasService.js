@@ -5,6 +5,10 @@ import {
   enviarAlertasTodosExpress,
   obtenerAlertasExpressPorResponsables,
 } from './alertasExpressService.js';
+import {
+  enviarAlertasTodosAlfa,
+  obtenerAlertasAlfaPorAjustadores,
+} from './alertasAlfaService.js';
 import { obtenerProtocoloActivo } from './protocoloConfigService.js';
 import { obtenerProtocoloExpressPorDefecto } from '../config/protocoloExpressDefaults.js';
 
@@ -37,7 +41,7 @@ class CronAlertasService {
     try {
       console.log('🚀 Iniciando servicio de cron de alertas...');
       console.log(`⏰ Programado para ejecutarse: ${CRON_SCHEDULE} (hora de Colombia)`);
-      console.log(`📅 IMPORTANTE: Complex desde oct-2025 · Express desde jul-2026`);
+      console.log(`📅 IMPORTANTE: Complex desde oct-2025 · Express desde jul-2026 · Alfa inactividad 30 días`);
       console.log(`📧 Las alertas se enviarán automáticamente por email a los responsables`);
       
       obtenerProtocoloActivo()
@@ -137,6 +141,21 @@ class CronAlertasService {
         const resultadoExpress = await enviarAlertasTodosExpress();
         console.log(
           `📧 Express enviados: ${resultadoExpress.totalEnviados} · omitidos: ${resultadoExpress.totalOmitidos} · errores: ${resultadoExpress.totalErrores}`
+        );
+      }
+
+      // --- Seguros Alfa ---
+      console.log('📋 --- Alertas Seguros Alfa ---');
+      const alertasAlfa = await obtenerAlertasAlfaPorAjustadores();
+      if (!alertasAlfa.ajustadoresConAlertas) {
+        console.log('✅ Alfa: no hay alertas de inactividad pendientes');
+      } else {
+        console.log(
+          `📊 Alfa: ${alertasAlfa.ajustadoresConAlertas} ajustadores · ${alertasAlfa.resumenGeneral.totalAlertas} alertas`
+        );
+        const resultadoAlfa = await enviarAlertasTodosAlfa();
+        console.log(
+          `📧 Alfa enviados: ${resultadoAlfa.totalEnviados} · omitidos: ${resultadoAlfa.totalOmitidos} · errores: ${resultadoAlfa.totalErrores}`
         );
       }
       
