@@ -9,6 +9,7 @@ const __dirname = path.dirname(__filename);
 import { corsMiddleware } from "./config/corsConfig.js";
 import { helmetMiddleware, loginRateLimitMiddleware } from "./config/httpSecurity.js";
 import { restringirExterno } from "./middleware/restringirExterno.js";
+import { restringirContractorZurich } from "./middleware/restringirContractorZurich.js";
 import { resolveFrontendUrl } from "./config/platformUrls.js";
 import { localeMiddleware } from './middleware/locale.js';
 
@@ -174,6 +175,7 @@ app.get('/reset-password/:token', (req, res) => {
 
 // Sesiones externas (enlace de subtarea): solo pueden usar APIs del formulario de ajuste
 app.use(restringirExterno);
+app.use(restringirContractorZurich);
 
 app.use("/api/auth", authRoutes);
 app.use("/api/secur-auth", securAuthRoutes);

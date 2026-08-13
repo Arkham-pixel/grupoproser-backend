@@ -1,4 +1,8 @@
+import { ROLES_VALIDOS } from '../config/roles.js';
+
 export const SUPPORTED_LOCALES = ['es', 'en'];
+
+const ROLES_PERMITIDOS = ROLES_VALIDOS.join(', ');
 
 export const messages = {
   es: {
@@ -45,8 +49,7 @@ export const messages = {
     cannotDeleteOwnAccount: 'No puedes eliminar tu propia cuenta',
     userDeletedSuccess: 'Usuario eliminado correctamente',
     nameEmailCedulaPasswordRequired: 'Nombre, correo, cédula y contraseña son obligatorios',
-    invalidRole:
-      'Rol inválido. Valores permitidos: admin, soporte, usuario, visualizador, puertos',
+    invalidRole: `Rol inválido. Valores permitidos: ${ROLES_PERMITIDOS}`,
     cedulaRequired: 'La cédula es obligatoria',
     userAlreadyExists: 'El usuario ya existe (correo o cédula ya registrados)',
     userCreatedSuccess: 'Usuario creado correctamente',
@@ -174,8 +177,7 @@ export const messages = {
     cannotDeleteOwnAccount: 'You cannot delete your own account',
     userDeletedSuccess: 'User deleted successfully',
     nameEmailCedulaPasswordRequired: 'Name, email, ID number and password are required',
-    invalidRole:
-      'Invalid role. Allowed values: admin, soporte, usuario, visualizador, puertos',
+    invalidRole: `Invalid role. Allowed values: ${ROLES_PERMITIDOS}`,
     cedulaRequired: 'ID number is required',
     userAlreadyExists: 'User already exists (email or ID number already registered)',
     userCreatedSuccess: 'User created successfully',

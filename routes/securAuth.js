@@ -12,7 +12,7 @@ import nodemailer from "nodemailer";
 import { generateSecret, generateURI, verifySync } from "otplib";
 import QRCode from "qrcode";
 import { JWT_SECRET } from "../config/secrets.js";
-import { esRolValido } from "../config/roles.js";
+import { aplicarSufijoNombrePorRol, esRolValido } from "../config/roles.js";
 import { UPLOADS_ROOT, ensureUploadDir } from "../config/uploadsRoot.js";
 import { createMulterUpload, attachPersistedFileMiddleware } from "../storage/multerStorageFactory.js";
 import { STORAGE_CATEGORIES, deleteReplacedStoredFile, getPublicPathForSingle } from "../services/fileStorageService.js";
@@ -1394,7 +1394,13 @@ router.put("/usuarios/:id/perfil", async (req, res) => {
     if (name !== undefined) usuario.name = name;
     if (email !== undefined) usuario.email = email;
     if (phone !== undefined) usuario.phone = phone;
-    if (role !== undefined && ['admin', 'soporte'].includes(usuarioActual.role)) usuario.role = role;
+    if (role !== undefined && ['admin', 'soporte'].includes(usuarioActual.role)) {
+      if (!esRolValido(role)) {
+        return res.status(400).json({ message: req.t('invalidRole') });
+      }
+      usuario.role = role;
+    }
+    usuario.name = aplicarSufijoNombrePorRol(usuario.name, usuario.role);
     if (cedula !== undefined) usuario.cedula = cedula;
     if (fechaNacimiento !== undefined) usuario.fechaNacimiento = fechaNacimiento ? new Date(fechaNacimiento) : null;
     if (tipoSangre !== undefined) usuario.tipoSangre = tipoSangre;
@@ -1647,6 +1653,7 @@ router.put("/perfil", async (req, res) => {
       console.log('📝 Actualizando role:', role);
       usuario.role = role;
     }
+    usuario.name = aplicarSufijoNombrePorRol(usuario.name, usuario.role);
     
     // Actualizar nuevos campos del perfil (solo si tienen valor o son strings vacíos explícitos)
     if (cedula !== undefined && cedula !== null) {
@@ -2104,7 +2111,7 @@ router.post("/register", upload.single("foto"), persistFoto, async (req, res) =>
     // Crear nuevo usuario usando la cédula como login
     const hashedPassword = await bcrypt.hash(password, 10);
     const nuevoUsuario = new SecurUser({
-      name: nombre,
+      name: aplicarSufijoNombrePorRol(nombre, rolAsignado),
       email: correo,
       login: cedulaTrim, // Usar la cédula como login
       pswd: hashedPassword,
@@ -2375,6 +2382,7 @@ router.put("/actualizar-usuario/:login", async (req, res) => {
       }
       usuario.role = role;
     }
+    usuario.name = aplicarSufijoNombrePorRol(usuario.name, usuario.role);
     if (active !== undefined) usuario.active = active;
 
     await usuario.save();
