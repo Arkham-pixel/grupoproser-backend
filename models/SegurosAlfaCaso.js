@@ -56,12 +56,28 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
     reserva: Number,
     valorReclamado: Number,
     valorLiquidado: Number,
+    fechaLlamada: Date,
     fechaInspeccion: Date,
     fechaUltimoDocumento: Date,
     fechaLiquidado: Date,
     fechaAceptacionLiquidacion: Date,
     fechaEnvioAseguradora: Date,
     estado: { type: String, required: true },
+    /**
+     * Coordenadas del predio para bloques de cercanía (solo ARNALD).
+     * No sincroniza con SharePoint / Excel Control y Seguimiento.
+     */
+    ubicacionPredio: {
+      lat: Number,
+      lng: Number,
+      geocodedAt: Date,
+      geocodeStatus: {
+        type: String,
+        enum: ['ok', 'failed', 'pending', 'stale', 'manual', 'sin_direccion'],
+      },
+      geocodeQuery: String,
+      direccionHash: String,
+    },
     /** Estado del liquidador Alfa (ítems, deducible, cuadro reclamado vs indemnizable) */
     liquidador: { type: mongoose.Schema.Types.Mixed, default: null },
     /** Borrador del informe único (texto evento, conclusiones, fotos) */

@@ -1,0 +1,349 @@
+/**
+ * Geocodificación y bloques de cercanía para Seguros Alfa (solo ARNALD).
+ * No escribe a SharePoint / Excel.
+ */
+
+import crypto from 'crypto';
+import SegurosAlfaCaso from '../models/SegurosAlfaCaso.js';
+
+const EARTH_RADIUS_KM = 6371;
+
+export function hashDireccionAlfa(direccion = '', ciudad = '', departamento = '') {
+  const raw = [direccion, ciudad, departamento]
+    .map((v) =>
+      String(v || '')
+        .normalize('NFD')
+        .replace(/\p{M}/gu, '')
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, ' ')
+    )
+    .join('|');
+  return crypto.createHash('sha1').update(raw).digest('hex').slice(0, 16);
+}
+
+export function construirQueryGeocodeAlfa(caso = {}) {
+  const partes = [caso.direccionPredio, caso.ciudad, caso.departamento, 'Colombia']
+    .map((p) => String(p || '').trim())
+    .filter(Boolean);
+  return partes.join(', ');
+}
+
+export function haversineKm(a, b) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+export function casoTieneCoordsValidas(caso) {
+  const u = caso?.ubicacionPredio;
+  return (
+    u &&
+    Number.isFinite(Number(u.lat)) &&
+    Number.isFinite(Number(u.lng)) &&
+    (u.geocodeStatus === 'ok' || u.geocodeStatus === 'manual')
+  );
+}
+
+export function casoNecesitaGeocode(caso, { force = false } = {}) {
+  const dir = String(caso?.direccionPredio || '').trim();
+  if (!dir) return false;
+  if (force) return true;
+  const u = caso?.ubicacionPredio;
+  if (!u) return true;
+  if (u.geocodeStatus === 'stale' || u.geocodeStatus === 'pending') return true;
+  if (u.geocodeStatus === 'failed') return true;
+  const hash = hashDireccionAlfa(caso.direccionPredio, caso.ciudad, caso.departamento);
+  if (u.direccionHash && u.direccionHash !== hash) return true;
+  if (!casoTieneCoordsValidas(caso)) return true;
+  return false;
+}
+
+function getGoogleMapsApiKey() {
+  return (
+    String(process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || '').trim() ||
+    null
+  );
+}
+
+/**
+ * Geocodifica una dirección con Google Geocoding API (HTTP).
+ * @returns {{ lat, lng, formattedAddress, status } | { status: 'failed', error }}
+ */
+export async function geocodeDireccionGoogle(query) {
+  const key = getGoogleMapsApiKey();
+  if (!key) {
+    return { status: 'failed', error: 'GOOGLE_MAPS_API_KEY no configurada en el backend' };
+  }
+  const q = String(query || '').trim();
+  if (!q) return { status: 'sin_direccion' };
+
+  const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+  url.searchParams.set('address', q);
+  url.searchParams.set('region', 'co');
+  url.searchParams.set('key', key);
+
+  const resp = await fetch(url.toString());
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    return { status: 'failed', error: `HTTP ${resp.status}` };
+  }
+  if (data.status !== 'OK' || !data.results?.[0]?.geometry?.location) {
+    return {
+      status: 'failed',
+      error: data.status || 'ZERO_RESULTS',
+      geocodeStatusGoogle: data.status,
+    };
+  }
+  const loc = data.results[0].geometry.location;
+  return {
+    status: 'ok',
+    lat: Number(loc.lat),
+    lng: Number(loc.lng),
+    formattedAddress: data.results[0].formatted_address || q,
+  };
+}
+
+export async function geocodeCasosAlfaPendientes({ limit = 40, force = false } = {}) {
+  const lim = Math.min(Math.max(Number(limit) || 40, 1), 100);
+  const casos = await SegurosAlfaCaso.find({}).sort({ updatedAt: -1 }).lean();
+  const pendientes = casos.filter((c) => casoNecesitaGeocode(c, { force })).slice(0, lim);
+
+  const resumen = {
+    evaluados: casos.length,
+    pendientes: pendientes.length,
+    ok: 0,
+    failed: 0,
+    sinDireccion: 0,
+    resultados: [],
+  };
+
+  for (const caso of pendientes) {
+    const query = construirQueryGeocodeAlfa(caso);
+    const hash = hashDireccionAlfa(caso.direccionPredio, caso.ciudad, caso.departamento);
+
+    if (!String(caso.direccionPredio || '').trim()) {
+      await SegurosAlfaCaso.findByIdAndUpdate(caso._id, {
+        ubicacionPredio: {
+          geocodeStatus: 'sin_direccion',
+          geocodeQuery: query,
+          direccionHash: hash,
+          geocodedAt: new Date(),
+        },
+      });
+      resumen.sinDireccion += 1;
+      resumen.resultados.push({
+        casoId: String(caso._id),
+        consecutivo: caso.consecutivo,
+        status: 'sin_direccion',
+      });
+      continue;
+    }
+
+    try {
+      const geo = await geocodeDireccionGoogle(query);
+      if (geo.status === 'ok') {
+        await SegurosAlfaCaso.findByIdAndUpdate(caso._id, {
+          ubicacionPredio: {
+            lat: geo.lat,
+            lng: geo.lng,
+            geocodeStatus: 'ok',
+            geocodeQuery: query,
+            direccionHash: hash,
+            geocodedAt: new Date(),
+          },
+        });
+        resumen.ok += 1;
+        resumen.resultados.push({
+          casoId: String(caso._id),
+          consecutivo: caso.consecutivo,
+          status: 'ok',
+          lat: geo.lat,
+          lng: geo.lng,
+        });
+      } else {
+        await SegurosAlfaCaso.findByIdAndUpdate(caso._id, {
+          ubicacionPredio: {
+            ...(caso.ubicacionPredio || {}),
+            geocodeStatus: geo.status === 'sin_direccion' ? 'sin_direccion' : 'failed',
+            geocodeQuery: query,
+            direccionHash: hash,
+            geocodedAt: new Date(),
+          },
+        });
+        if (geo.status === 'sin_direccion') resumen.sinDireccion += 1;
+        else resumen.failed += 1;
+        resumen.resultados.push({
+          casoId: String(caso._id),
+          consecutivo: caso.consecutivo,
+          status: geo.status === 'sin_direccion' ? 'sin_direccion' : 'failed',
+          error: geo.error,
+        });
+      }
+    } catch (err) {
+      resumen.failed += 1;
+      resumen.resultados.push({
+        casoId: String(caso._id),
+        consecutivo: caso.consecutivo,
+        status: 'failed',
+        error: err.message,
+      });
+    }
+
+    // Rate-limit suave (~10 req/s máx teórico; aquí ~5/s)
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
+  return resumen;
+}
+
+/**
+ * Aplica ubicaciones geocodificadas en el cliente (fallback sin key en backend).
+ */
+export async function aplicarUbicacionesPredioAlfa(items = []) {
+  const aplicados = [];
+  for (const item of items) {
+    const id = item?.casoId || item?._id;
+    if (!id) continue;
+    const lat = Number(item.lat);
+    const lng = Number(item.lng);
+    const status = item.geocodeStatus || (Number.isFinite(lat) && Number.isFinite(lng) ? 'ok' : 'failed');
+    const update = {
+      ubicacionPredio: {
+        lat: Number.isFinite(lat) ? lat : undefined,
+        lng: Number.isFinite(lng) ? lng : undefined,
+        geocodeStatus: status,
+        geocodeQuery: item.geocodeQuery || '',
+        direccionHash: item.direccionHash || undefined,
+        geocodedAt: new Date(),
+      },
+    };
+    const doc = await SegurosAlfaCaso.findByIdAndUpdate(id, update, { new: true }).lean();
+    if (doc) {
+      aplicados.push({
+        casoId: String(doc._id),
+        consecutivo: doc.consecutivo,
+        status: doc.ubicacionPredio?.geocodeStatus,
+      });
+    }
+  }
+  return { aplicados: aplicados.length, items: aplicados };
+}
+
+/**
+ * Clustering greedy: cada caso no asignado abre un bloque; se le unen los que
+ * estén a ≤ radioKm del centro (promedio de los miembros).
+ */
+export function clusterizarPorRadio(puntos = [], radioKm = 2.5) {
+  const radio = Math.max(0.3, Number(radioKm) || 2.5);
+  const restantes = puntos
+    .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
+    .map((p) => ({ ...p }));
+  const bloques = [];
+
+  while (restantes.length) {
+    const semilla = restantes.shift();
+    const miembros = [semilla];
+    let centro = { lat: semilla.lat, lng: semilla.lng };
+
+    let cambio = true;
+    while (cambio) {
+      cambio = false;
+      for (let i = restantes.length - 1; i >= 0; i -= 1) {
+        const cand = restantes[i];
+        if (haversineKm(centro, cand) <= radio) {
+          miembros.push(cand);
+          restantes.splice(i, 1);
+          centro = {
+            lat: miembros.reduce((s, m) => s + m.lat, 0) / miembros.length,
+            lng: miembros.reduce((s, m) => s + m.lng, 0) / miembros.length,
+          };
+          cambio = true;
+        }
+      }
+    }
+
+    const conDist = miembros
+      .map((m) => ({
+        ...m,
+        distanciaKmCentro: Math.round(haversineKm(centro, m) * 100) / 100,
+      }))
+      .sort((a, b) => a.distanciaKmCentro - b.distanciaKmCentro);
+
+    bloques.push({
+      id: `bloque-${bloques.length + 1}`,
+      nombre: `Bloque ${bloques.length + 1}`,
+      centro,
+      radioKm: radio,
+      cantidad: conDist.length,
+      casos: conDist,
+    });
+  }
+
+  bloques.sort((a, b) => b.cantidad - a.cantidad);
+  bloques.forEach((b, i) => {
+    b.id = `bloque-${i + 1}`;
+    b.nombre = `Bloque ${i + 1}`;
+  });
+
+  return bloques;
+}
+
+export async function obtenerBloquesCercaniaAlfa({
+  radioKm = 2.5,
+  ciudad = '',
+  estado = '',
+} = {}) {
+  const filtro = {};
+  if (ciudad) {
+    filtro.ciudad = new RegExp(`^${String(ciudad).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+  }
+  if (estado) {
+    filtro.estado = new RegExp(`^${String(estado).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+  }
+
+  const casos = await SegurosAlfaCaso.find(filtro).sort({ createdAt: -1 }).lean();
+  const ubicados = [];
+  const sinUbicar = [];
+
+  for (const c of casos) {
+    const base = {
+      _id: String(c._id),
+      consecutivo: c.consecutivo,
+      siniestro: c.siniestro,
+      asegurado: c.asegurado || c.tomador,
+      tomador: c.tomador,
+      direccionPredio: c.direccionPredio,
+      ciudad: c.ciudad,
+      departamento: c.departamento,
+      estado: c.estado,
+      ajustador: c.ajustador,
+      geocodeStatus: c.ubicacionPredio?.geocodeStatus || null,
+    };
+    if (casoTieneCoordsValidas(c)) {
+      ubicados.push({
+        ...base,
+        lat: Number(c.ubicacionPredio.lat),
+        lng: Number(c.ubicacionPredio.lng),
+      });
+    } else {
+      sinUbicar.push(base);
+    }
+  }
+
+  const bloques = clusterizarPorRadio(ubicados, radioKm);
+  return {
+    radioKm: Math.max(0.3, Number(radioKm) || 2.5),
+    totalCasos: casos.length,
+    ubicados: ubicados.length,
+    sinUbicarCount: sinUbicar.length,
+    bloques,
+    sinUbicar,
+  };
+}

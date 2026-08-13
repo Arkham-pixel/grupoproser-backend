@@ -6,6 +6,11 @@ import {
   enviarAlertasTodosAlfa,
   enviarAlertasAlfaAjustador,
 } from '../services/alertasAlfaService.js';
+import {
+  geocodeCasosAlfaPendientes,
+  aplicarUbicacionesPredioAlfa,
+  obtenerBloquesCercaniaAlfa,
+} from '../services/alfaBloquesCercaniaService.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -52,23 +57,30 @@ const parseDate = (value) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+/**
+ * undefined → conserva fallback (campo no enviado).
+ * '' / null / placeholder → limpia a null (el usuario borró el dato en el formulario).
+ */
 const parseDateFlexible = (value, fallback = null) => {
-  if (esValorVacio(value) || esPlaceholderOPendiente(value)) return fallback ?? null;
-  return parseDate(value) ?? fallback ?? null;
+  if (value === undefined) return fallback ?? null;
+  if (esValorVacio(value) || esPlaceholderOPendiente(value)) return null;
+  return parseDate(value) ?? null;
 };
 
 const parseNumberFlexible = (value, fallback = null) => {
-  if (esValorVacio(value) || esPlaceholderOPendiente(value)) return fallback ?? null;
+  if (value === undefined) return fallback ?? null;
+  if (esValorVacio(value) || esPlaceholderOPendiente(value)) return null;
   const texto = String(value).trim();
-  if (!/\d/.test(texto) && typeof value !== 'number') return fallback ?? null;
+  if (!/\d/.test(texto) && typeof value !== 'number') return null;
   const limpio = texto.replace(/[^\d.,-]/g, '').replace(/,/g, '');
-  if (!limpio || limpio === '-' || limpio === '.' || limpio === '-.') return fallback ?? null;
+  if (!limpio || limpio === '-' || limpio === '.' || limpio === '-.') return null;
   const number = Number(limpio);
-  return Number.isNaN(number) ? fallback ?? null : number;
+  return Number.isNaN(number) ? null : number;
 };
 
 const toStringOrNull = (value, fallback = null) => {
-  if (esValorVacio(value)) return fallback ?? null;
+  if (value === undefined) return fallback ?? null;
+  if (esValorVacio(value)) return null;
   return String(value).trim();
 };
 
@@ -173,6 +185,7 @@ const buildAlfaPayload = (data = {}, base = {}) => ({
   reserva: parseNumberFlexible(data.reserva, base.reserva ?? null),
   valorReclamado: parseNumberFlexible(data.valorReclamado, base.valorReclamado ?? null),
   valorLiquidado: parseNumberFlexible(data.valorLiquidado, base.valorLiquidado ?? null),
+  fechaLlamada: parseDateFlexible(data.fechaLlamada, base.fechaLlamada ?? null),
   fechaInspeccion: parseDateFlexible(data.fechaInspeccion, base.fechaInspeccion ?? null),
   fechaUltimoDocumento: parseDateFlexible(
     data.fechaUltimoDocumento,
@@ -246,6 +259,9 @@ const mergeImportacionAlfa = (incomingPayload = {}, existente = {}) => {
   for (const campo of campos) {
     out[campo] = mergeCampoImport(incomingPayload[campo], existente[campo]);
   }
+  // Solo ARNALD (no Excel/SharePoint)
+  out.fechaLlamada = existente.fechaLlamada ?? null;
+  out.ubicacionPredio = existente.ubicacionPredio ?? null;
   if (!out.estado) out.estado = 'PENDIENTE';
   return out;
 };
@@ -316,7 +332,18 @@ export const listarCasosAlfa = async (req, res) => {
 
 export const obtenerCasoAlfa = async (req, res) => {
   try {
-    const documento = await buscarCasoPorId(req.params.id);
+    const id = String(req.params.id || '').trim();
+    const reservados = new Set([
+      'bloques-cercania',
+      'geocode-pendientes',
+      'ubicaciones-predio',
+      'alertas',
+      'importar',
+    ]);
+    if (reservados.has(id)) {
+      return res.status(404).json({ success: false, error: `Ruta no encontrada: ${id}` });
+    }
+    const documento = await buscarCasoPorId(id);
     if (!documento) {
       return res.status(404).json({ success: false, error: 'Caso Seguros Alfa no encontrado' });
     }
@@ -350,6 +377,24 @@ export const actualizarCasoAlfa = async (req, res) => {
         success: false,
         error: `Los siguientes campos son obligatorios: ${faltantes.join(', ')}`,
       });
+    }
+
+    // Si cambió la dirección del predio, invalidar coords cacheadas (re-geocode).
+    const dirAntes = String(base.direccionPredio || '').trim();
+    const dirDespues = String(payload.direccionPredio || '').trim();
+    const ciudadAntes = String(base.ciudad || '').trim();
+    const ciudadDespues = String(payload.ciudad || '').trim();
+    if (dirAntes !== dirDespues || ciudadAntes !== ciudadDespues) {
+      const prevUbic = base.ubicacionPredio || {};
+      payload.ubicacionPredio = {
+        ...prevUbic,
+        geocodeStatus: dirDespues ? 'stale' : 'sin_direccion',
+        geocodedAt: prevUbic.geocodedAt || null,
+      };
+      if (!dirDespues) {
+        payload.ubicacionPredio.lat = undefined;
+        payload.ubicacionPredio.lng = undefined;
+      }
     }
 
     const actualizado = await SegurosAlfaCaso.findByIdAndUpdate(registroActual._id, payload, {
@@ -650,6 +695,52 @@ export const postEnviarAlertasAlfaAjustador = async (req, res) => {
     return res.json(data);
   } catch (error) {
     console.error('Error enviando alertas Alfa (ajustador):', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/** POST /api/seguros-alfa/geocode-pendientes — geocodifica predios sin coords (no SharePoint) */
+export const postGeocodePendientesAlfa = async (req, res) => {
+  try {
+    const limit = req.body?.limit ?? req.query?.limit ?? 40;
+    const force = req.body?.force === true || req.query?.force === 'true';
+    const data = await geocodeCasosAlfaPendientes({ limit, force });
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error geocode pendientes Alfa:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * POST /api/seguros-alfa/ubicaciones-predio
+ * Aplica coords geocodificadas en el cliente (fallback si el backend no tiene API key).
+ * Body: { items: [{ casoId, lat, lng, geocodeStatus, geocodeQuery, direccionHash }] }
+ */
+export const postUbicacionesPredioAlfa = async (req, res) => {
+  try {
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (!items.length) {
+      return res.status(400).json({ success: false, error: 'items[] requerido' });
+    }
+    const data = await aplicarUbicacionesPredioAlfa(items);
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error aplicando ubicaciones Alfa:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/** GET /api/seguros-alfa/bloques-cercania?radioKm=2.5&ciudad=&estado= */
+export const getBloquesCercaniaAlfa = async (req, res) => {
+  try {
+    const radioKm = req.query?.radioKm ?? 2.5;
+    const ciudad = req.query?.ciudad || '';
+    const estado = req.query?.estado || '';
+    const data = await obtenerBloquesCercaniaAlfa({ radioKm, ciudad, estado });
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error bloques cercanía Alfa:', error);
     return res.status(500).json({ success: false, error: error.message });
   }
 };

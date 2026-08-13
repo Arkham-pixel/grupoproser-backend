@@ -11,9 +11,13 @@ import {
   getAlertasAlfa,
   postEnviarAlertasAlfaTodas,
   postEnviarAlertasAlfaAjustador,
+  postGeocodePendientesAlfa,
+  postUbicacionesPredioAlfa,
+  getBloquesCercaniaAlfa,
 } from '../controllers/segurosAlfa.controller.js';
 import { createMulterUpload, attachPersistedFileMiddleware } from '../storage/multerStorageFactory.js';
 import { STORAGE_CATEGORIES } from '../services/fileStorageService.js';
+import { verificarToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -30,6 +34,12 @@ const persistAlfa = attachPersistedFileMiddleware({
 });
 
 router.get('/', listarCasosAlfa);
+
+/** Bloques de cercanía (solo ARNALD) — DEBE ir antes de /:id */
+router.get('/bloques-cercania', getBloquesCercaniaAlfa);
+router.post('/geocode-pendientes', verificarToken, postGeocodePendientesAlfa);
+router.post('/ubicaciones-predio', verificarToken, postUbicacionesPredioAlfa);
+
 router.post('/importar', importarCasosAlfa);
 
 router.get('/alertas', getAlertasAlfa);
