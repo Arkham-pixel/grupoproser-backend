@@ -2,6 +2,7 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   DeleteObjectCommand,
   ListObjectsV2Command,
   DeleteObjectsCommand,
@@ -107,27 +108,53 @@ function toS3MetadataValue(value) {
   return /^[\x00-\x7F]*$/.test(s) ? s : encodeURIComponent(s);
 }
 
-export async function putObject({ key, body, contentType, metadata = {} }) {
+export async function putObject({
+  key,
+  body,
+  contentType,
+  metadata = {},
+  contentLength,
+} = {}) {
   const client = getS3Client();
-  await client.send(
-    new PutObjectCommand({
-      Bucket: getBucketName(),
-      Key: key,
-      Body: body,
-      ContentType: contentType || 'application/octet-stream',
-      Metadata: Object.fromEntries(
-        Object.entries(metadata).map(([k, v]) => [k, toS3MetadataValue(v)])
-      ),
-    })
-  );
-  return { bucket: getBucketName(), key };
+  const input = {
+    Bucket: getBucketName(),
+    Key: key,
+    Body: body,
+    ContentType: contentType || 'application/octet-stream',
+    Metadata: Object.fromEntries(
+      Object.entries(metadata).map(([k, v]) => [k, toS3MetadataValue(v)])
+    ),
+  };
+  // Streams de Graph requieren ContentLength explícito (SDK AWS v3).
+  if (Number.isFinite(contentLength) && contentLength >= 0) {
+    input.ContentLength = Number(contentLength);
+  } else if (Buffer.isBuffer(body)) {
+    input.ContentLength = body.length;
+  }
+  const result = await client.send(new PutObjectCommand(input));
+  return { bucket: getBucketName(), key, etag: result?.ETag || null };
 }
 
-export async function getObjectStream(key) {
+/**
+ * Metadata del objeto sin descargar el cuerpo.
+ * @throws error con name NoSuchKey / NotFound si no existe
+ */
+export async function headObject(key, { bucket } = {}) {
+  const client = getS3Client();
+  const Bucket = bucket || getBucketName();
+  return client.send(
+    new HeadObjectCommand({
+      Bucket,
+      Key: key,
+    })
+  );
+}
+
+export async function getObjectStream(key, { bucket } = {}) {
   const client = getS3Client();
   const response = await client.send(
     new GetObjectCommand({
-      Bucket: getBucketName(),
+      Bucket: bucket || getBucketName(),
       Key: key,
     })
   );

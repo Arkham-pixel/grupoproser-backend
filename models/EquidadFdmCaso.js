@@ -2,18 +2,23 @@ import mongoose from 'mongoose';
 
 /**
  * Casos Fundación de la Mujer (módulo EQUIDAD FDM).
- * Campos alineados al Excel "OLA INVERNAL ... FUNDACION DE LA MUJER".
+ * Campos alineados a los Excel OLA INVERNAL y TERREMOTO 10 AGOSTO 2026 FDLM.
  */
 const EquidadFdmCasoSchema = new mongoose.Schema({
   /** Formato FDM-YYYY-MM-N (asignado al crear; no editable) */
   consecutivo: String,
   /** N° de fila del Excel original (referencia) */
   numero: Number,
+  /** Evento catastrófico: OLA INVERNAL | TERREMOTO 10 AGOSTO 2026 */
+  evento: String,
   nombre: { type: String, required: true },
   cedula: String,
   celular: String,
   direccionAfectada: String,
   municipio: String,
+  departamento: String,
+  oficinaRadicadora: String,
+  fechaRegistro: Date,
   ajustador: String,
   /** Asesor Integral Fundación (AIF) */
   aif: String,
@@ -51,6 +56,8 @@ const EquidadFdmCasoSchema = new mongoose.Schema({
   estado: { type: String, required: true },
   observaciones: String,
   detalle: String,
+  /** true = ingresó en una carga reciente (p. ej. terremoto); no pisa casos anteriores */
+  esNuevo: { type: Boolean, default: false },
   /** Estado del liquidador FDM (encabezado, ítems, deducible, constancia) */
   liquidador: { type: mongoose.Schema.Types.Mixed, default: null },
 }, {

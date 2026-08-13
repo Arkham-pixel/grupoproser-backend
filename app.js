@@ -49,10 +49,12 @@ import documentoRoutes from './routes/documento.routes.js';
 import storageRoutes from './routes/storage.routes.js';
 import sgSstRoutes from './routes/sgSst.routes.js';
 import healthRoutes from './routes/health.routes.js';
+import sharepointRoutes from './routes/sharepoint.routes.js';
 import multer from 'multer';
 import { mapS3ErrorMessage, isS3AccessDeniedError } from './services/s3StorageService.js';
 import { UPLOADS_ROOT } from './config/uploadsRoot.js';
 import { logStorageStatusOnBoot } from './config/storage.js';
+import { logSharePointStatusOnBoot } from './config/sharepoint.js';
 
 console.log('📦 Importando rutas de intermediarios...');
 console.log('📦 Tipo de intermediarioRoutes:', typeof intermediarioRoutes);
@@ -113,6 +115,7 @@ if (!fs.existsSync(uploadsDir)) {
 }
 console.log('📁 Sirviendo /uploads desde:', uploadsDir);
 logStorageStatusOnBoot();
+logSharePointStatusOnBoot();
 
 // 3️ Sirve los archivos subidos de forma estática
 // En desarrollo: /uploads desde localhost:3000
@@ -201,6 +204,8 @@ app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/historial-formularios', historialRoutes);
 app.use('/api/alertas', alertasRoutes);
 app.use('/api/health', healthRoutes);
+app.use('/api/integrations/sharepoint', sharepointRoutes);
+console.log('✅ Ruta /api/integrations/sharepoint registrada');
 app.use('/api/funcionarios', funcionarioRoutes);
 app.use('/api/matrices-riesgo', matrizRiesgoRoutes);
 

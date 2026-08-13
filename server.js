@@ -16,6 +16,10 @@ import { CronTareasService } from './services/cronTareasService.js';
 import { iniciarCronSesiones } from './services/cronSesionesService.js';
 import { iniciarCronEmailOutbox } from './services/cronEmailOutboxService.js';
 import { iniciarCronExpressCierreMensual } from './services/cronExpressCierreMensualService.js';
+import { iniciarCronSharePointSync } from './services/cronSharepointSyncService.js';
+import { iniciarCronAlfaPolicyImport } from './services/cronAlfaPolicyImportService.js';
+import { iniciarCronAlfaExcelSharePointImport } from './services/cronAlfaExcelSharePointImportService.js';
+import { iniciarCronAlfaExcelOutbound } from './services/cronAlfaExcelOutboundService.js';
 import { verifyMailOnStartup } from './services/mailTransport.js';
 import { verifyS3OnBoot } from './config/storage.js';
 
@@ -96,6 +100,11 @@ mongoose
 
       iniciarCronExpressCierreMensual();
       console.log("✅ Servicio de cron de cierre mensual Express iniciado");
+
+      iniciarCronSharePointSync();
+      iniciarCronAlfaPolicyImport();
+      iniciarCronAlfaExcelSharePointImport();
+      iniciarCronAlfaExcelOutbound();
     } catch (error) {
       console.error("❌ Error iniciando servicios de cron:", error.message);
     }
@@ -128,6 +137,11 @@ mongoose
 
             iniciarCronExpressCierreMensual();
             console.log("✅ Servicio de cron de cierre mensual Express reiniciado después de reconexión");
+
+            iniciarCronSharePointSync();
+            iniciarCronAlfaPolicyImport();
+            iniciarCronAlfaExcelSharePointImport();
+            iniciarCronAlfaExcelOutbound();
           } catch (error) {
             console.error("❌ Error reiniciando servicios de cron:", error.message);
           }

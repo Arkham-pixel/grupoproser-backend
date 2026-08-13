@@ -1,4 +1,5 @@
 import express from 'express';
+import multer from 'multer';
 import {
   crearCasoAlfa,
   listarCasosAlfa,
@@ -7,11 +8,21 @@ import {
   eliminarCasoAlfa,
   importarCasosAlfa,
   subirArchivoAlfa,
-  actualizarArchivoAlfa,
   eliminarArchivoAlfa,
+  actualizarArchivoAlfa,
+  listarDocumentosSharePointAlfa,
+  listarPolizasImportadasAlfa,
+  reintentarSyncSharePointAlfa,
+  previewImportExcelAlfa,
+  executeImportExcelAlfa,
+  statusImportExcelAlfa,
+  reportImportExcelAlfa,
   getAlertasAlfa,
   postEnviarAlertasAlfaTodas,
   postEnviarAlertasAlfaAjustador,
+  getControlSeguimientoAlfaStatus,
+  postControlSeguimientoAlfaCheck,
+  postControlSeguimientoAlfaDismissNotification,
   postGeocodePendientesAlfa,
   postUbicacionesPredioAlfa,
   getBloquesCercaniaAlfa,
@@ -19,6 +30,8 @@ import {
 import { createMulterUpload, attachPersistedFileMiddleware } from '../storage/multerStorageFactory.js';
 import { STORAGE_CATEGORIES } from '../services/fileStorageService.js';
 import { verificarToken } from '../middleware/auth.js';
+import { verificarAdminSoporte } from '../middleware/verificarAdminSoporte.js';
+import { getAlfaExcelImportConfig } from '../config/alfaExcelImport.js';
 
 const router = express.Router();
 
@@ -34,18 +47,77 @@ const persistAlfa = attachPersistedFileMiddleware({
   ownerIdFromReq: (req) => req.params.id,
 });
 
+const excelUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: getAlfaExcelImportConfig().maxFileBytes },
+});
+
 router.get('/', listarCasosAlfa);
 
-/** Bloques de cercanía (solo ARNALD) — DEBE ir antes de /:id */
+/** Bloques de cercanía (solo ARNALD; no SharePoint) — DEBE ir antes de /:id */
 router.get('/bloques-cercania', getBloquesCercaniaAlfa);
 router.post('/geocode-pendientes', verificarToken, postGeocodePendientesAlfa);
 router.post('/ubicaciones-predio', verificarToken, postUbicacionesPredioAlfa);
 
+/** Legacy JSON import (mantener compat); preferir /import/preview + /import/execute */
 router.post('/importar', importarCasosAlfa);
+
+router.post(
+  '/import/preview',
+  verificarToken,
+  verificarAdminSoporte,
+  excelUpload.single('file'),
+  previewImportExcelAlfa
+);
+router.post(
+  '/import/execute',
+  verificarToken,
+  verificarAdminSoporte,
+  executeImportExcelAlfa
+);
+router.get(
+  '/import/:importSessionId/report.xlsx',
+  verificarToken,
+  verificarAdminSoporte,
+  reportImportExcelAlfa
+);
+router.get(
+  '/import/:importSessionId',
+  verificarToken,
+  verificarAdminSoporte,
+  statusImportExcelAlfa
+);
 
 router.get('/alertas', getAlertasAlfa);
 router.post('/alertas/enviar', postEnviarAlertasAlfaTodas);
 router.post('/alertas/enviar/:ajustador', postEnviarAlertasAlfaAjustador);
+
+/** Control y Seguimiento — detección automática Excel SharePoint (solo preview) */
+router.get(
+  '/control-seguimiento/status',
+  verificarToken,
+  getControlSeguimientoAlfaStatus
+);
+router.post(
+  '/control-seguimiento/check',
+  verificarToken,
+  verificarAdminSoporte,
+  postControlSeguimientoAlfaCheck
+);
+router.post(
+  '/control-seguimiento/notification/dismiss',
+  verificarToken,
+  postControlSeguimientoAlfaDismissNotification
+);
+
+router.get('/:id/documentos-sharepoint', listarDocumentosSharePointAlfa);
+router.get('/:id/polizas-importadas', listarPolizasImportadasAlfa);
+router.post(
+  '/:id/archivos/:archivoId/sharepoint/retry',
+  verificarToken,
+  verificarAdminSoporte,
+  reintentarSyncSharePointAlfa
+);
 
 router.post(
   '/:id/archivos',

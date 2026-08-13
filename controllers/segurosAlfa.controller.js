@@ -7,10 +7,36 @@ import {
   enviarAlertasAlfaAjustador,
 } from '../services/alertasAlfaService.js';
 import {
+  enqueueAlfaClaimDocumentAfterUpload,
+  onAlfaCasePolicyMaybeReady,
+} from '../services/alfaClaimDocumentEnqueueService.js';
+import {
+  buildAlfaSharePointDocumentsStatus,
+  markAlfaClaimDocumentForRetry,
+} from '../services/alfaSharePointStatusService.js';
+import { listImportedAlfaPoliciesForCase } from '../services/alfaPolicyImportService.js';
+import {
+  previewAlfaExcelImport,
+  executeAlfaExcelImport,
+  getAlfaExcelImportStatus,
+  buildAlfaExcelImportReportRows,
+} from '../services/alfaExcelImportService.js';
+import {
+  getAlfaExcelSharePointStatus,
+  runAlfaExcelSharePointDetectCycle,
+  dismissAlfaExcelSharePointNotification,
+  markAlfaExcelSharePointExecuted,
+} from '../services/alfaExcelSharePointImportService.js';
+import AlfaExcelSharePointSource from '../models/AlfaExcelSharePointSource.js';
+import { getAlfaExcelSharePointImportConfig } from '../config/alfaExcelSharePointImport.js';
+import { enqueueAlfaExcelOutboundFromCaseUpdate } from '../services/alfaExcelOutboundService.js';
+import { generarConsecutivoAlfa } from '../services/alfaCasoService.js';
+import {
   geocodeCasosAlfaPendientes,
   aplicarUbicacionesPredioAlfa,
   obtenerBloquesCercaniaAlfa,
 } from '../services/alfaBloquesCercaniaService.js';
+import * as XLSX from 'xlsx';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -127,14 +153,8 @@ const obtenerMaxSecuencialAlfa = async () => {
   return maxSecuencial;
 };
 
-/** Formato: ALFA-YYYY-MM-N (asignado solo al crear) */
-const generarConsecutivoAlfa = async () => {
-  const ahora = new Date();
-  const año = ahora.getFullYear();
-  const mes = String(ahora.getMonth() + 1).padStart(2, '0');
-  const maxSecuencial = await obtenerMaxSecuencialAlfa();
-  return `ALFA-${año}-${mes}-${maxSecuencial + 1}`;
-};
+/** Formato: ALFA-YYYY-MM-N (asignado solo al crear) — contador atómico compartido */
+const generarConsecutivoAlfaLocal = generarConsecutivoAlfa;
 
 const buscarCasoPorId = async (idParam) => {
   if (idParam == null || idParam === '') return null;
@@ -259,9 +279,6 @@ const mergeImportacionAlfa = (incomingPayload = {}, existente = {}) => {
   for (const campo of campos) {
     out[campo] = mergeCampoImport(incomingPayload[campo], existente[campo]);
   }
-  // Solo ARNALD (no Excel/SharePoint)
-  out.fechaLlamada = existente.fechaLlamada ?? null;
-  out.ubicacionPredio = existente.ubicacionPredio ?? null;
   if (!out.estado) out.estado = 'PENDIENTE';
   return out;
 };
@@ -279,7 +296,7 @@ const validarRequeridos = (payload) => {
 export const crearCasoAlfa = async (req, res) => {
   try {
     const payload = buildAlfaPayload(req.body);
-    payload.consecutivo = await generarConsecutivoAlfa();
+    payload.consecutivo = await generarConsecutivoAlfaLocal();
 
     const faltantes = validarRequeridos(payload);
     if (faltantes.length > 0) {
@@ -333,16 +350,20 @@ export const listarCasosAlfa = async (req, res) => {
 export const obtenerCasoAlfa = async (req, res) => {
   try {
     const id = String(req.params.id || '').trim();
+    // Evita que rutas estáticas mal ordenadas se interpreten como ObjectId/caso
     const reservados = new Set([
       'bloques-cercania',
       'geocode-pendientes',
       'ubicaciones-predio',
       'alertas',
       'importar',
+      'import',
+      'control-seguimiento',
     ]);
     if (reservados.has(id)) {
       return res.status(404).json({ success: false, error: `Ruta no encontrada: ${id}` });
     }
+
     const documento = await buscarCasoPorId(id);
     if (!documento) {
       return res.status(404).json({ success: false, error: 'Caso Seguros Alfa no encontrado' });
@@ -400,6 +421,25 @@ export const actualizarCasoAlfa = async (req, res) => {
     const actualizado = await SegurosAlfaCaso.findByIdAndUpdate(registroActual._id, payload, {
       new: true,
     });
+
+    // Outbox asíncrono (solo columnas amarillas allowlist / piloto). No bloquea la respuesta.
+    await enqueueAlfaExcelOutboundFromCaseUpdate({
+      beforeDoc: registroActual,
+      afterDoc: actualizado,
+    });
+
+    // Si llegó póliza real: liberar documentos PENDING_DESTINATION (sin re-subir a S3).
+    try {
+      await onAlfaCasePolicyMaybeReady(actualizado._id);
+    } catch (releaseErr) {
+      console.warn(
+        JSON.stringify({
+          event: 'ALFA_PENDING_DESTINATION_RELEASE_WARN',
+          claimId: String(actualizado._id),
+          message: String(releaseErr?.message || releaseErr).slice(0, 300),
+        })
+      );
+    }
 
     res.json({ success: true, data: actualizado });
   } catch (error) {
@@ -615,6 +655,22 @@ export const subirArchivoAlfa = async (req, res) => {
     await caso.save();
 
     const creado = caso.archivos[caso.archivos.length - 1];
+
+    // Réplica SharePoint async: nunca debe tumbar el upload ni la respuesta 201
+    try {
+      await enqueueAlfaClaimDocumentAfterUpload({
+        caso,
+        archivo: creado,
+        req,
+        etiqueta,
+      });
+    } catch (enqErr) {
+      console.warn(
+        '⚠️ Encolado SharePoint Alfa omitido tras upload:',
+        enqErr?.message || enqErr
+      );
+    }
+
     res.status(201).json({ success: true, data: creado, casoId: caso._id });
   } catch (error) {
     console.error('❌ Error subiendo archivo Seguros Alfa:', error);
@@ -693,6 +749,304 @@ export const eliminarArchivoAlfa = async (req, res) => {
   }
 };
 
+/** GET /api/seguros-alfa/:id/documentos-sharepoint */
+export const listarDocumentosSharePointAlfa = async (req, res) => {
+  try {
+    const caso = await buscarCasoPorId(req.params.id);
+    if (!caso) {
+      return res.status(404).json({ success: false, error: 'Caso Seguros Alfa no encontrado' });
+    }
+
+    const data = await buildAlfaSharePointDocumentsStatus(caso);
+    return res.json({
+      success: true,
+      casoId: caso._id,
+      ...data,
+    });
+  } catch (error) {
+    console.error('❌ Error listando estado SharePoint Alfa:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al obtener estado SharePoint',
+      detalle: error.message,
+    });
+  }
+};
+
+/**
+ * GET /api/seguros-alfa/:id/polizas-importadas
+ * Archivero unificado: ARNALD + importados Alfa/SharePoint.
+ */
+export const listarPolizasImportadasAlfa = async (req, res) => {
+  try {
+    const caso = await buscarCasoPorId(req.params.id);
+    if (!caso) {
+      return res.status(404).json({ success: false, error: 'Caso Seguros Alfa no encontrado' });
+    }
+
+    const polizasImportadas = await listImportedAlfaPoliciesForCase(caso);
+
+    let syncByArchivo = {};
+    try {
+      const sp = await buildAlfaSharePointDocumentsStatus(caso);
+      for (const doc of sp.documents || []) {
+        syncByArchivo[String(doc.archivoId)] = doc.sync || {};
+      }
+    } catch {
+      syncByArchivo = {};
+    }
+
+    const archivosCaso = (caso.archivos || []).map((arch) => {
+      const sync = syncByArchivo[String(arch._id)] || {};
+      const destPending = sync.destinationStatus === 'pending_destination';
+      let estado = 'none';
+      if (destPending) estado = 'pending_destination';
+      else if (sync.status === 'synced') estado = 'synced';
+      else if (sync.status === 'syncing') estado = 'syncing';
+      else if (sync.status === 'pending') estado = 'pending';
+      else if (sync.status === 'failed') estado = 'failed';
+
+      return {
+        id: String(arch._id),
+        key: `arnald:${arch._id}`,
+        origin: 'arnald',
+        originLabel: 'ARNALD',
+        nombre: arch.nombreOriginal || arch.nombreArchivo || 'documento',
+        tipo: arch.etiqueta || 'GENERAL',
+        documentType: arch.etiqueta || 'GENERAL',
+        tamaño: arch.tamaño ?? null,
+        tipoMime: arch.tipoMime || null,
+        fecha: arch.fechaSubida || null,
+        fechaSubida: arch.fechaSubida || null,
+        ruta: arch.ruta || null,
+        downloadUrl: arch.ruta || null,
+        estado,
+        estadoLabel: destPending
+          ? 'Pendiente de destino'
+          : sync.status === 'synced'
+            ? 'Sincronizado'
+            : sync.status === 'syncing'
+              ? 'Sincronizando'
+              : sync.status === 'pending'
+                ? 'Pendiente'
+                : sync.status === 'failed'
+                  ? 'Error'
+                  : '—',
+        sharepoint: {
+          webUrl: sync.webUrl || null,
+          path: sync.path || null,
+        },
+        canRetry: sync.status === 'failed',
+        archivoId: String(arch._id),
+      };
+    });
+
+    const inbound = (polizasImportadas || []).map((p) => ({
+      id: p.id,
+      key: `alfa:${p.id}`,
+      origin: 'sharepoint',
+      originLabel: 'ALFA / SHAREPOINT',
+      nombre: p.originalName,
+      tipo: p.tipo || p.documentType || 'Póliza',
+      documentType: p.documentType || 'poliza',
+      tamaño: p.size ?? null,
+      tipoMime: p.mimeType || null,
+      fecha: p.importedAt || null,
+      fechaSubida: p.importedAt || null,
+      downloadUrl: p.downloadUrl || null,
+      estado: 'imported',
+      estadoLabel: 'Importado desde Alfa',
+      sharepoint: p.sharepoint || {},
+      canRetry: false,
+      associatedBy: p.associatedBy || null,
+      associatedByLabel: p.associatedByLabel || null,
+      policyNumber: p.policyNumber || null,
+    }));
+
+    // Evitar duplicar visualmente por nombre+size si mismo S3 key aparece en ambos
+    const seenKeys = new Set();
+    const documentos = [];
+    for (const d of [...archivosCaso, ...inbound]) {
+      const dedupe = `${d.origin}|${d.nombre}|${d.tamaño || 0}`;
+      if (seenKeys.has(dedupe) && d.origin === 'sharepoint') continue;
+      seenKeys.add(dedupe);
+      documentos.push(d);
+    }
+    documentos.sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
+
+    return res.json({
+      success: true,
+      casoId: caso._id,
+      numeroPoliza: caso.numeroPoliza || null,
+      archivosCaso,
+      polizasImportadas,
+      documentos,
+    });
+  } catch (error) {
+    console.error('❌ Error listando pólizas importadas Alfa:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al obtener pólizas importadas',
+      detalle: error.message,
+    });
+  }
+};
+
+const usuarioImportDesdeReq = (req) => {
+  const u = req.user || req.usuario || {};
+  return {
+    id: String(u.id || u._id || ''),
+    login: String(u.login || u.email || ''),
+    nombre: String(u.nombre || u.name || u.login || ''),
+  };
+};
+
+/** POST /api/seguros-alfa/import/preview — multipart file excel */
+export const previewImportExcelAlfa = async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file?.buffer) {
+      return res.status(400).json({
+        success: false,
+        error: 'Debe adjuntar un archivo Excel (campo "file")',
+        code: 'MISSING_FILE',
+      });
+    }
+    const data = await previewAlfaExcelImport({
+      buffer: file.buffer,
+      fileName: file.originalname,
+      mimeType: file.mimetype,
+      user: usuarioImportDesdeReq(req),
+      source: 'manual',
+    });
+    return res.json({ success: true, ...data });
+  } catch (error) {
+    const status = error.status || 500;
+    if (status >= 500) console.error('❌ preview Excel Alfa:', error);
+    return res.status(status).json({
+      success: false,
+      error: error.message || 'Error en preview',
+      code: error.code || 'PREVIEW_ERROR',
+    });
+  }
+};
+
+/** POST /api/seguros-alfa/import/execute — { importSessionId, force? } */
+export const executeImportExcelAlfa = async (req, res) => {
+  try {
+    const importSessionId = req.body?.importSessionId;
+    const force = req.body?.force === true;
+    const data = await executeAlfaExcelImport({
+      importSessionId,
+      force,
+      user: usuarioImportDesdeReq(req),
+    });
+
+    // Si la sesión venía de SharePoint, actualizar checkpoint (nunca desde cron)
+    try {
+      const cfg = getAlfaExcelSharePointImportConfig();
+      const src = await AlfaExcelSharePointSource.findOne({
+        integrationKey: cfg.integrationKey,
+      }).lean();
+      if (
+        src?.lastPreviewImportId &&
+        String(src.lastPreviewImportId) === String(importSessionId)
+      ) {
+        await markAlfaExcelSharePointExecuted({
+          importSessionId,
+          eTag: src.lastPreviewedEtag,
+        });
+      }
+    } catch (e) {
+      console.warn('⚠️ Checkpoint SharePoint Excel no actualizado:', e.message);
+    }
+
+    return res.json({ success: true, ...data });
+  } catch (error) {
+    const status = error.status || 500;
+    if (status >= 500) console.error('❌ execute Excel Alfa:', error);
+    return res.status(status).json({
+      success: false,
+      error: error.message || 'Error en execute',
+      code: error.code || 'EXECUTE_ERROR',
+    });
+  }
+};
+
+/** GET /api/seguros-alfa/import/:importSessionId */
+export const statusImportExcelAlfa = async (req, res) => {
+  try {
+    const data = await getAlfaExcelImportStatus(req.params.importSessionId);
+    return res.json({ success: true, ...data });
+  } catch (error) {
+    const status = error.status || 500;
+    return res.status(status).json({
+      success: false,
+      error: error.message,
+      code: error.code || 'STATUS_ERROR',
+    });
+  }
+};
+
+/** GET /api/seguros-alfa/import/:importSessionId/report.xlsx */
+export const reportImportExcelAlfa = async (req, res) => {
+  try {
+    const rows = await buildAlfaExcelImportReportRows(req.params.importSessionId);
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, 'Resultados');
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="alfa-import-${req.params.importSessionId}.xlsx"`
+    );
+    return res.send(buffer);
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Error generando reporte',
+    });
+  }
+};
+
+/**
+ * POST /api/seguros-alfa/:id/archivos/:archivoId/sharepoint/retry
+ * Solo marca elegible para el worker; no sincroniza en el request.
+ */
+export const reintentarSyncSharePointAlfa = async (req, res) => {
+  try {
+    const caso = await buscarCasoPorId(req.params.id);
+    if (!caso) {
+      return res.status(404).json({ success: false, error: 'Caso Seguros Alfa no encontrado' });
+    }
+
+    const result = await markAlfaClaimDocumentForRetry({
+      caso,
+      archivoId: req.params.archivoId,
+    });
+
+    return res.json({
+      success: true,
+      message: 'Documento marcado para reintento. El worker lo procesará en el próximo ciclo.',
+      data: result,
+    });
+  } catch (error) {
+    const status = error.status || 500;
+    if (status >= 500) {
+      console.error('❌ Error retry SharePoint Alfa:', error);
+    }
+    return res.status(status).json({
+      success: false,
+      error: error.message || 'Error al reintentar sincronización',
+      code: error.code || 'RETRY_ERROR',
+    });
+  }
+};
+
 /** GET /api/seguros-alfa/alertas */
 export const getAlertasAlfa = async (_req, res) => {
   try {
@@ -728,6 +1082,52 @@ export const postEnviarAlertasAlfaAjustador = async (req, res) => {
     return res.json(data);
   } catch (error) {
     console.error('Error enviando alertas Alfa (ajustador):', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/** GET /api/seguros-alfa/control-seguimiento/status */
+export const getControlSeguimientoAlfaStatus = async (req, res) => {
+  try {
+    const data = await getAlfaExcelSharePointStatus();
+    return res.json({ success: true, ...data });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'CONTROL_SEGUIMIENTO_STATUS_ERROR',
+      uiStatus: 'error',
+      headline: '⚠ No fue posible consultar Control y Seguimiento',
+      tone: 'error',
+    });
+  }
+};
+
+/** POST /api/seguros-alfa/control-seguimiento/check — fuerza ciclo detección+preview */
+export const postControlSeguimientoAlfaCheck = async (req, res) => {
+  try {
+    const force = req.body?.force === true;
+    const data = await runAlfaExcelSharePointDetectCycle({ force });
+    const status = await getAlfaExcelSharePointStatus();
+    return res.json({ success: true, cycle: data, ...status });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+      code: error.code || 'CONTROL_SEGUIMIENTO_CHECK_ERROR',
+      uiStatus: 'error',
+      headline: '⚠ No fue posible consultar Control y Seguimiento',
+      tone: 'error',
+    });
+  }
+};
+
+/** POST /api/seguros-alfa/control-seguimiento/notification/dismiss */
+export const postControlSeguimientoAlfaDismissNotification = async (req, res) => {
+  try {
+    const data = await dismissAlfaExcelSharePointNotification();
+    return res.json({ success: true, ...data });
+  } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
   }
 };

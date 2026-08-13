@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import EquidadFdmCaso from '../models/EquidadFdmCaso.js';
+import { ejecutarImportacionFdm } from '../services/fdmImportService.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -89,6 +90,10 @@ const buildFdmPayload = (data = {}, base = {}) => ({
   celular: toStringOrNull(data.celular, base.celular ?? null),
   direccionAfectada: toStringOrNull(data.direccionAfectada, base.direccionAfectada ?? null),
   municipio: toStringOrNull(data.municipio, base.municipio ?? null),
+  departamento: toStringOrNull(data.departamento, base.departamento ?? null),
+  oficinaRadicadora: toStringOrNull(data.oficinaRadicadora, base.oficinaRadicadora ?? null),
+  fechaRegistro: parseDateFlexible(data.fechaRegistro, base.fechaRegistro ?? null),
+  evento: toStringOrNull(data.evento, base.evento ?? null),
   ajustador: toStringOrNull(data.ajustador, base.ajustador ?? null),
   aif: toStringOrNull(data.aif, base.aif ?? null),
   polizaDanosVigente: toStringOrNull(data.polizaDanosVigente, base.polizaDanosVigente ?? null),
@@ -125,6 +130,7 @@ const buildFdmPayload = (data = {}, base = {}) => ({
   estado: toStringOrNull(data.estado, base.estado ?? null),
   observaciones: toStringOrNull(data.observaciones, base.observaciones ?? null),
   detalle: toStringOrNull(data.detalle, base.detalle ?? null),
+  esNuevo: data.esNuevo === true || data.esNuevo === 'true' || base.esNuevo === true,
   liquidador: parseLiquidadorPayload(data.liquidador, base.liquidador ?? null),
 });
 
@@ -142,6 +148,7 @@ export const crearCasoFdm = async (req, res) => {
   try {
     const payload = buildFdmPayload(req.body);
     payload.consecutivo = await generarConsecutivoFdm();
+    payload.esNuevo = true;
 
     const faltantes = validarRequeridos(payload);
     if (faltantes.length > 0) {
@@ -263,3 +270,42 @@ export const eliminarCasoFdm = async (req, res) => {
     });
   }
 };
+
+/**
+ * POST /api/equidad-fdm/importar
+ * Crea o actualiza sin borrar la colección. Un terremoto no pisa la ola invernal.
+ */
+export const importarCasosFdm = async (req, res) => {
+  try {
+    const filas = Array.isArray(req.body?.casos) ? req.body.casos : null;
+    if (!filas || filas.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Debe enviar un arreglo "casos" con al menos un registro',
+      });
+    }
+    if (filas.length > 5000) {
+      return res.status(400).json({
+        success: false,
+        error: 'El lote supera el máximo de 5000 casos por importación',
+      });
+    }
+
+    const normalizadas = filas.map((fila) =>
+      buildFdmPayload({
+        ...fila,
+        estado: fila?.estado || 'PENDIENTE',
+      })
+    );
+    const resumen = await ejecutarImportacionFdm(normalizadas);
+    res.json({ success: true, data: resumen });
+  } catch (error) {
+    console.error('❌ Error al importar casos Equidad FDM:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al importar los casos Equidad FDM',
+      detalle: error.message,
+    });
+  }
+};
+
