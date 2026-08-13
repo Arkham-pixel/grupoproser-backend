@@ -206,6 +206,7 @@ const buildAlfaPayload = (data = {}, base = {}) => ({
   valorReclamado: parseNumberFlexible(data.valorReclamado, base.valorReclamado ?? null),
   valorLiquidado: parseNumberFlexible(data.valorLiquidado, base.valorLiquidado ?? null),
   fechaLlamada: parseDateFlexible(data.fechaLlamada, base.fechaLlamada ?? null),
+  observacionLlamada: toStringOrNull(data.observacionLlamada, base.observacionLlamada ?? null) || '',
   fechaInspeccion: parseDateFlexible(data.fechaInspeccion, base.fechaInspeccion ?? null),
   fechaUltimoDocumento: parseDateFlexible(
     data.fechaUltimoDocumento,
@@ -275,6 +276,10 @@ const mergeImportacionAlfa = (incomingPayload = {}, existente = {}) => {
     archivos: existente.archivos || [],
     liquidador: existente.liquidador ?? null,
     informeUnico: existente.informeUnico ?? null,
+    // Solo ARNALD: el Excel nunca los trae; no se deben perder en import.
+    fechaLlamada: existente.fechaLlamada ?? null,
+    observacionLlamada: existente.observacionLlamada || '',
+    ubicacionPredio: existente.ubicacionPredio ?? undefined,
   };
   for (const campo of campos) {
     out[campo] = mergeCampoImport(incomingPayload[campo], existente[campo]);
@@ -418,9 +423,14 @@ export const actualizarCasoAlfa = async (req, res) => {
       }
     }
 
-    const actualizado = await SegurosAlfaCaso.findByIdAndUpdate(registroActual._id, payload, {
-      new: true,
-    });
+    const actualizado = await SegurosAlfaCaso.findByIdAndUpdate(
+      registroActual._id,
+      { $set: payload },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
 
     // Outbox asíncrono (solo columnas amarillas allowlist / piloto). No bloquea la respuesta.
     await enqueueAlfaExcelOutboundFromCaseUpdate({

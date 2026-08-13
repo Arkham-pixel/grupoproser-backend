@@ -29,6 +29,36 @@ export function construirQueryGeocodeAlfa(caso = {}) {
   return partes.join(', ');
 }
 
+/**
+ * Textos tipo PENDIENTE / POR CONFIRMAR no son direcciones reales.
+ * Google a veces las “ubica” por ciudad → pins falsos.
+ */
+export function esDireccionPredioGeocodableAlfa(direccion = '') {
+  const s = String(direccion || '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, ' ');
+  if (!s) return false;
+  if (/^POR\s*CONFIRM/.test(s)) return false;
+  const placeholders = new Set([
+    'PENDIENTE',
+    'POR CONFIRMAR',
+    'PORCONFIRM',
+    'N/A',
+    'NA',
+    'S/D',
+    'SD',
+    'SIN DIRECCION',
+    'NINGUNA',
+    'NO APLICA',
+    '-',
+    '.',
+  ]);
+  return !placeholders.has(s);
+}
+
 export function haversineKm(a, b) {
   const toRad = (d) => (d * Math.PI) / 180;
   const dLat = toRad(b.lat - a.lat);
@@ -45,6 +75,7 @@ export function casoTieneCoordsValidas(caso) {
   const u = caso?.ubicacionPredio;
   return (
     u &&
+    esDireccionPredioGeocodableAlfa(caso?.direccionPredio) &&
     Number.isFinite(Number(u.lat)) &&
     Number.isFinite(Number(u.lng)) &&
     (u.geocodeStatus === 'ok' || u.geocodeStatus === 'manual')
@@ -52,8 +83,7 @@ export function casoTieneCoordsValidas(caso) {
 }
 
 export function casoNecesitaGeocode(caso, { force = false } = {}) {
-  const dir = String(caso?.direccionPredio || '').trim();
-  if (!dir) return false;
+  if (!esDireccionPredioGeocodableAlfa(caso?.direccionPredio)) return false;
   if (force) return true;
   const u = caso?.ubicacionPredio;
   if (!u) return true;
@@ -110,10 +140,34 @@ export async function geocodeDireccionGoogle(query) {
   };
 }
 
+/** Placeholder geocodificado por error (p. ej. "POR CONFIRMAR" → pin en ciudad). */
+function casoNecesitaLimpiezaPlaceholder(caso) {
+  if (esDireccionPredioGeocodableAlfa(caso?.direccionPredio)) return false;
+  const u = caso?.ubicacionPredio;
+  if (!u) return false;
+  if (
+    u.geocodeStatus === 'sin_direccion' &&
+    !Number.isFinite(Number(u.lat)) &&
+    !Number.isFinite(Number(u.lng))
+  ) {
+    return false;
+  }
+  return (
+    Number.isFinite(Number(u.lat)) ||
+    Number.isFinite(Number(u.lng)) ||
+    u.geocodeStatus === 'ok' ||
+    u.geocodeStatus === 'manual' ||
+    u.geocodeStatus === 'failed' ||
+    u.geocodeStatus == null
+  );
+}
+
 export async function geocodeCasosAlfaPendientes({ limit = 40, force = false } = {}) {
   const lim = Math.min(Math.max(Number(limit) || 40, 1), 100);
   const casos = await SegurosAlfaCaso.find({}).sort({ updatedAt: -1 }).lean();
-  const pendientes = casos.filter((c) => casoNecesitaGeocode(c, { force })).slice(0, lim);
+  const pendientes = casos
+    .filter((c) => casoNecesitaLimpiezaPlaceholder(c) || casoNecesitaGeocode(c, { force }))
+    .slice(0, lim);
 
   const resumen = {
     evaluados: casos.length,
@@ -128,13 +182,17 @@ export async function geocodeCasosAlfaPendientes({ limit = 40, force = false } =
     const query = construirQueryGeocodeAlfa(caso);
     const hash = hashDireccionAlfa(caso.direccionPredio, caso.ciudad, caso.departamento);
 
-    if (!String(caso.direccionPredio || '').trim()) {
+    if (!esDireccionPredioGeocodableAlfa(caso.direccionPredio)) {
       await SegurosAlfaCaso.findByIdAndUpdate(caso._id, {
-        ubicacionPredio: {
-          geocodeStatus: 'sin_direccion',
-          geocodeQuery: query,
-          direccionHash: hash,
-          geocodedAt: new Date(),
+        $set: {
+          'ubicacionPredio.geocodeStatus': 'sin_direccion',
+          'ubicacionPredio.geocodeQuery': query,
+          'ubicacionPredio.direccionHash': hash,
+          'ubicacionPredio.geocodedAt': new Date(),
+        },
+        $unset: {
+          'ubicacionPredio.lat': '',
+          'ubicacionPredio.lng': '',
         },
       });
       resumen.sinDireccion += 1;
@@ -214,16 +272,30 @@ export async function aplicarUbicacionesPredioAlfa(items = []) {
     const lat = Number(item.lat);
     const lng = Number(item.lng);
     const status = item.geocodeStatus || (Number.isFinite(lat) && Number.isFinite(lng) ? 'ok' : 'failed');
-    const update = {
-      ubicacionPredio: {
-        lat: Number.isFinite(lat) ? lat : undefined,
-        lng: Number.isFinite(lng) ? lng : undefined,
-        geocodeStatus: status,
-        geocodeQuery: item.geocodeQuery || '',
-        direccionHash: item.direccionHash || undefined,
-        geocodedAt: new Date(),
-      },
-    };
+    const clearCoords = status === 'sin_direccion' || status === 'failed' || !Number.isFinite(lat) || !Number.isFinite(lng);
+    const update = clearCoords
+      ? {
+          $set: {
+            'ubicacionPredio.geocodeStatus': status,
+            'ubicacionPredio.geocodeQuery': item.geocodeQuery || '',
+            'ubicacionPredio.direccionHash': item.direccionHash || undefined,
+            'ubicacionPredio.geocodedAt': new Date(),
+          },
+          $unset: {
+            'ubicacionPredio.lat': '',
+            'ubicacionPredio.lng': '',
+          },
+        }
+      : {
+          ubicacionPredio: {
+            lat,
+            lng,
+            geocodeStatus: status,
+            geocodeQuery: item.geocodeQuery || '',
+            direccionHash: item.direccionHash || undefined,
+            geocodedAt: new Date(),
+          },
+        };
     const doc = await SegurosAlfaCaso.findByIdAndUpdate(id, update, { new: true }).lean();
     if (doc) {
       aplicados.push({

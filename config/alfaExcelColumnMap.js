@@ -105,7 +105,7 @@ export const ALFA_EXCEL_UPDATABLE_FIELDS = Object.freeze([
  * Incluye `estado`: el workflow interno de ARNALD no se pisa desde Excel.
  * Si el Excel trae un `estado` distinto, el preview reporta IGNORED_PROTECTED
  * (no se oculta del diff: before/afterExcel + action).
- * `fechaLlamada` es solo ARNALD (formulario/reporte); no entra ni sale por SharePoint.
+ * `fechaLlamada` y `observacionLlamada` son solo ARNALD (formulario/reporte); no entran ni salen por SharePoint.
  */
 export const PROTECTED_ALFA_FIELDS = Object.freeze([
   '_id',
@@ -118,6 +118,7 @@ export const PROTECTED_ALFA_FIELDS = Object.freeze([
   'createdBy',
   'estado',
   'fechaLlamada',
+  'observacionLlamada',
   'ubicacionPredio',
   '__v',
 ]);

@@ -59,6 +59,8 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
     valorReclamado: Number,
     valorLiquidado: Number,
     fechaLlamada: Date,
+    /** Nota libre que complementa la fecha de llamada (solo ARNALD). */
+    observacionLlamada: { type: String, default: '' },
     fechaInspeccion: Date,
     fechaUltimoDocumento: Date,
     fechaLiquidado: Date,

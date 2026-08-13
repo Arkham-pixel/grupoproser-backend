@@ -129,6 +129,10 @@ export function buildAlfaCasoPayload(data = {}, base = {}) {
     reserva: parseNumberFlexible(data.reserva, base.reserva ?? null),
     valorReclamado: parseNumberFlexible(data.valorReclamado, base.valorReclamado ?? null),
     valorLiquidado: parseNumberFlexible(data.valorLiquidado, base.valorLiquidado ?? null),
+    /** Solo ARNALD (formulario/reporte); Excel/SharePoint no los alimentan. */
+    fechaLlamada: parseDateFlexible(data.fechaLlamada, base.fechaLlamada ?? null),
+    observacionLlamada:
+      toStringOrNull(data.observacionLlamada, base.observacionLlamada ?? null) || '',
     fechaInspeccion: parseDateFlexible(data.fechaInspeccion, base.fechaInspeccion ?? null),
     fechaUltimoDocumento: parseDateFlexible(
       data.fechaUltimoDocumento,
