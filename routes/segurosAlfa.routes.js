@@ -7,6 +7,7 @@ import {
   eliminarCasoAlfa,
   importarCasosAlfa,
   subirArchivoAlfa,
+  actualizarArchivoAlfa,
   eliminarArchivoAlfa,
   getAlertasAlfa,
   postEnviarAlertasAlfaTodas,
@@ -52,6 +53,7 @@ router.post(
   persistAlfa,
   subirArchivoAlfa
 );
+router.patch('/:id/archivos/:archivoId', verificarToken, actualizarArchivoAlfa);
 router.delete('/:id/archivos/:archivoId', eliminarArchivoAlfa);
 router.get('/:id', obtenerCasoAlfa);
 router.post('/', crearCasoAlfa);

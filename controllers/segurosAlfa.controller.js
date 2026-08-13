@@ -628,6 +628,39 @@ export const subirArchivoAlfa = async (req, res) => {
   }
 };
 
+/** PATCH /api/seguros-alfa/:id/archivos/:archivoId — p.ej. descripción/leyenda de foto */
+export const actualizarArchivoAlfa = async (req, res) => {
+  try {
+    const caso = await buscarCasoPorId(req.params.id);
+    if (!caso) {
+      return res.status(404).json({ success: false, error: 'Caso Seguros Alfa no encontrado' });
+    }
+
+    const archivo = caso.archivos?.id?.(req.params.archivoId);
+    if (!archivo) {
+      return res.status(404).json({ success: false, error: 'Archivo no encontrado' });
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'descripcion')) {
+      archivo.descripcion = toStringOrNull(req.body.descripcion, '') || '';
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'etiqueta')) {
+      const et = toStringOrNull(req.body.etiqueta);
+      if (et) archivo.etiqueta = et;
+    }
+
+    await caso.save();
+    res.json({ success: true, data: archivo });
+  } catch (error) {
+    console.error('❌ Error actualizando archivo Seguros Alfa:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al actualizar el archivo',
+      detalle: error.message,
+    });
+  }
+};
+
 /** DELETE /api/seguros-alfa/:id/archivos/:archivoId */
 export const eliminarArchivoAlfa = async (req, res) => {
   try {

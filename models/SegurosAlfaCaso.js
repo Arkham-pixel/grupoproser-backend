@@ -9,6 +9,8 @@ const ArchivoAlfaSchema = new mongoose.Schema(
     tipoMime: String,
     /** Póliza, inspección, liquidación, fotos, otro… */
     etiqueta: { type: String, default: 'GENERAL' },
+    /** Leyenda / descripción para el informe Word (fotos de inspección). */
+    descripcion: { type: String, default: '' },
     subidoPor: {
       id: String,
       login: String,
