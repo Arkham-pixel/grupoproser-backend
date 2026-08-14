@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import crypto from 'crypto';
 import Complex from '../models/Complex.js';
 import Siniestro from '../models/CasoComplex.js';
+import SegurosSuraCaso from '../models/SegurosSuraCaso.js';
 import {
   normalizarClaveGerente,
   nombreGerente,
@@ -76,6 +77,8 @@ export async function resolverCasoIdFacturacion({ casoId, numeroCaso }) {
     if (existe) return id;
     const existeSin = await Siniestro.exists({ _id: id });
     if (existeSin) return id;
+    const existeSura = await SegurosSuraCaso.exists({ _id: id });
+    if (existeSura) return id;
   }
 
   const num = String(numeroCaso || '').trim();
@@ -86,6 +89,13 @@ export async function resolverCasoIdFacturacion({ casoId, numeroCaso }) {
 
   const porNumeroSin = await Siniestro.findOne({ nmroAjste: num }).select('_id').lean();
   if (porNumeroSin?._id) return String(porNumeroSin._id);
+
+  const porNumeroSura = await SegurosSuraCaso.findOne({
+    $or: [{ nmroAjste: num }, { consecutivo: num }],
+  })
+    .select('_id')
+    .lean();
+  if (porNumeroSura?._id) return String(porNumeroSura._id);
 
   return null;
 }
@@ -100,7 +110,8 @@ export async function registrarEnvioFacturacion(casoId, datos) {
   // Evitar duplicados por doble clic / reenvío inmediato del mismo tipo y gerente
   const casoActual =
     (await Complex.findById(casoId).select('envios_facturacion').lean()) ||
-    (await Siniestro.findById(casoId).select('envios_facturacion').lean());
+    (await Siniestro.findById(casoId).select('envios_facturacion').lean()) ||
+    (await SegurosSuraCaso.findById(casoId).select('envios_facturacion').lean());
   const envios = Array.isArray(casoActual?.envios_facturacion) ? casoActual.envios_facturacion : [];
   const ahora = Date.now();
   const ventanaMs = 2 * 60 * 1000;
@@ -141,6 +152,9 @@ export async function registrarEnvioFacturacion(casoId, datos) {
 
   if (!actualizado) {
     actualizado = await Siniestro.findByIdAndUpdate(casoId, update, { new: true });
+  }
+  if (!actualizado) {
+    actualizado = await SegurosSuraCaso.findByIdAndUpdate(casoId, update, { new: true });
   }
 
   return { ok: Boolean(actualizado), registro, casoId: String(casoId) };
@@ -418,6 +432,7 @@ export async function listarBandejaFacturacion({
   responsables = [],
   estados = [],
   aseguradoras = [],
+  coleccion = 'complex',
 }) {
   const gerenteNorm = normalizarClaveGerente(gerente);
   if (!gerenteNorm) {
@@ -446,9 +461,10 @@ export async function listarBandejaFacturacion({
     control_horas: 1,
   };
 
+  const Modelo = coleccion === 'sura' ? SegurosSuraCaso : Complex;
   let docs = [];
   try {
-    docs = await Complex.collection
+    docs = await Modelo.collection
       .find(filtro)
       .project(proyeccion)
       .sort({ 'ultimo_envio_facturacion.fecha': -1 })
@@ -457,7 +473,7 @@ export async function listarBandejaFacturacion({
       .toArray();
   } catch (error) {
     console.error('❌ [bandeja] Error en consulta nativa, reintento con mongoose:', error.message);
-    docs = await Complex.find(filtro)
+    docs = await Modelo.find(filtro)
       .select(Object.keys(proyeccion).join(' '))
       .sort({ 'ultimo_envio_facturacion.fecha': -1 })
       .limit(MAX_CASOS_BANDEJA)
@@ -534,6 +550,7 @@ async function cargarCasoConEnvios(casoId) {
   if (!esObjectIdValido(id)) return null;
   let doc = await Complex.findById(id).lean();
   if (!doc) doc = await Siniestro.findById(id).lean();
+  if (!doc) doc = await SegurosSuraCaso.findById(id).lean();
   return doc;
 }
 
@@ -545,6 +562,9 @@ async function guardarEnviosFacturacion(casoId, envios, resumenes) {
   let actualizado = await Complex.findByIdAndUpdate(casoId, { $set: payload }, { new: true });
   if (!actualizado) {
     actualizado = await Siniestro.findByIdAndUpdate(casoId, { $set: payload }, { new: true });
+  }
+  if (!actualizado) {
+    actualizado = await SegurosSuraCaso.findByIdAndUpdate(casoId, { $set: payload }, { new: true });
   }
   return Boolean(actualizado);
 }

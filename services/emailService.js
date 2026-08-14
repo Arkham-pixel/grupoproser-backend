@@ -957,7 +957,8 @@ export const enviarEmailAlertasAlfa = async (datosAlertas) => {
 
     const t = getEmailText(datosAlertas);
     const tituloSistema = t.alertsSystemAlfa || 'Sistema de Alertas Seguros Alfa';
-    const enlacePanel = `${resolveFrontendUrl()}/seguros-alfa/reporte`;
+    const enlacePanel =
+      datosAlertas.enlacePanelOverride || `${resolveFrontendUrl()}/seguros-alfa/reporte`;
 
     const { attachments, enlacesHtml, totalAdjuntos, totalSoloEnlace } =
       await prepararAdjuntosArchivosConRuta(datosAlertas.archivosConRuta || []);
@@ -1157,6 +1158,31 @@ export const enviarEmailAlertasZurich = async (datosAlertas) => {
   } catch (error) {
     console.error('❌ Error enviando email de alertas Zurich:', error);
     throw new Error(`Error enviando email de alertas Zurich: ${error.message}`);
+  }
+};
+
+/** Alertas Sura: reutiliza el layout de Alfa con panel Sura. */
+export const enviarEmailAlertasSura = async (datosAlertas) => {
+  const adaptado = {
+    ...datosAlertas,
+  };
+  try {
+    console.log('📧 Iniciando envío de email de alertas Sura...');
+    if (!adaptado.emailResponsable) {
+      return {
+        success: false,
+        message: 'No hay email válido para notificar alertas',
+      };
+    }
+    return await enviarEmailAlertasAlfa({
+      ...adaptado,
+      modulo: 'Sura',
+      aseguradora: adaptado.aseguradora || 'Sura',
+      enlacePanelOverride: `${resolveFrontendUrl()}/sura/reporte`,
+    });
+  } catch (error) {
+    console.error('❌ Error enviando email de alertas Sura:', error);
+    throw new Error(`Error enviando email de alertas Sura: ${error.message}`);
   }
 };
 

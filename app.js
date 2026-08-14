@@ -40,6 +40,7 @@ import expressCatalogoRoutes from './routes/expressCatalogo.routes.js';
 import siniestroExpressRoutes from './routes/siniestroExpress.routes.js';
 import equidadFdmRoutes from './routes/equidadFdm.routes.js';
 import segurosAlfaRoutes from './routes/segurosAlfa.routes.js';
+import segurosSuraRoutes from './routes/segurosSura.routes.js';
 import zurichRoutes from './routes/zurich.routes.js';
 import propiedadesRoutes from './routes/propiedades.routes.js';
 import chatgptRoutes from './routes/chatgpt.routes.js';
@@ -159,6 +160,12 @@ if (!fs.existsSync(zurichUploadsDir)) {
   console.log("📁 Carpeta 'uploads/zurich/' creada... ✅");
 }
 
+const suraUploadsDir = path.join(uploadsDir, "sura");
+if (!fs.existsSync(suraUploadsDir)) {
+  fs.mkdirSync(suraUploadsDir, { recursive: true });
+  console.log("📁 Carpeta 'uploads/sura/' creada... ✅");
+}
+
 // Para producción: también servir archivos estáticos del frontend
 if (process.env.NODE_ENV === 'production') {
   const frontendPath = path.join(__dirname, '../frontend/dist');
@@ -221,6 +228,7 @@ app.use('/api/express-catalogos', expressCatalogoRoutes);
 app.use('/api/siniestros-express', siniestroExpressRoutes);
 app.use('/api/equidad-fdm', equidadFdmRoutes);
 app.use('/api/seguros-alfa', segurosAlfaRoutes);
+app.use('/api/sura', segurosSuraRoutes);
 app.use('/api/zurich', zurichRoutes);
 app.use('/api/propiedades', propiedadesRoutes);
 app.use('/api/chatgpt', chatgptRoutes);
