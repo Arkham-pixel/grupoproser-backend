@@ -425,6 +425,12 @@ router.post("/login", async (req, res) => {
     } else {
       console.log('ℹ️ Login directo - 2FA con app no activado para:', correo);
     }
+
+    const nombreConSufijo = aplicarSufijoNombrePorRol(usuario.name, usuario.role);
+    if (nombreConSufijo && nombreConSufijo !== usuario.name) {
+      usuario.name = nombreConSufijo;
+      await usuario.save();
+    }
     
     // Generar token JWT
     const token = jwt.sign(
@@ -604,6 +610,12 @@ router.post("/login/2fa", async (req, res) => {
       
       console.log('✅ Código TOTP válido para:', usuario.login);
       
+      const nombreConSufijoTotp = aplicarSufijoNombrePorRol(usuario.name, usuario.role);
+      if (nombreConSufijoTotp && nombreConSufijoTotp !== usuario.name) {
+        usuario.name = nombreConSufijoTotp;
+        await usuario.save();
+      }
+
       // Generar token JWT definitivo
       const token = jwt.sign(
         { id: usuario._id, login: usuario.login, role: usuario.role, locale: usuario.locale || 'es' },

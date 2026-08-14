@@ -1,12 +1,8 @@
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/secrets.js';
-import { normalizarRol } from '../config/roles.js';
+import { CONTRATISTAS_MODULO, normalizarRol } from '../config/roles.js';
 
-/**
- * Contractor Zurich solo puede usar APIs del módulo Zurich (y sesión/perfil).
- */
-const PREFIJOS_PERMITIDOS = [
-  '/api/zurich',
+const PREFIJOS_COMUNES = [
   '/api/storage',
   '/api/health',
   '/api/secur-auth',
@@ -25,16 +21,16 @@ export function restringirContractorZurich(req, res, next) {
   } catch {
     return next();
   }
-  if (normalizarRol(payload?.role) !== 'contractor_zurich') return next();
+
+  const config = CONTRATISTAS_MODULO[normalizarRol(payload?.role)];
+  if (!config) return next();
 
   const path = String(req.originalUrl || req.url || '').split('?')[0];
   const permitido =
-    PREFIJOS_PERMITIDOS.some((p) => path.startsWith(p)) ||
+    [...PREFIJOS_COMUNES, ...config.apis].some((p) => path.startsWith(p)) ||
     (req.method === 'GET' && PREFIJOS_SOLO_LECTURA.some((p) => path.startsWith(p)));
   if (!permitido) {
-    return res.status(403).json({
-      error: 'Su rol Contractor Zurich solo permite trabajar el módulo Zurich.',
-    });
+    return res.status(403).json({ error: config.mensaje });
   }
   return next();
 }
