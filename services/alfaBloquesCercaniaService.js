@@ -78,7 +78,8 @@ export function casoTieneCoordsValidas(caso) {
     esDireccionPredioGeocodableAlfa(caso?.direccionPredio) &&
     Number.isFinite(Number(u.lat)) &&
     Number.isFinite(Number(u.lng)) &&
-    (u.geocodeStatus === 'ok' || u.geocodeStatus === 'manual')
+    (u.geocodeStatus === 'ok' || u.geocodeStatus === 'manual') &&
+    ubicacionTienePrecisionCalle(u)
   );
 }
 
@@ -91,6 +92,8 @@ export function casoNecesitaGeocode(caso, { force = false } = {}) {
   if (u.geocodeStatus === 'failed') return true;
   const hash = hashDireccionAlfa(caso.direccionPredio, caso.ciudad, caso.departamento);
   if (u.direccionHash && u.direccionHash !== hash) return true;
+  // Legacy / impreciso: tenía pin pero a nivel ciudad → re-geocodificar
+  if (!ubicacionTienePrecisionCalle(u)) return true;
   if (!casoTieneCoordsValidas(caso)) return true;
   return false;
 }
@@ -104,7 +107,8 @@ function getGoogleMapsApiKey() {
 
 /**
  * Geocodifica una dirección con Google Geocoding API (HTTP).
- * @returns {{ lat, lng, formattedAddress, status } | { status: 'failed', error }}
+ * Acepta calle/tramo y APPROXIMATE de lugar (barrio, conjunto, establecimiento).
+ * Rechaza APPROXIMATE solo-ciudad (genera bloques falsos).
  */
 export async function geocodeDireccionGoogle(query) {
   const key = getGoogleMapsApiKey();
@@ -117,6 +121,8 @@ export async function geocodeDireccionGoogle(query) {
   const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
   url.searchParams.set('address', q);
   url.searchParams.set('region', 'co');
+  url.searchParams.set('language', 'es');
+  url.searchParams.set('components', 'country:CO');
   url.searchParams.set('key', key);
 
   const resp = await fetch(url.toString());
@@ -124,20 +130,106 @@ export async function geocodeDireccionGoogle(query) {
   if (!resp.ok) {
     return { status: 'failed', error: `HTTP ${resp.status}` };
   }
-  if (data.status !== 'OK' || !data.results?.[0]?.geometry?.location) {
+  if (data.status !== 'OK' || !Array.isArray(data.results) || !data.results.length) {
     return {
       status: 'failed',
       error: data.status || 'ZERO_RESULTS',
       geocodeStatusGoogle: data.status,
     };
   }
-  const loc = data.results[0].geometry.location;
+
+  const elegido = elegirResultadoGeocodeUtil(data.results);
+  if (!elegido?.geometry?.location) {
+    const tipo = data.results[0]?.geometry?.location_type || 'APPROXIMATE';
+    return {
+      status: 'failed',
+      error: 'PRECISION_TOO_LOW',
+      locationType: tipo,
+      geocodeStatusGoogle: data.status,
+      formattedAddress: data.results[0]?.formatted_address || q,
+    };
+  }
+
+  const loc = elegido.geometry.location;
   return {
     status: 'ok',
     lat: Number(loc.lat),
     lng: Number(loc.lng),
-    formattedAddress: data.results[0].formatted_address || q,
+    formattedAddress: elegido.formatted_address || q,
+    locationType: elegido.geometry.location_type || '',
+    partialMatch: Boolean(elegido.partial_match),
+    placeTypes: Array.isArray(elegido.types) ? elegido.types : [],
   };
+}
+
+/** Tipos Google que indican solo ciudad/departamento (demasiado grosero para bloques). */
+const TIPOS_SOLO_CIUDAD = new Set([
+  'locality',
+  'administrative_area_level_1',
+  'administrative_area_level_2',
+  'administrative_area_level_3',
+  'administrative_area_level_4',
+  'administrative_area_level_5',
+  'country',
+  'political',
+  'postal_code',
+]);
+
+const LOCATION_TYPES_PRECISOS = new Set([
+  'ROOFTOP',
+  'RANGE_INTERPOLATED',
+  'GEOMETRIC_CENTER',
+]);
+
+/**
+ * ¿El resultado de Google sirve para planear visitas?
+ * - Calle/tramo: sí
+ * - APPROXIMATE de barrio/conjunto/establecimiento: sí
+ * - APPROXIMATE solo ciudad/municipio: no
+ */
+export function resultadoGeocodeEsUtil(result) {
+  if (!result?.geometry?.location) return false;
+  const locType = String(result.geometry.location_type || '').toUpperCase();
+  if (LOCATION_TYPES_PRECISOS.has(locType)) return true;
+  if (locType !== 'APPROXIMATE') return false;
+  const types = Array.isArray(result.types) ? result.types : [];
+  if (!types.length) return false;
+  return types.some((t) => !TIPOS_SOLO_CIUDAD.has(String(t)));
+}
+
+export function elegirResultadoGeocodeUtil(results = []) {
+  const lista = Array.isArray(results) ? results : [];
+  return (
+    lista.find((r) => LOCATION_TYPES_PRECISOS.has(String(r?.geometry?.location_type || '').toUpperCase())) ||
+    lista.find((r) => resultadoGeocodeEsUtil(r)) ||
+    null
+  );
+}
+
+/** Precisión útil para planear visitas. Solo-ciudad no se guarda como ok. */
+export function ubicacionTienePrecisionCalle(u = {}) {
+  if (u.geocodeStatus === 'manual') return true;
+  const tipo = String(u.locationType || '').toUpperCase();
+  if (LOCATION_TYPES_PRECISOS.has(tipo)) return true;
+  // APPROXIMATE con status ok = lugar (barrio/conjunto), no centro de ciudad
+  if (tipo === 'APPROXIMATE' && u.geocodeStatus === 'ok') return true;
+  return false;
+}
+
+/** Caso ya visitado/inspeccionado: no aporta a planear rutas. */
+export function casoYaInspeccionadoAlfa(caso = {}) {
+  if (caso?.fechaInspeccion) return true;
+  const e = String(caso?.estado || '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toUpperCase();
+  return (
+    e === 'LIQUIDADO' ||
+    e === 'ENVIADO ASEGURADORA' ||
+    e === 'CERRADO' ||
+    e.startsWith('LIQUID')
+  );
 }
 
 /** Placeholder geocodificado por error (p. ej. "POR CONFIRMAR" → pin en ciudad). */
@@ -215,6 +307,8 @@ export async function geocodeCasosAlfaPendientes({ limit = 40, force = false } =
             geocodeQuery: query,
             direccionHash: hash,
             geocodedAt: new Date(),
+            locationType: geo.locationType || '',
+            formattedAddress: geo.formattedAddress || '',
           },
         });
         resumen.ok += 1;
@@ -224,15 +318,22 @@ export async function geocodeCasosAlfaPendientes({ limit = 40, force = false } =
           status: 'ok',
           lat: geo.lat,
           lng: geo.lng,
+          locationType: geo.locationType || '',
         });
       } else {
         await SegurosAlfaCaso.findByIdAndUpdate(caso._id, {
-          ubicacionPredio: {
-            ...(caso.ubicacionPredio || {}),
-            geocodeStatus: geo.status === 'sin_direccion' ? 'sin_direccion' : 'failed',
-            geocodeQuery: query,
-            direccionHash: hash,
-            geocodedAt: new Date(),
+          $set: {
+            'ubicacionPredio.geocodeStatus':
+              geo.status === 'sin_direccion' ? 'sin_direccion' : 'failed',
+            'ubicacionPredio.geocodeQuery': query,
+            'ubicacionPredio.direccionHash': hash,
+            'ubicacionPredio.geocodedAt': new Date(),
+            'ubicacionPredio.locationType': geo.locationType || '',
+            'ubicacionPredio.formattedAddress': geo.formattedAddress || '',
+          },
+          $unset: {
+            'ubicacionPredio.lat': '',
+            'ubicacionPredio.lng': '',
           },
         });
         if (geo.status === 'sin_direccion') resumen.sinDireccion += 1;
@@ -242,6 +343,7 @@ export async function geocodeCasosAlfaPendientes({ limit = 40, force = false } =
           consecutivo: caso.consecutivo,
           status: geo.status === 'sin_direccion' ? 'sin_direccion' : 'failed',
           error: geo.error,
+          locationType: geo.locationType || '',
         });
       }
     } catch (err) {
@@ -271,8 +373,32 @@ export async function aplicarUbicacionesPredioAlfa(items = []) {
     if (!id) continue;
     const lat = Number(item.lat);
     const lng = Number(item.lng);
-    const status = item.geocodeStatus || (Number.isFinite(lat) && Number.isFinite(lng) ? 'ok' : 'failed');
-    const clearCoords = status === 'sin_direccion' || status === 'failed' || !Number.isFinite(lat) || !Number.isFinite(lng);
+    let status =
+      item.geocodeStatus || (Number.isFinite(lat) && Number.isFinite(lng) ? 'ok' : 'failed');
+    const locationType = String(item.locationType || '').toUpperCase();
+    const placeTypes = Array.isArray(item.placeTypes) ? item.placeTypes : [];
+    // No aceptar coords imprecisas (mismas reglas que geocode backend)
+    if (status === 'ok' && item.geocodeStatus !== 'manual') {
+      const fakeResult = {
+        geometry: { location: { lat, lng }, location_type: locationType || 'APPROXIMATE' },
+        types: placeTypes.length ? placeTypes : locationType === 'APPROXIMATE' ? ['neighborhood'] : [],
+      };
+      // Sin locationType no confiamos; APPROXIMATE sin types del cliente se acepta si ya filtró el helper
+      if (!locationType) {
+        status = 'failed';
+      } else if (
+        !LOCATION_TYPES_PRECISOS.has(locationType) &&
+        locationType !== 'APPROXIMATE'
+      ) {
+        status = 'failed';
+      } else if (locationType === 'APPROXIMATE' && placeTypes.length && !resultadoGeocodeEsUtil(fakeResult)) {
+        status = 'failed';
+      }
+    }    const clearCoords =
+      status === 'sin_direccion' ||
+      status === 'failed' ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng);
     const update = clearCoords
       ? {
           $set: {
@@ -280,6 +406,8 @@ export async function aplicarUbicacionesPredioAlfa(items = []) {
             'ubicacionPredio.geocodeQuery': item.geocodeQuery || '',
             'ubicacionPredio.direccionHash': item.direccionHash || undefined,
             'ubicacionPredio.geocodedAt': new Date(),
+            'ubicacionPredio.locationType': locationType || item.locationType || '',
+            'ubicacionPredio.formattedAddress': item.formattedAddress || '',
           },
           $unset: {
             'ubicacionPredio.lat': '',
@@ -294,6 +422,8 @@ export async function aplicarUbicacionesPredioAlfa(items = []) {
             geocodeQuery: item.geocodeQuery || '',
             direccionHash: item.direccionHash || undefined,
             geocodedAt: new Date(),
+            locationType: locationType || item.locationType || '',
+            formattedAddress: item.formattedAddress || '',
           },
         };
     const doc = await SegurosAlfaCaso.findByIdAndUpdate(id, update, { new: true }).lean();
@@ -302,6 +432,7 @@ export async function aplicarUbicacionesPredioAlfa(items = []) {
         casoId: String(doc._id),
         consecutivo: doc.consecutivo,
         status: doc.ubicacionPredio?.geocodeStatus,
+        locationType: doc.ubicacionPredio?.locationType || '',
       });
     }
   }
@@ -383,8 +514,14 @@ export async function obtenerBloquesCercaniaAlfa({
   const casos = await SegurosAlfaCaso.find(filtro).sort({ createdAt: -1 }).lean();
   const ubicados = [];
   const sinUbicar = [];
+  let omitidosInspeccionados = 0;
 
   for (const c of casos) {
+    // Ya inspeccionados: no salen en el mapa de rutas (planear visitas)
+    if (casoYaInspeccionadoAlfa(c)) {
+      omitidosInspeccionados += 1;
+      continue;
+    }
     const base = {
       _id: String(c._id),
       consecutivo: c.consecutivo,
@@ -397,6 +534,7 @@ export async function obtenerBloquesCercaniaAlfa({
       estado: c.estado,
       ajustador: c.ajustador,
       geocodeStatus: c.ubicacionPredio?.geocodeStatus || null,
+      locationType: c.ubicacionPredio?.locationType || null,
     };
     if (casoTieneCoordsValidas(c)) {
       ubicados.push({
@@ -413,6 +551,8 @@ export async function obtenerBloquesCercaniaAlfa({
   return {
     radioKm: Math.max(0.3, Number(radioKm) || 2.5),
     totalCasos: casos.length,
+    omitidosInspeccionados,
+    planificar: casos.length - omitidosInspeccionados,
     ubicados: ubicados.length,
     sinUbicarCount: sinUbicar.length,
     bloques,

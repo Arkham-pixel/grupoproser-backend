@@ -81,6 +81,9 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
       },
       geocodeQuery: String,
       direccionHash: String,
+      /** ROOFTOP | RANGE_INTERPOLATED | APPROXIMATE | … (Google Geocoding). */
+      locationType: String,
+      formattedAddress: String,
     },
     /** Estado del liquidador Alfa (ítems, deducible, cuadro reclamado vs indemnizable) */
     liquidador: { type: mongoose.Schema.Types.Mixed, default: null },
