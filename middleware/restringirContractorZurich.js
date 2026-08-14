@@ -22,6 +22,11 @@ export function restringirContractorZurich(req, res, next) {
     return next();
   }
 
+  if (payload && !req.user) {
+    req.user = payload;
+    req.usuario = payload;
+  }
+
   const config = CONTRATISTAS_MODULO[normalizarRol(payload?.role)];
   if (!config) return next();
 

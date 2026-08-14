@@ -7,26 +7,45 @@ export const ROLES_VALIDOS = [
   'contractor_zurich',
   'contractor_alfa',
   'contractor_sura',
+  'contractor_solo_zurich',
 ];
 
-const ETIQUETA_CONTRACTOR = 'Zurich, Alfa y Sura';
+/** Contratista con acceso únicamente al módulo Zurich. */
+export const ROL_SOLO_ZURICH = 'contractor_solo_zurich';
+
+const ETIQUETA_TRES = 'Zurich, Alfa y Sura';
+const ETIQUETA_SOLO_ZURICH = 'Zurich';
 
 /** Texto que se agrega al nombre entre paréntesis al asignar el rol. */
 export const SUFIJO_NOMBRE_POR_ROL = {
-  contractor_zurich: ETIQUETA_CONTRACTOR,
-  contractor_alfa: ETIQUETA_CONTRACTOR,
-  contractor_sura: ETIQUETA_CONTRACTOR,
+  contractor_zurich: ETIQUETA_TRES,
+  contractor_alfa: ETIQUETA_TRES,
+  contractor_sura: ETIQUETA_TRES,
+  contractor_solo_zurich: ETIQUETA_SOLO_ZURICH,
 };
 
 const SUFIJOS_LEGACY = ['Contractor Zurich', 'Zurich', 'Alfa', 'Sura'];
 
-const APIS_CONTRACTOR = ['/api/zurich', '/api/seguros-alfa', '/api/sura'];
-const MENSAJE_CONTRACTOR = 'Su rol solo permite trabajar los módulos Zurich, Alfa y Sura.';
+const APIS_TRES = ['/api/zurich', '/api/seguros-alfa', '/api/sura'];
+const APIS_SOLO_ZURICH = ['/api/zurich'];
 
 export const CONTRATISTAS_MODULO = {
-  contractor_zurich: { apis: APIS_CONTRACTOR, mensaje: MENSAJE_CONTRACTOR },
-  contractor_alfa: { apis: APIS_CONTRACTOR, mensaje: MENSAJE_CONTRACTOR },
-  contractor_sura: { apis: APIS_CONTRACTOR, mensaje: MENSAJE_CONTRACTOR },
+  contractor_zurich: {
+    apis: APIS_TRES,
+    mensaje: 'Su rol solo permite trabajar los módulos Zurich, Alfa y Sura.',
+  },
+  contractor_alfa: {
+    apis: APIS_TRES,
+    mensaje: 'Su rol solo permite trabajar los módulos Zurich, Alfa y Sura.',
+  },
+  contractor_sura: {
+    apis: APIS_TRES,
+    mensaje: 'Su rol solo permite trabajar los módulos Zurich, Alfa y Sura.',
+  },
+  contractor_solo_zurich: {
+    apis: APIS_SOLO_ZURICH,
+    mensaje: 'Su rol Zurich solo permite trabajar el módulo Zurich.',
+  },
 };
 
 export function normalizarRol(rol) {
@@ -48,7 +67,6 @@ function escapeRegExp(valor) {
 export function quitarSufijosRolDelNombre(nombre) {
   let n = String(nombre || '').trim();
   const etiquetas = [...new Set([...Object.values(SUFIJO_NOMBRE_POR_ROL), ...SUFIJOS_LEGACY])];
-  // Más largos primero para no dejar residuos tipo ", Alfa y Sura".
   etiquetas.sort((a, b) => b.length - a.length);
   for (const etiqueta of etiquetas) {
     n = n.replace(new RegExp(`\\s*\\(${escapeRegExp(etiqueta)}\\)\\s*$`, 'i'), '').trim();

@@ -120,6 +120,11 @@ const ZurichCasoSchema = new mongoose.Schema(
     },
     /** Observaciones operativas de la inspección CAT (hechos observables) */
     observacionesCat: { type: String, default: null },
+    /**
+     * true cuando la inspección CAT (checklist de severidad 1–6) está completa.
+     * Se recalcula al guardar el caso.
+     */
+    checklistCatCompleto: { type: Boolean, default: false, index: true },
     /** Estado del liquidador Zurich */
     liquidador: { type: mongoose.Schema.Types.Mixed, default: null },
     /** Borrador del informe único embebido (legado / respaldo) */

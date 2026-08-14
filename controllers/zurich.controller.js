@@ -6,6 +6,7 @@ import {
   enviarAlertasTodosZurich,
   enviarAlertasZurichAjustador,
 } from '../services/alertasZurichService.js';
+import { ROL_SOLO_ZURICH, normalizarRol } from '../config/roles.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -82,6 +83,43 @@ const derivarSeveridadCatDesdeNiveles = (niveles = {}) => {
     if (norm[String(n)]?.aplica === 'SI') max = n;
   }
   return max;
+};
+
+const aplicaRespondido = (valor) =>
+  valor === 'SI' || valor === 'NO' || valor === true || valor === false;
+
+/** Checklist CAT lleno: los 6 niveles de severidad tienen APLICA o NO APLICA (tras guardar la inspección). */
+const esChecklistCatLleno = (caso = {}) => {
+  const niveles = caso.severidadCatNiveles && typeof caso.severidadCatNiveles === 'object'
+    ? caso.severidadCatNiveles
+    : {};
+  for (let n = 1; n <= 6; n += 1) {
+    const item = niveles[String(n)] ?? niveles[n];
+    const aplica = item && typeof item === 'object' ? item.aplica : item;
+    if (!aplicaRespondido(aplica)) return false;
+  }
+  return true;
+};
+
+/** Filtro Mongo para casos con checklist CAT completo (flag o niveles 1–6 respondidos). */
+const filtroMongoChecklistCatLleno = () => ({
+  $or: [
+    { checklistCatCompleto: true },
+    {
+      $and: [1, 2, 3, 4, 5, 6].map((n) => ({
+        [`severidadCatNiveles.${n}.aplica`]: { $in: ['SI', 'NO', true, false] },
+      })),
+    },
+  ],
+});
+
+const rolDesdeReq = (req) =>
+  normalizarRol(req?.user?.role || req?.usuario?.role || '');
+
+const debeFiltrarChecklistParaUsuario = (req) => {
+  if (rolDesdeReq(req) === ROL_SOLO_ZURICH) return true;
+  const q = String(req?.query?.soloChecklistLleno || '').toLowerCase();
+  return q === '1' || q === 'true';
 };
 
 const EVIDENCIA_CAT_KEYS = [
@@ -228,7 +266,8 @@ const buscarCasoPorId = async (idParam) => {
   return null;
 };
 
-const buildZurichPayload = (data = {}, base = {}) => ({
+const buildZurichPayload = (data = {}, base = {}) => {
+  const payload = {
   consecutivo: base.consecutivo ?? null,
   expressCasoId:
     data.expressCasoId !== undefined
@@ -363,7 +402,10 @@ const buildZurichPayload = (data = {}, base = {}) => ({
     data.historialCatastroficoId,
     base.historialCatastroficoId ?? null
   ),
-});
+  };
+  payload.checklistCatCompleto = esChecklistCatLleno(payload);
+  return payload;
+};
 
 /** Mapea un SiniestroExpress → campos Zurich (estructura Alfa). */
 export const mapExpressAZurich = (express = {}) => ({
@@ -486,6 +528,7 @@ const mergeImportacionZurich = (incomingPayload = {}, existente = {}) => {
     });
   }
   if (!out.estado) out.estado = 'PENDIENTE';
+  out.checklistCatCompleto = esChecklistCatLleno(out);
   return out;
 };
 
@@ -531,9 +574,10 @@ export const listarCasosZurich = async (req, res) => {
   try {
     const { limit = 25, page = 1 } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
+    const filtro = debeFiltrarChecklistParaUsuario(req) ? filtroMongoChecklistCatLleno() : {};
     const [total, documentos] = await Promise.all([
-      ZurichCaso.countDocuments(),
-      ZurichCaso.find()
+      ZurichCaso.countDocuments(filtro),
+      ZurichCaso.find(filtro)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number(limit)),
