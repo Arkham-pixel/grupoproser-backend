@@ -2,6 +2,15 @@ import mongoose from 'mongoose';
 import EquidadFdmCaso from '../models/EquidadFdmCaso.js';
 import { ejecutarImportacionFdm } from '../services/fdmImportService.js';
 import { deleteStoredFile } from '../services/fileStorageService.js';
+import {
+  runEquidadFdmExcelSharePointDetectCycle,
+  getEquidadFdmExcelSharePointStatus,
+  dismissEquidadFdmExcelSharePointNotification,
+  executeEquidadFdmExcelImport,
+  markEquidadFdmExcelSharePointExecuted,
+  getEquidadFdmExcelImportSession,
+} from '../services/equidadFdmExcelSharePointService.js';
+import { enqueueEquidadFdmExcelOutboundFromCaseUpdate } from '../services/equidadFdmExcelOutboundService.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -242,6 +251,16 @@ export const actualizarCasoFdm = async (req, res) => {
       new: true,
     });
 
+    try {
+      await enqueueEquidadFdmExcelOutboundFromCaseUpdate(
+        registroActual._id,
+        base,
+        actualizado.toObject()
+      );
+    } catch (outErr) {
+      console.warn('⚠️ Encolado outbound Excel Equidad FDM omitido:', outErr.message);
+    }
+
     res.json({ success: true, data: actualizado });
   } catch (error) {
     console.error('❌ Error al actualizar caso Equidad FDM:', error);
@@ -250,6 +269,68 @@ export const actualizarCasoFdm = async (req, res) => {
       error: 'Error al actualizar el caso Equidad FDM',
       detalle: error.message,
     });
+  }
+};
+
+export const getBaseTerremotoFdmStatus = async (req, res) => {
+  try {
+    const data = await getEquidadFdmExcelSharePointStatus();
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('❌ Error status Excel Equidad FDM:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const postBaseTerremotoFdmCheck = async (req, res) => {
+  try {
+    const force = req.body?.force === true;
+    const result = await runEquidadFdmExcelSharePointDetectCycle({ force });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('❌ Error check Excel Equidad FDM:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const postBaseTerremotoFdmDismissNotification = async (req, res) => {
+  try {
+    const data = await dismissEquidadFdmExcelSharePointNotification();
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const getBaseTerremotoFdmImportSession = async (req, res) => {
+  try {
+    const session = await getEquidadFdmExcelImportSession(req.params.sessionId);
+    res.json({ success: true, data: session });
+  } catch (error) {
+    const status = error.code === 'SESSION_NOT_FOUND' ? 404 : 500;
+    res.status(status).json({ success: false, error: error.message });
+  }
+};
+
+export const postBaseTerremotoFdmExecute = async (req, res) => {
+  try {
+    const sessionId = req.body?.sessionId || req.body?.importSessionId;
+    if (!sessionId) {
+      return res.status(400).json({ success: false, error: 'sessionId requerido' });
+    }
+    const usuario = {
+      id: req.usuario?.id || req.user?.id,
+      login: req.usuario?.login || req.user?.login,
+      nombre: req.usuario?.nombre || req.user?.nombre,
+    };
+    const result = await executeEquidadFdmExcelImport(sessionId, { usuario });
+    if (!result.alreadyExecuted) {
+      await markEquidadFdmExcelSharePointExecuted(sessionId);
+    }
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('❌ Error execute Excel Equidad FDM:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 

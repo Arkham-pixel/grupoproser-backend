@@ -429,3 +429,41 @@ export const parsearCasosFdmDesdeArchivo = (filePath, archivoNombre = '') => {
 
   return { casos, hoja, encabezados: Object.keys(indice) };
 };
+
+/** Parsea un buffer .xlsx (p. ej. descargado de SharePoint). */
+export const parsearCasosFdmDesdeBuffer = (buffer, archivoNombre = '') => {
+  const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+  if (!wb.SheetNames.length) throw new Error('El Excel no tiene hojas.');
+
+  const hoja = elegirHojaCasos(wb);
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[hoja], {
+    header: 1,
+    defval: null,
+    raw: true,
+  });
+
+  const headerIdx = rows.findIndex(
+    (r) => Array.isArray(r) && r.some((c) => esEncabezadoNombre(c))
+  );
+  if (headerIdx < 0) {
+    throw new Error('No se encontró la fila de encabezados (columna NOMBRE / NOMBRE CLIENTE).');
+  }
+
+  const indice = mapearEncabezados(rows[headerIdx]);
+  const meta = { archivoNombre: archivoNombre || 'sharepoint.xlsx', hoja };
+  const casos = [];
+  for (const row of rows.slice(headerIdx + 1)) {
+    if (!Array.isArray(row)) continue;
+    const doc = mapRow(row, indice, meta);
+    if (doc) casos.push(doc);
+  }
+
+  return {
+    casos,
+    hoja,
+    encabezados: Object.keys(indice),
+    headerRowIndex: headerIdx,
+    headerCells: rows[headerIdx],
+    workbook: wb,
+  };
+};

@@ -8,9 +8,16 @@ import {
   importarCasosFdm,
   subirArchivoFdm,
   eliminarArchivoFdm,
+  getBaseTerremotoFdmStatus,
+  postBaseTerremotoFdmCheck,
+  postBaseTerremotoFdmDismissNotification,
+  getBaseTerremotoFdmImportSession,
+  postBaseTerremotoFdmExecute,
 } from '../controllers/equidadFdm.controller.js';
 import { createMulterUpload, attachPersistedFileMiddleware } from '../storage/multerStorageFactory.js';
 import { STORAGE_CATEGORIES } from '../services/fileStorageService.js';
+import { verificarToken } from '../middleware/auth.js';
+import { verificarAdminSoporte } from '../middleware/verificarAdminSoporte.js';
 
 const router = express.Router();
 
@@ -28,6 +35,31 @@ const persistFdm = attachPersistedFileMiddleware({
 
 router.get('/', listarCasosFdm);
 router.post('/importar', importarCasosFdm);
+
+/** Sync Excel SharePoint SEGUROS EQUIDAD (BASE TERREMOTO) */
+router.get('/base-terremoto/status', verificarToken, getBaseTerremotoFdmStatus);
+router.post(
+  '/base-terremoto/check',
+  verificarToken,
+  verificarAdminSoporte,
+  postBaseTerremotoFdmCheck
+);
+router.post(
+  '/base-terremoto/notification/dismiss',
+  verificarToken,
+  postBaseTerremotoFdmDismissNotification
+);
+router.get(
+  '/base-terremoto/import/:sessionId',
+  verificarToken,
+  getBaseTerremotoFdmImportSession
+);
+router.post(
+  '/base-terremoto/execute',
+  verificarToken,
+  verificarAdminSoporte,
+  postBaseTerremotoFdmExecute
+);
 
 router.post(
   '/:id/archivos',

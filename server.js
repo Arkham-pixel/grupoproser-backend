@@ -20,6 +20,8 @@ import { iniciarCronSharePointSync } from './services/cronSharepointSyncService.
 import { iniciarCronAlfaPolicyImport } from './services/cronAlfaPolicyImportService.js';
 import { iniciarCronAlfaExcelSharePointImport } from './services/cronAlfaExcelSharePointImportService.js';
 import { iniciarCronAlfaExcelOutbound } from './services/cronAlfaExcelOutboundService.js';
+import { iniciarCronEquidadFdmExcelSharePointImport } from './services/cronEquidadFdmExcelSharePointImportService.js';
+import { iniciarCronEquidadFdmExcelOutbound } from './services/cronEquidadFdmExcelOutboundService.js';
 import { verifyMailOnStartup } from './services/mailTransport.js';
 import { verifyS3OnBoot } from './config/storage.js';
 
@@ -105,6 +107,8 @@ mongoose
       iniciarCronAlfaPolicyImport();
       iniciarCronAlfaExcelSharePointImport();
       iniciarCronAlfaExcelOutbound();
+      iniciarCronEquidadFdmExcelSharePointImport();
+      iniciarCronEquidadFdmExcelOutbound();
     } catch (error) {
       console.error("❌ Error iniciando servicios de cron:", error.message);
     }
@@ -142,6 +146,8 @@ mongoose
             iniciarCronAlfaPolicyImport();
             iniciarCronAlfaExcelSharePointImport();
             iniciarCronAlfaExcelOutbound();
+            iniciarCronEquidadFdmExcelSharePointImport();
+            iniciarCronEquidadFdmExcelOutbound();
           } catch (error) {
             console.error("❌ Error reiniciando servicios de cron:", error.message);
           }
