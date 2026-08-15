@@ -93,6 +93,8 @@ const SegurosSuraCasoSchema = new mongoose.Schema(
     },
     liquidador: { type: mongoose.Schema.Types.Mixed, default: null },
     informeUnico: { type: mongoose.Schema.Types.Mixed, default: null },
+    informeAgil: { type: mongoose.Schema.Types.Mixed, default: null },
+    salvamento: { type: mongoose.Schema.Types.Mixed, default: null },
     archivos: { type: [ArchivoSuraSchema], default: [] },
 
     /** Campos tipo Complex (formulario agregar datos) */

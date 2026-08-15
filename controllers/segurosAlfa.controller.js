@@ -36,6 +36,10 @@ import {
   aplicarUbicacionesPredioAlfa,
   obtenerBloquesCercaniaAlfa,
 } from '../services/alfaBloquesCercaniaService.js';
+import {
+  listAlfaCondicionesDocuments,
+  openAlfaCondicionDownloadStream,
+} from '../services/alfaCondicionesService.js';
 import * as XLSX from 'xlsx';
 
 const esValorVacio = (valor) =>
@@ -1185,5 +1189,69 @@ export const getBloquesCercaniaAlfa = async (req, res) => {
   } catch (error) {
     console.error('Error bloques cercanía Alfa:', error);
     return res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/** GET /api/seguros-alfa/condiciones — PDFs en raíz SEGUROS ALFA/PÓLIZAS */
+export const getCondicionesAlfa = async (req, res) => {
+  try {
+    const data = await listAlfaCondicionesDocuments();
+    return res.json({ success: true, ...data });
+  } catch (error) {
+    console.error('Error listando condiciones Alfa:', error);
+    const status = error.status || 500;
+    return res.status(status).json({
+      success: false,
+      error: error.message || 'No fue posible listar condiciones',
+      code: error.code || 'CONDICIONES_LIST_ERROR',
+    });
+  }
+};
+
+/** GET /api/seguros-alfa/condiciones/:itemId/download */
+export const downloadCondicionAlfa = async (req, res) => {
+  try {
+    const { stream, meta } = await openAlfaCondicionDownloadStream(req.params.itemId);
+    const safeName = String(meta.name || 'condicion.pdf').replace(/[^\w.\- ()áéíóúÁÉÍÓÚñÑ]+/g, '_');
+    res.setHeader('Content-Type', meta.mimeType || 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+    if (meta.size) res.setHeader('Content-Length', String(meta.size));
+
+    // Node Readable o Web ReadableStream
+    if (stream && typeof stream.pipe === 'function') {
+      stream.on('error', (err) => {
+        console.error('Stream condición Alfa:', err);
+        if (!res.headersSent) res.status(500).end();
+        else res.destroy(err);
+      });
+      stream.pipe(res);
+      return;
+    }
+    if (stream && typeof stream.getReader === 'function') {
+      const reader = stream.getReader();
+      const pump = async () => {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(Buffer.from(value));
+        }
+        res.end();
+      };
+      pump().catch((err) => {
+        console.error('Stream condición Alfa (web):', err);
+        if (!res.headersSent) res.status(500).end();
+        else res.destroy(err);
+      });
+      return;
+    }
+    return res.status(500).json({ success: false, error: 'Stream de descarga no disponible' });
+  } catch (error) {
+    console.error('Error descargando condición Alfa:', error);
+    const status = error.status || 500;
+    return res.status(status).json({
+      success: false,
+      error: error.message || 'No fue posible descargar el documento',
+      code: error.code || 'CONDICIONES_DOWNLOAD_ERROR',
+    });
   }
 };

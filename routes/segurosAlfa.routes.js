@@ -26,6 +26,8 @@ import {
   postGeocodePendientesAlfa,
   postUbicacionesPredioAlfa,
   getBloquesCercaniaAlfa,
+  getCondicionesAlfa,
+  downloadCondicionAlfa,
 } from '../controllers/segurosAlfa.controller.js';
 import { createMulterUpload, attachPersistedFileMiddleware } from '../storage/multerStorageFactory.js';
 import { STORAGE_CATEGORIES } from '../services/fileStorageService.js';
@@ -58,6 +60,10 @@ router.get('/', listarCasosAlfa);
 router.get('/bloques-cercania', getBloquesCercaniaAlfa);
 router.post('/geocode-pendientes', verificarToken, postGeocodePendientesAlfa);
 router.post('/ubicaciones-predio', verificarToken, postUbicacionesPredioAlfa);
+
+/** Condiciones (PDFs raíz SEGUROS ALFA/PÓLIZAS) — antes de /:id */
+router.get('/condiciones', verificarToken, getCondicionesAlfa);
+router.get('/condiciones/:itemId/download', verificarToken, downloadCondicionAlfa);
 
 /** Legacy JSON import (mantener compat); preferir /import/preview + /import/execute */
 router.post('/importar', importarCasosAlfa);

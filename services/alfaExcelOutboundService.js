@@ -40,6 +40,15 @@ function logOut(event, payload = {}) {
   console.log(JSON.stringify({ event, at: new Date().toISOString(), ...payload }));
 }
 
+function normKeyAddress(v) {
+  return String(v ?? '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, ' ');
+}
+
 function fieldValuesEqual(field, a, b) {
   if (ALFA_EXCEL_DATE_FIELDS.includes(field)) {
     const ta = a ? new Date(a).getTime() : null;
@@ -242,15 +251,47 @@ export function findExcelRowForCase(caseDoc, excelRows) {
         rowNumber: row.rowNumber,
         strategy: match.matchStrategy || match.strategy,
         evidence: match.matchEvidence || match.evidence,
+        payload: row.payload,
       });
     }
   }
 
   if (hits.length === 1) return hits[0];
   if (hits.length > 1) {
+    // Preferir coincidencia exacta de dirección cuando hay varias filas ID+póliza
+    const dirCaso = normKeyAddress(caseDoc?.direccionPredio);
+    if (dirCaso) {
+      const byDir = hits.filter(
+        (h) => normKeyAddress(h.payload?.direccionPredio) === dirCaso
+      );
+      if (byDir.length === 1) {
+        return {
+          rowNumber: byDir[0].rowNumber,
+          strategy: `${byDir[0].strategy}+DIRECCION`,
+          evidence: { ...(byDir[0].evidence || {}), direccionPredio: true },
+        };
+      }
+      if (byDir.length > 1) {
+        // Filas Excel duplicadas (misma ID/póliza/dirección): tomar la primera
+        byDir.sort((a, b) => a.rowNumber - b.rowNumber);
+        logOut('ALFA_EXCEL_OUTBOUND_DUPLICATE_ROWS_PICKED', {
+          consecutivo: caseDoc?.consecutivo || null,
+          pickedRow: byDir[0].rowNumber,
+          candidates: byDir.map((h) => h.rowNumber),
+        });
+        return {
+          rowNumber: byDir[0].rowNumber,
+          strategy: `${byDir[0].strategy}+FIRST_DUPLICATE`,
+          evidence: byDir[0].evidence,
+        };
+      }
+    }
     const err = new Error('AMBIGUOUS_EXCEL_ROW');
     err.code = 'AMBIGUOUS_EXCEL_ROW';
-    err.candidates = hits;
+    err.candidates = hits.map((h) => ({
+      rowNumber: h.rowNumber,
+      strategy: h.strategy,
+    }));
     throw err;
   }
   const err = new Error('EXCEL_ROW_NOT_FOUND');

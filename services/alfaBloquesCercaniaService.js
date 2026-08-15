@@ -22,11 +22,93 @@ export function hashDireccionAlfa(direccion = '', ciudad = '', departamento = ''
   return crypto.createHash('sha1').update(raw).digest('hex').slice(0, 16);
 }
 
+/**
+ * Expande abreviaturas colombianas (CL/KR/…) para mejorar el hit de Google.
+ */
+export function normalizarDireccionColombiaAlfa(direccion = '') {
+  let s = String(direccion || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!s) return '';
+
+  s = s
+    .replace(/\bCLL?\b\.?/gi, 'Calle')
+    .replace(/\bKR\b\.?/gi, 'Carrera')
+    .replace(/\bCRA?\b\.?/gi, 'Carrera')
+    .replace(/\bCR\b\.?/gi, 'Carrera')
+    .replace(/\bAV(ENIDA)?\b\.?/gi, 'Avenida')
+    .replace(/\bDG\b\.?/gi, 'Diagonal')
+    .replace(/\bTV\b\.?/gi, 'Transversal')
+    .replace(/\bTRANSVERSAL\b/gi, 'Transversal')
+    .replace(/\bAPTO?\b\.?/gi, 'Apartamento')
+    .replace(/\bAPARTAMENTO\b/gi, 'Apartamento')
+    .replace(/\bTO(RRE)?\b\.?/gi, 'Torre')
+    .replace(/\bEDIF?\b\.?/gi, 'Edificio')
+    .replace(/\bURB(ANIZACI[OÓ]N)?\b\.?/gi, 'Urbanización')
+    .replace(/\bCONJ(UNTO)?\b\.?/gi, 'Conjunto')
+    .replace(/\bCJ\b\.?/gi, 'Conjunto')
+    .replace(/\bNTE?\b\.?/gi, 'Norte')
+    .replace(/\bNOR\b\.?/gi, 'Norte')
+    .replace(/\bSUR\b\.?/gi, 'Sur')
+    .replace(/\bOESTE\b/gi, 'Oeste')
+    .replace(/\bESTE\b/gi, 'Este')
+    .replace(/\bN[°ºo]\.?\b/gi, '#')
+    .replace(/\bNO\.?\b/gi, '#');
+
+  // "Calle 63 3E-70" / "Calle 15A 69 85" → insertar # si falta
+  s = s.replace(
+    /\b(Calle|Carrera|Avenida|Diagonal|Transversal)\s+(\d+[A-Za-z]*)\s+(?!\d+\s*[-–]\s*\d)(\d)/gi,
+    '$1 $2 # $3'
+  );
+
+  // "94210" pegado tras vía → "94-210" (patrón bancario frecuente)
+  s = s.replace(
+    /\b(Calle|Carrera|Avenida|Diagonal|Transversal)\s+(\d+[A-Za-z]*)\s*#?\s*(\d{2,3})(\d{2,3})\b/gi,
+    (full, via, n, a, b) => `${via} ${n} # ${a}-${b}`
+  );
+
+  return s.replace(/\s+/g, ' ').trim();
+}
+
 export function construirQueryGeocodeAlfa(caso = {}) {
-  const partes = [caso.direccionPredio, caso.ciudad, caso.departamento, 'Colombia']
+  const dirNorm = normalizarDireccionColombiaAlfa(caso.direccionPredio);
+  const ciudad = String(caso.ciudad || '').trim();
+  const depto = String(caso.departamento || '').trim();
+  const partes = [dirNorm];
+  const blob = dirNorm
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toUpperCase();
+  if (ciudad) {
+    const cNorm = ciudad
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '')
+      .toUpperCase();
+    if (!blob.includes(cNorm)) partes.push(ciudad);
+  }
+  if (depto) {
+    const dNorm = depto
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '')
+      .toUpperCase();
+    if (!blob.includes(dNorm)) partes.push(depto);
+  }
+  partes.push('Colombia');
+  return partes.filter(Boolean).join(', ');
+}
+
+/** Segunda consulta: nombre de conjunto/urbanización + ciudad. */
+export function construirQueryLugarNombradoAlfa(caso = {}) {
+  const raw = String(caso.direccionPredio || '');
+  const m = raw.match(
+    /((?:Conjunto|CONJ|Urbanizaci[oó]n|URB|Edificio|EDIF|Residencial|CJ)\s+[A-Za-zÁÉÍÓÚáéíóúÑñ0-9][A-Za-zÁÉÍÓÚáéíóúÑñ0-9\s.-]{2,50})/i
+  );
+  if (!m) return '';
+  const lugar = normalizarDireccionColombiaAlfa(m[1]);
+  return [lugar, caso.ciudad, caso.departamento, 'Colombia']
     .map((p) => String(p || '').trim())
-    .filter(Boolean);
-  return partes.join(', ');
+    .filter(Boolean)
+    .join(', ');
 }
 
 /**
@@ -89,7 +171,11 @@ export function casoNecesitaGeocode(caso, { force = false } = {}) {
   const u = caso?.ubicacionPredio;
   if (!u) return true;
   if (u.geocodeStatus === 'stale' || u.geocodeStatus === 'pending') return true;
-  if (u.geocodeStatus === 'failed') return true;
+  if (u.geocodeStatus === 'failed') {
+    // Reintentar solo si la query normalizada cambió (p. ej. CL→Calle)
+    const newQuery = construirQueryGeocodeAlfa(caso);
+    return !u.geocodeQuery || u.geocodeQuery !== newQuery;
+  }
   const hash = hashDireccionAlfa(caso.direccionPredio, caso.ciudad, caso.departamento);
   if (u.direccionHash && u.direccionHash !== hash) return true;
   // Legacy / impreciso: tenía pin pero a nivel ciudad → re-geocodificar
@@ -254,16 +340,18 @@ function casoNecesitaLimpiezaPlaceholder(caso) {
   );
 }
 
-export async function geocodeCasosAlfaPendientes({ limit = 40, force = false } = {}) {
-  const lim = Math.min(Math.max(Number(limit) || 40, 1), 100);
+export async function geocodeCasosAlfaPendientes({ limit = 100, force = false } = {}) {
+  const lim = Math.min(Math.max(Number(limit) || 100, 1), 250);
   const casos = await SegurosAlfaCaso.find({}).sort({ updatedAt: -1 }).lean();
-  const pendientes = casos
-    .filter((c) => casoNecesitaLimpiezaPlaceholder(c) || casoNecesitaGeocode(c, { force }))
-    .slice(0, lim);
+  const todosPendientes = casos.filter(
+    (c) => casoNecesitaLimpiezaPlaceholder(c) || casoNecesitaGeocode(c, { force })
+  );
+  const pendientes = todosPendientes.slice(0, lim);
 
   const resumen = {
     evaluados: casos.length,
     pendientes: pendientes.length,
+    quedanPendientes: Math.max(0, todosPendientes.length - pendientes.length),
     ok: 0,
     failed: 0,
     sinDireccion: 0,
@@ -297,14 +385,22 @@ export async function geocodeCasosAlfaPendientes({ limit = 40, force = false } =
     }
 
     try {
-      const geo = await geocodeDireccionGoogle(query);
+      let geo = await geocodeDireccionGoogle(query);
+      if (geo.status !== 'ok' && geo.error === 'PRECISION_TOO_LOW') {
+        const qLugar = construirQueryLugarNombradoAlfa(caso);
+        if (qLugar && qLugar !== query) {
+          const geo2 = await geocodeDireccionGoogle(qLugar);
+          if (geo2.status === 'ok') geo = { ...geo2, geocodeQuery: qLugar };
+          await new Promise((r) => setTimeout(r, 150));
+        }
+      }
       if (geo.status === 'ok') {
         await SegurosAlfaCaso.findByIdAndUpdate(caso._id, {
           ubicacionPredio: {
             lat: geo.lat,
             lng: geo.lng,
             geocodeStatus: 'ok',
-            geocodeQuery: query,
+            geocodeQuery: geo.geocodeQuery || query,
             direccionHash: hash,
             geocodedAt: new Date(),
             locationType: geo.locationType || '',
@@ -356,9 +452,17 @@ export async function geocodeCasosAlfaPendientes({ limit = 40, force = false } =
       });
     }
 
-    // Rate-limit suave (~10 req/s máx teórico; aquí ~5/s)
+    // Rate-limit suave (~5/s)
     await new Promise((r) => setTimeout(r, 200));
   }
+
+  // Recalcular pendientes reales tras el lote
+  const casosAfter = await SegurosAlfaCaso.find({})
+    .select('direccionPredio ciudad departamento estado fechaInspeccion ubicacionPredio')
+    .lean();
+  resumen.quedanPendientes = casosAfter.filter(
+    (c) => casoNecesitaLimpiezaPlaceholder(c) || casoNecesitaGeocode(c, { force: false })
+  ).length;
 
   return resumen;
 }
@@ -440,17 +544,30 @@ export async function aplicarUbicacionesPredioAlfa(items = []) {
 }
 
 /**
- * Clustering greedy: cada caso no asignado abre un bloque; se le unen los que
- * estén a ≤ radioKm del centro (promedio de los miembros).
+ * Clustering greedy con orden estable:
+ * - Semillas en orden geográfico fijo (lat → lng → consecutivo)
+ * - Numeración de bloques por ubicación del centro (N→S, O→E), NO por cantidad
+ * Así, al bajar el nº de casos el Bloque 1 no “salta” a otro sector.
  */
 export function clusterizarPorRadio(puntos = [], radioKm = 2.5) {
-  const radio = Math.max(0.3, Number(radioKm) || 2.5);
+  const radio = Math.max(0.1, Number(radioKm) || 2.5);
   const restantes = puntos
     .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
-    .map((p) => ({ ...p }));
+    .map((p) => ({ ...p }))
+    .sort((a, b) => {
+      const dLat = Number(a.lat) - Number(b.lat);
+      if (Math.abs(dLat) > 1e-9) return dLat;
+      const dLng = Number(a.lng) - Number(b.lng);
+      if (Math.abs(dLng) > 1e-9) return dLng;
+      return String(a.consecutivo || a._id || '').localeCompare(
+        String(b.consecutivo || b._id || ''),
+        'es'
+      );
+    });
   const bloques = [];
 
   while (restantes.length) {
+    // Semilla = primer punto restante (orden geográfico estable)
     const semilla = restantes.shift();
     const miembros = [semilla];
     let centro = { lat: semilla.lat, lng: semilla.lng };
@@ -477,11 +594,18 @@ export function clusterizarPorRadio(puntos = [], radioKm = 2.5) {
         ...m,
         distanciaKmCentro: Math.round(haversineKm(centro, m) * 100) / 100,
       }))
-      .sort((a, b) => a.distanciaKmCentro - b.distanciaKmCentro);
+      .sort((a, b) => {
+        const d = a.distanciaKmCentro - b.distanciaKmCentro;
+        if (d !== 0) return d;
+        return String(a.consecutivo || a._id || '').localeCompare(
+          String(b.consecutivo || b._id || ''),
+          'es'
+        );
+      });
 
     bloques.push({
-      id: `bloque-${bloques.length + 1}`,
-      nombre: `Bloque ${bloques.length + 1}`,
+      id: `bloque-tmp-${bloques.length + 1}`,
+      nombre: `Bloque tmp`,
       centro,
       radioKm: radio,
       cantidad: conDist.length,
@@ -489,7 +613,17 @@ export function clusterizarPorRadio(puntos = [], radioKm = 2.5) {
     });
   }
 
-  bloques.sort((a, b) => b.cantidad - a.cantidad);
+  // Orden fijo por geografía del centro (no por tamaño del bloque)
+  bloques.sort((a, b) => {
+    const dLat = Number(a.centro.lat) - Number(b.centro.lat);
+    if (Math.abs(dLat) > 1e-9) return dLat;
+    const dLng = Number(a.centro.lng) - Number(b.centro.lng);
+    if (Math.abs(dLng) > 1e-9) return dLng;
+    return String(a.casos?.[0]?.consecutivo || '').localeCompare(
+      String(b.casos?.[0]?.consecutivo || ''),
+      'es'
+    );
+  });
   bloques.forEach((b, i) => {
     b.id = `bloque-${i + 1}`;
     b.nombre = `Bloque ${i + 1}`;
@@ -543,18 +677,27 @@ export async function obtenerBloquesCercaniaAlfa({
         lng: Number(c.ubicacionPredio.lng),
       });
     } else {
-      sinUbicar.push(base);
+      const sinDireccion = !esDireccionPredioGeocodableAlfa(c.direccionPredio);
+      sinUbicar.push({
+        ...base,
+        motivoSinUbicar: sinDireccion ? 'sin_direccion' : 'geocode_fallido',
+      });
     }
   }
 
+  const sinDireccionCount = sinUbicar.filter((c) => c.motivoSinUbicar === 'sin_direccion').length;
+  const geocodeFallidoCount = sinUbicar.filter((c) => c.motivoSinUbicar === 'geocode_fallido').length;
+
   const bloques = clusterizarPorRadio(ubicados, radioKm);
   return {
-    radioKm: Math.max(0.3, Number(radioKm) || 2.5),
+    radioKm: Math.max(0.1, Number(radioKm) || 2.5),
     totalCasos: casos.length,
     omitidosInspeccionados,
     planificar: casos.length - omitidosInspeccionados,
     ubicados: ubicados.length,
     sinUbicarCount: sinUbicar.length,
+    sinDireccionCount,
+    geocodeFallidoCount,
     bloques,
     sinUbicar,
   };
