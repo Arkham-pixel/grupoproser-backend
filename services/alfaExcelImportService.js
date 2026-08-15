@@ -186,6 +186,22 @@ export function matchAlfaCaseForExcelRow(payload, allCases) {
         }
         if (byC.length > 1) cands = byC;
       }
+      if (dir) {
+        const byDir = cands.filter((c) => normKeyAddress(c.direccionPredio) === dir);
+        if (byDir.length === 1) {
+          return matchResult(
+            'MATCH',
+            byDir,
+            'IDENTIFICACION_POLIZA',
+            buildEvidence({
+              identificacion: true,
+              numeroPoliza: true,
+              direccionPredio: true,
+            })
+          );
+        }
+        if (byDir.length > 1) cands = byDir;
+      }
       return matchResult(
         'AMBIGUOUS',
         cands,
