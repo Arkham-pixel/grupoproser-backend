@@ -1,5 +1,26 @@
 import mongoose from 'mongoose';
 
+const ArchivoFdmSchema = new mongoose.Schema(
+  {
+    nombreOriginal: { type: String, required: true },
+    nombreArchivo: String,
+    ruta: { type: String, required: true },
+    tamaño: Number,
+    tipoMime: String,
+    /** GENERAL | POLIZA | INSPECCION | MODELO_LIQUIDACION | LIQUIDACION | CONSTANCIA | CARTA_COBERTURA | INFORME | OTRO */
+    etiqueta: { type: String, default: 'GENERAL' },
+    descripcion: { type: String, default: '' },
+    orden: { type: Number, default: 0 },
+    subidoPor: {
+      id: String,
+      login: String,
+      nombre: String,
+    },
+    fechaSubida: { type: Date, default: Date.now },
+  },
+  { _id: true }
+);
+
 /**
  * Casos Fundación de la Mujer (módulo EQUIDAD FDM).
  * Campos alineados a los Excel OLA INVERNAL y TERREMOTO 10 AGOSTO 2026 FDLM.
@@ -60,6 +81,9 @@ const EquidadFdmCasoSchema = new mongoose.Schema({
   esNuevo: { type: Boolean, default: false },
   /** Estado del liquidador FDM (encabezado, ítems, deducible, constancia) */
   liquidador: { type: mongoose.Schema.Types.Mixed, default: null },
+  /** Documentos del archivero FDM */
+  archivos: { type: [ArchivoFdmSchema], default: [] },
+  fechaUltimoDocumento: Date,
 }, {
   collection: 'gsk3cAppequidadFdmCasos',
   timestamps: true,

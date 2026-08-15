@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import EquidadFdmCaso from '../models/EquidadFdmCaso.js';
 import { ejecutarImportacionFdm } from '../services/fdmImportService.js';
+import { deleteStoredFile } from '../services/fileStorageService.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -304,6 +305,139 @@ export const importarCasosFdm = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Error al importar los casos Equidad FDM',
+      detalle: error.message,
+    });
+  }
+};
+
+const usuarioDesdeReq = (req) => {
+  const u = req.usuario || req.user || {};
+  return {
+    id: String(u.id || u._id || ''),
+    login: String(u.login || u.email || 'usuario'),
+    nombre: String(u.nombre || u.name || u.login || 'Usuario'),
+  };
+};
+
+const buildArchivoFromUpload = (req, etiqueta, { descripcion = '', orden = 0 } = {}) => {
+  const file = req.file;
+  const usuario = usuarioDesdeReq(req);
+  const base = {
+    etiqueta: etiqueta || 'GENERAL',
+    descripcion: descripcion != null ? String(descripcion) : '',
+    orden: Number.isFinite(Number(orden)) ? Number(orden) : 0,
+    subidoPor: usuario,
+    fechaSubida: new Date(),
+  };
+  if (req.fileStorage?.driver === 's3') {
+    return {
+      nombreOriginal: file.originalname,
+      nombreArchivo: req.fileStorage.filename,
+      ruta: req.fileStorage.publicPath,
+      tamaño: req.fileStorage.size,
+      tipoMime: req.fileStorage.mimetype,
+      ...base,
+    };
+  }
+  return {
+    nombreOriginal: file.originalname,
+    nombreArchivo: file.filename,
+    ruta: `/uploads/equidad-fdm/${file.filename}`,
+    tamaño: file.size,
+    tipoMime: file.mimetype,
+    ...base,
+  };
+};
+
+const siguienteOrdenArchivos = (archivos = []) => {
+  let max = -1;
+  for (const a of archivos || []) {
+    const n = Number(a?.orden);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return max + 1;
+};
+
+/** POST /api/equidad-fdm/:id/archivos */
+export const subirArchivoFdm = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No se proporcionó ningún archivo' });
+    }
+
+    const caso = await buscarCasoPorId(req.params.id);
+    if (!caso) {
+      return res.status(404).json({ success: false, error: 'Caso Equidad FDM no encontrado' });
+    }
+
+    const etiqueta = toStringOrNull(req.body?.etiqueta) || 'GENERAL';
+    const descripcion =
+      req.body?.descripcion != null ? String(req.body.descripcion) : '';
+    const reemplazarMismaEtiqueta =
+      req.body?.reemplazarMismaEtiqueta === true ||
+      req.body?.reemplazarMismaEtiqueta === 'true';
+
+    caso.archivos = caso.archivos || [];
+
+    if (reemplazarMismaEtiqueta && etiqueta) {
+      const previos = caso.archivos.filter((a) => a.etiqueta === etiqueta);
+      for (const prev of previos) {
+        if (prev.ruta) {
+          await deleteStoredFile(prev.ruta).catch((err) => {
+            console.warn('No se pudo eliminar archivo FDM previo:', err.message);
+          });
+        }
+        prev.deleteOne();
+      }
+    }
+
+    const orden = siguienteOrdenArchivos(caso.archivos);
+    const archivo = buildArchivoFromUpload(req, etiqueta, { descripcion, orden });
+    caso.archivos.push(archivo);
+    caso.fechaUltimoDocumento = new Date();
+    await caso.save();
+
+    const creado = caso.archivos[caso.archivos.length - 1];
+    res.status(201).json({ success: true, data: creado, casoId: caso._id });
+  } catch (error) {
+    console.error('❌ Error subiendo archivo Equidad FDM:', error);
+    res.status(500).json({
+      success: false,
+      error: error?.storageError
+        ? 'Error al guardar el archivo en almacenamiento'
+        : 'Error al subir el archivo',
+      detalle: error.message,
+    });
+  }
+};
+
+/** DELETE /api/equidad-fdm/:id/archivos/:archivoId */
+export const eliminarArchivoFdm = async (req, res) => {
+  try {
+    const caso = await buscarCasoPorId(req.params.id);
+    if (!caso) {
+      return res.status(404).json({ success: false, error: 'Caso Equidad FDM no encontrado' });
+    }
+
+    const archivo = caso.archivos?.id?.(req.params.archivoId);
+    if (!archivo) {
+      return res.status(404).json({ success: false, error: 'Archivo no encontrado' });
+    }
+
+    if (archivo.ruta) {
+      await deleteStoredFile(archivo.ruta).catch((err) => {
+        console.warn('No se pudo eliminar archivo FDM del almacenamiento:', err.message);
+      });
+    }
+    archivo.deleteOne();
+    await caso.save();
+
+    res.json({ success: true, message: 'Archivo eliminado correctamente' });
+  } catch (error) {
+    console.error('❌ Error eliminando archivo Equidad FDM:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al eliminar el archivo',
       detalle: error.message,
     });
   }

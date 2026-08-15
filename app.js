@@ -160,6 +160,12 @@ if (!fs.existsSync(zurichUploadsDir)) {
   console.log("📁 Carpeta 'uploads/zurich/' creada... ✅");
 }
 
+const equidadFdmUploadsDir = path.join(uploadsDir, "equidad-fdm");
+if (!fs.existsSync(equidadFdmUploadsDir)) {
+  fs.mkdirSync(equidadFdmUploadsDir, { recursive: true });
+  console.log("📁 Carpeta 'uploads/equidad-fdm/' creada... ✅");
+}
+
 const suraUploadsDir = path.join(uploadsDir, "sura");
 if (!fs.existsSync(suraUploadsDir)) {
   fs.mkdirSync(suraUploadsDir, { recursive: true });
