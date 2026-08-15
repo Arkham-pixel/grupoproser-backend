@@ -33,6 +33,9 @@ import {
 } from '../utils/controlHorasUtils.js';
 import { resolverUsuarioAsignador } from '../utils/resolverUsuarioAsignador.js';
 import { sanearFechasImposibles } from '../utils/sanearFechas.js';
+import SegurosSuraCaso from '../models/SegurosSuraCaso.js';
+import { generarConsecutivoSura } from '../services/suraCasoService.js';
+import { buildSuraPayload } from './segurosSura.controller.js';
 import {
   alinearCamposProtocoloDesdeHistorialDocs,
   MAPEO_TIPO_HISTORIAL_A_COMPLEX,
@@ -2321,6 +2324,115 @@ export const eliminarComplex = async (req, res) => {
   } catch (error) {
     console.error('Error al eliminar el caso:', error);
     res.status(500).json({ error: 'Error al eliminar el caso' });
+  }
+};
+
+const SURA_RAZON_SOCIAL_TRASLADO = 'SEGUROS GENERALES SURAMERICANA S.A.';
+
+function textoTrasladoSura(...valores) {
+  for (const valor of valores) {
+    if (valor == null) continue;
+    const texto = String(valor).trim();
+    if (texto && texto !== 'null' && texto !== 'undefined') return texto;
+  }
+  return '';
+}
+
+/** Copia un caso Complex a SURA y lo elimina de Complex sin borrar adjuntos. */
+export const moverCasoComplexASura = async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, error: 'Identificador no válido' });
+    }
+
+    let origen = 'complex';
+    let caso = await Complex.findById(id);
+    if (!caso) {
+      caso = await Siniestro.findById(id);
+      origen = 'siniestro';
+    }
+    if (!caso) {
+      return res.status(404).json({ success: false, error: 'Caso Complex no encontrado' });
+    }
+
+    const raw = caso.toObject ? caso.toObject() : { ...caso };
+    const body = { ...(req.body || {}) };
+    delete body._id;
+    delete body.id;
+    delete body.__v;
+    delete body.createdAt;
+    delete body.updatedAt;
+    delete body.consecutivo;
+
+    const combinado = { ...raw, ...body };
+    const identificacion = textoTrasladoSura(
+      combinado.identificacion,
+      combinado.numDocumento,
+      combinado.nmroSinstro,
+      combinado.nmroAjste
+    );
+    if (!identificacion) {
+      return res.status(400).json({
+        success: false,
+        error:
+          'El caso no tiene identificación ni número de documento. Complételo en Datos Generales antes de enviarlo a SURA.',
+      });
+    }
+
+    const estado =
+      textoTrasladoSura(combinado.descripcionEstado, combinado.estado, combinado.codiEstdo) ||
+      'PENDIENTE';
+
+    const payload = buildSuraPayload(
+      {
+        ...combinado,
+        identificacion,
+        estado,
+      },
+      raw
+    );
+
+    payload.consecutivo = await generarConsecutivoSura();
+    if (!payload.nmroAjste) payload.nmroAjste = payload.consecutivo;
+    payload.identificacion = identificacion;
+    payload.estado = payload.estado || estado;
+    payload.nombreCliente = SURA_RAZON_SOCIAL_TRASLADO;
+    payload.nombreAseguradora = SURA_RAZON_SOCIAL_TRASLADO;
+    payload.migradoDesdeComplex = true;
+    payload.complexOrigenId = String(raw._id);
+    delete payload._id;
+    delete payload.id;
+    delete payload.__v;
+
+    const creado = await SegurosSuraCaso.create(payload);
+
+    let advertencia = null;
+    try {
+      if (origen === 'siniestro') {
+        await Siniestro.findByIdAndDelete(id);
+      } else {
+        await Complex.findByIdAndDelete(id);
+      }
+    } catch (errorBorrado) {
+      console.error('⚠️ Caso copiado a SURA pero no se pudo borrar de Complex:', errorBorrado);
+      advertencia =
+        'El caso se copió a SURA, pero no se pudo eliminar de Complex. Bórrelo manualmente para evitar duplicados.';
+    }
+
+    return res.json({
+      success: true,
+      data: creado,
+      consecutivo: creado.consecutivo,
+      suraId: String(creado._id),
+      advertencia,
+    });
+  } catch (error) {
+    console.error('❌ Error moviendo caso Complex a SURA:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Error al mover el caso a SURA',
+    });
   }
 };
 

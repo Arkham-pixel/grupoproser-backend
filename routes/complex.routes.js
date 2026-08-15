@@ -5,6 +5,7 @@ import {
   obtenerPorId,
   actualizarComplex,
   eliminarComplex,
+  moverCasoComplexASura,
   obtenerIntermediarios,
   notificarHonorarios,
   notificarControlHoras,
@@ -73,6 +74,7 @@ router.get('/contar-aseguradoras', contarCasosAseguradoras);
 router.post('/', poblarUsuarioOpcional, crearComplex);
 router.get('/', obtenerTodos);
 router.get('/autofill/:idCaso', obtenerAutofillAjuste);
+router.post('/:id/mover-a-sura', poblarUsuarioOpcional, moverCasoComplexASura);
 router.get('/:id', obtenerPorId);
 router.put('/:id', poblarUsuarioOpcional, actualizarComplex);
 router.delete('/:id', eliminarComplex);

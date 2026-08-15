@@ -223,7 +223,7 @@ const primerFecha = (...valores) => {
   return null;
 };
 
-const buildSuraPayload = (data = {}, base = {}) => {
+export const buildSuraPayload = (data = {}, base = {}) => {
   const identificacion = primerTexto(
     data.identificacion,
     data.numDocumento,
