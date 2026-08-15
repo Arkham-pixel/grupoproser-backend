@@ -544,10 +544,9 @@ export async function aplicarUbicacionesPredioAlfa(items = []) {
 }
 
 /**
- * Clustering greedy con orden estable:
+ * Clustering greedy:
  * - Semillas en orden geográfico fijo (lat → lng → consecutivo)
- * - Numeración de bloques por ubicación del centro (N→S, O→E), NO por cantidad
- * Así, al bajar el nº de casos el Bloque 1 no “salta” a otro sector.
+ * - Numeración/listado de bloques de mayor a menor cantidad
  */
 export function clusterizarPorRadio(puntos = [], radioKm = 2.5) {
   const radio = Math.max(0.1, Number(radioKm) || 2.5);
@@ -613,8 +612,10 @@ export function clusterizarPorRadio(puntos = [], radioKm = 2.5) {
     });
   }
 
-  // Orden fijo por geografía del centro (no por tamaño del bloque)
+  // Mayor a menor cantidad (empate: geografía del centro)
   bloques.sort((a, b) => {
+    const dCant = (b.cantidad || 0) - (a.cantidad || 0);
+    if (dCant !== 0) return dCant;
     const dLat = Number(a.centro.lat) - Number(b.centro.lat);
     if (Math.abs(dLat) > 1e-9) return dLat;
     const dLng = Number(a.centro.lng) - Number(b.centro.lng);
