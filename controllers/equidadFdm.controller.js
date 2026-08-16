@@ -172,6 +172,10 @@ const buildFdmPayload = (data = {}, base = {}) => ({
   detalle: toStringOrNull(data.detalle, base.detalle ?? null),
   esNuevo: data.esNuevo === true || data.esNuevo === 'true' || base.esNuevo === true,
   liquidador: parseLiquidadorPayload(data.liquidador, base.liquidador ?? null),
+  // El check del reporte es del caso: no se pisa al editar otros campos.
+  checklistHecho: base.checklistHecho === true,
+  checklistHechoAt: base.checklistHechoAt ?? null,
+  checklistHechoPor: base.checklistHechoPor ?? null,
 });
 
 const validarRequeridos = (payload) => {
@@ -297,6 +301,54 @@ export const actualizarCasoFdm = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Error al actualizar el caso Equidad FDM',
+      detalle: error.message,
+    });
+  }
+};
+
+/** Toggle check «hecho» del reporte (persistente en BD). */
+export const toggleChecklistHechoFdm = async (req, res) => {
+  try {
+    const registro = await buscarCasoPorId(req.params.id);
+    if (!registro) {
+      return res.status(404).json({ success: false, error: 'Caso Equidad FDM no encontrado' });
+    }
+
+    const bodyHecho = req.body?.hecho;
+    const hecho =
+      bodyHecho === undefined || bodyHecho === null
+        ? !Boolean(registro.checklistHecho)
+        : bodyHecho === true || bodyHecho === 'true' || bodyHecho === 1 || bodyHecho === '1';
+
+    const login =
+      String(
+        req.usuario?.login ||
+          req.usuario?.usuario ||
+          req.user?.login ||
+          req.user?.usuario ||
+          req.body?.login ||
+          ''
+      ).trim() || null;
+
+    registro.checklistHecho = hecho;
+    registro.checklistHechoAt = hecho ? new Date() : null;
+    registro.checklistHechoPor = hecho ? login : null;
+    await registro.save();
+
+    res.json({
+      success: true,
+      data: {
+        _id: registro._id,
+        checklistHecho: registro.checklistHecho,
+        checklistHechoAt: registro.checklistHechoAt,
+        checklistHechoPor: registro.checklistHechoPor,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Error checklist hecho Equidad FDM:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al guardar el check del reporte',
       detalle: error.message,
     });
   }

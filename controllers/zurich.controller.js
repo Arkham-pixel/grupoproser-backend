@@ -7,6 +7,7 @@ import {
   enviarAlertasZurichAjustador,
 } from '../services/alertasZurichService.js';
 import { ROL_SOLO_ZURICH, normalizarRol } from '../config/roles.js';
+import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -299,7 +300,9 @@ const buildZurichPayload = (data = {}, base = {}) => {
   identificacion: toStringOrNull(data.identificacion, base.identificacion ?? null),
   asegurado: toStringOrNull(data.asegurado, base.asegurado ?? null),
   tomador: toStringOrNull(data.tomador, base.tomador ?? null),
+  ajustadorLider: toStringOrNull(data.ajustadorLider, base.ajustadorLider ?? null),
   ajustador: toStringOrNull(data.ajustador, base.ajustador ?? null),
+  inspector: toStringOrNull(data.inspector, base.inspector ?? null),
   numeroPoliza: toStringOrNull(data.numeroPoliza, base.numeroPoliza ?? null),
   direccionPredio: toStringOrNull(data.direccionPredio, base.direccionPredio ?? null),
   numeroCredito: toStringOrNull(data.numeroCredito, base.numeroCredito ?? null),
@@ -662,7 +665,8 @@ export const actualizarCasoZurich = async (req, res) => {
     }
 
     const base = registroActual.toObject();
-    const payload = buildZurichPayload(req.body, base);
+    const { data: bodyFiltrado } = aplicarRestriccionRolCaso(req, req.body || {}, base);
+    const payload = buildZurichPayload(bodyFiltrado, base);
     if (!payload.consecutivo) {
       payload.consecutivo = base.consecutivo || (await generarConsecutivoZurich());
     }

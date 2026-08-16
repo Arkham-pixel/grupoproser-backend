@@ -135,7 +135,7 @@ router.patch('/:id/archivos/:archivoId', verificarToken, actualizarArchivoAlfa);
 router.delete('/:id/archivos/:archivoId', eliminarArchivoAlfa);
 router.get('/:id', obtenerCasoAlfa);
 router.post('/', crearCasoAlfa);
-router.put('/:id', actualizarCasoAlfa);
+router.put('/:id', verificarToken, actualizarCasoAlfa);
 router.delete('/:id', eliminarCasoAlfa);
 
 export default router;

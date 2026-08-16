@@ -28,6 +28,7 @@ import {
   corregirDestinatarioEnvioFacturacion,
   eliminarRegistroEnvioFacturacion,
 } from '../services/facturacionBandejaService.js';
+import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
 import {
   normalizarClaveGerente,
   resolverGerenteDesdeLogin,
@@ -241,7 +242,9 @@ export const buildSuraPayload = (data = {}, base = {}) => {
     identificacion,
     asegurado: primerTexto(data.asegurado, data.asgrBenfcro, base.asegurado, base.asgrBenfcro),
     tomador: primerTexto(data.tomador, data.nombIntermediario, base.tomador, base.nombIntermediario),
+    ajustadorLider: toStringOrNull(data.ajustadorLider, base.ajustadorLider ?? null),
     ajustador: primerTexto(data.ajustador, data.codiRespnsble, base.ajustador, base.codiRespnsble),
+    inspector: toStringOrNull(data.inspector, base.inspector ?? null),
     numeroPoliza: primerTexto(data.numeroPoliza, data.nmroPolza, base.numeroPoliza, base.nmroPolza),
     direccionPredio: toStringOrNull(data.direccionPredio, base.direccionPredio ?? null),
     numeroCredito: toStringOrNull(data.numeroCredito, base.numeroCredito ?? null),
@@ -537,7 +540,8 @@ export const actualizarCasoSura = async (req, res) => {
     }
 
     const base = registroActual.toObject();
-    const payload = buildSuraPayload(req.body, base);
+    const { data: bodyFiltrado } = aplicarRestriccionRolCaso(req, req.body || {}, base);
+    const payload = buildSuraPayload(bodyFiltrado, base);
     if (!payload.consecutivo) {
       payload.consecutivo = base.consecutivo || (await generarConsecutivoSura());
     }

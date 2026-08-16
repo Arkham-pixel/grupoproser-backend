@@ -17,6 +17,7 @@ import {
 } from '../controllers/zurich.controller.js';
 import { createMulterUpload, attachPersistedFileMiddleware } from '../storage/multerStorageFactory.js';
 import { STORAGE_CATEGORIES } from '../services/fileStorageService.js';
+import { verificarToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -51,7 +52,7 @@ router.patch('/:id/archivos/:archivoId', actualizarArchivoZurich);
 router.delete('/:id/archivos/:archivoId', eliminarArchivoZurich);
 router.get('/:id', obtenerCasoZurich);
 router.post('/', crearCasoZurich);
-router.put('/:id', actualizarCasoZurich);
+router.put('/:id', verificarToken, actualizarCasoZurich);
 router.delete('/:id', eliminarCasoZurich);
 
 export default router;

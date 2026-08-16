@@ -86,6 +86,10 @@ const EquidadFdmCasoSchema = new mongoose.Schema({
   /** Documentos del archivero FDM */
   archivos: { type: [ArchivoFdmSchema], default: [] },
   fechaUltimoDocumento: Date,
+  /** Check «hecho» del reporte (control operativo; se guarda en BD). */
+  checklistHecho: { type: Boolean, default: false },
+  checklistHechoAt: Date,
+  checklistHechoPor: String,
 }, {
   collection: 'gsk3cAppequidadFdmCasos',
   timestamps: true,

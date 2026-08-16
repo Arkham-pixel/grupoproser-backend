@@ -49,7 +49,11 @@ const SegurosSuraCasoSchema = new mongoose.Schema(
     identificacion: { type: String, required: true },
     asegurado: String,
     tomador: String,
+    /** Ajustador líder (quien asigna) */
+    ajustadorLider: String,
     ajustador: String,
+    /** Inspector del caso */
+    inspector: String,
     numeroPoliza: String,
     direccionPredio: String,
     numeroCredito: String,

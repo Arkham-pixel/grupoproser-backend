@@ -23,6 +23,8 @@ import ciudadRoutes from './routes/ciudadRoutes.js';
 import clientesRoutes from './routes/clientes.js';
 import funcionarioAseguradoraRoutes from './routes/funcionarioAseguradora.routes.js';
 import responsableRoutes from './routes/responsable.routes.js';
+import ajustadorCatastroficoRoutes from './routes/ajustadorCatastrofico.routes.js';
+import inspectorCatastroficoRoutes from './routes/inspectorCatastrofico.routes.js';
 import estadoRoutes from './routes/estado.routes.js';
 import complexRoutes from './routes/complex.routes.js';
 import complexSubtareaRoutes from './routes/complexSubtarea.routes.js';
@@ -203,6 +205,8 @@ app.use('/api', ciudadRoutes);
 app.use('/api/clientes', clientesRoutes);
 app.use('/api/funcionarios-aseguradora', funcionarioAseguradoraRoutes);
 app.use('/api/responsables', responsableRoutes);
+app.use('/api/ajustadores-catastrofico', ajustadorCatastroficoRoutes);
+app.use('/api/inspectores-catastrofico', inspectorCatastroficoRoutes);
 // Registrar rutas de estados con log
 console.log('📝 Registrando ruta /api/estados...');
 app.use('/api/estados', estadoRoutes);

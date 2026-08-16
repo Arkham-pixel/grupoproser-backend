@@ -8,6 +8,7 @@ import {
   importarCasosFdm,
   subirArchivoFdm,
   eliminarArchivoFdm,
+  toggleChecklistHechoFdm,
   getBaseTerremotoFdmStatus,
   postBaseTerremotoFdmCheck,
   postBaseTerremotoFdmDismissNotification,
@@ -68,6 +69,7 @@ router.post(
   subirArchivoFdm
 );
 router.delete('/:id/archivos/:archivoId', eliminarArchivoFdm);
+router.patch('/:id/checklist-hecho', verificarToken, toggleChecklistHechoFdm);
 
 router.get('/:id', obtenerCasoFdm);
 router.post('/', crearCasoFdm);

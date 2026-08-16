@@ -40,6 +40,7 @@ import {
   listAlfaCondicionesDocuments,
   openAlfaCondicionDownloadStream,
 } from '../services/alfaCondicionesService.js';
+import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
 import * as XLSX from 'xlsx';
 
 const esValorVacio = (valor) =>
@@ -176,7 +177,9 @@ const buildAlfaPayload = (data = {}, base = {}) => ({
   identificacion: toStringOrNull(data.identificacion, base.identificacion ?? null),
   asegurado: toStringOrNull(data.asegurado, base.asegurado ?? null),
   tomador: toStringOrNull(data.tomador, base.tomador ?? null),
+  ajustadorLider: toStringOrNull(data.ajustadorLider, base.ajustadorLider ?? null),
   ajustador: toStringOrNull(data.ajustador, base.ajustador ?? null),
+  inspector: toStringOrNull(data.inspector, base.inspector ?? null),
   numeroPoliza: toStringOrNull(data.numeroPoliza, base.numeroPoliza ?? null),
   direccionPredio: toStringOrNull(data.direccionPredio, base.direccionPredio ?? null),
   numeroCredito: toStringOrNull(data.numeroCredito, base.numeroCredito ?? null),
@@ -248,7 +251,9 @@ const mergeImportacionAlfa = (incomingPayload = {}, existente = {}) => {
     'identificacion',
     'asegurado',
     'tomador',
+    'ajustadorLider',
     'ajustador',
+    'inspector',
     'numeroPoliza',
     'direccionPredio',
     'numeroCredito',
@@ -398,7 +403,8 @@ export const actualizarCasoAlfa = async (req, res) => {
     }
 
     const base = registroActual.toObject();
-    const payload = buildAlfaPayload(req.body, base);
+    const { data: bodyFiltrado } = aplicarRestriccionRolCaso(req, req.body || {}, base);
+    const payload = buildAlfaPayload(bodyFiltrado, base);
     if (!payload.consecutivo) {
       payload.consecutivo = base.consecutivo || (await generarConsecutivoAlfa());
     }

@@ -39,8 +39,12 @@ const ZurichCasoSchema = new mongoose.Schema(
     /** Nombre del asegurado (columna ASEGURADO / NOMBRE del Excel) */
     asegurado: String,
     tomador: String,
+    /** Ajustador líder (quien asigna) */
+    ajustadorLider: String,
     /** Código/nombre del ajustador (catálogo Responsable) para alertas */
     ajustador: String,
+    /** Inspector del caso */
+    inspector: String,
     numeroPoliza: String,
     direccionPredio: String,
     numeroCredito: String,
