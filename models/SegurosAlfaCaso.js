@@ -41,6 +41,8 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
     numeroCredito: String,
     informacionContacto: String,
     correo: String,
+    /** Celular del asegurado o de quien lo asiste (cierre del siniestro) */
+    celular: String,
     /** Canal de radicación (Seguros Alfa, presencial, etc.) */
     canalRadicacion: String,
     ciudad: String,

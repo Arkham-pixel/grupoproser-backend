@@ -127,6 +127,7 @@ const buildFdmPayload = (data = {}, base = {}) => ({
   nombre: toStringOrNull(data.nombre, base.nombre ?? null),
   cedula: toStringOrNull(data.cedula, base.cedula ?? null),
   celular: toStringOrNull(data.celular, base.celular ?? null),
+  correo: toStringOrNull(data.correo, base.correo ?? null),
   direccionAfectada: toStringOrNull(data.direccionAfectada, base.direccionAfectada ?? null),
   municipio: toStringOrNull(data.municipio, base.municipio ?? null),
   departamento: toStringOrNull(data.departamento, base.departamento ?? null),

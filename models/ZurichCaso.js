@@ -46,6 +46,8 @@ const ZurichCasoSchema = new mongoose.Schema(
     numeroCredito: String,
     informacionContacto: String,
     correo: String,
+    /** Celular del asegurado o de quien lo asiste (cierre del siniestro) */
+    celular: String,
     /** Canal de radicación (Zurich, presencial, etc.) */
     canalRadicacion: String,
     ciudad: String,
@@ -88,17 +90,17 @@ const ZurichCasoSchema = new mongoose.Schema(
     severidadCat: { type: Number, min: 1, max: 6, default: null },
     /**
      * Cada descripción de daño con APLICA / NO APLICA + observación.
-     * { "1": { aplica, observacion }, ... "6": { ... } }
+     * Claves nivel1…nivel6 (evita que Mongo convierta "1"…"6" en arreglo).
      */
     severidadCatNiveles: {
       type: mongoose.Schema.Types.Mixed,
       default: () => ({
-        1: { aplica: null, observacion: '' },
-        2: { aplica: null, observacion: '' },
-        3: { aplica: null, observacion: '' },
-        4: { aplica: null, observacion: '' },
-        5: { aplica: null, observacion: '' },
-        6: { aplica: null, observacion: '' },
+        nivel1: { aplica: null, observacion: '' },
+        nivel2: { aplica: null, observacion: '' },
+        nivel3: { aplica: null, observacion: '' },
+        nivel4: { aplica: null, observacion: '' },
+        nivel5: { aplica: null, observacion: '' },
+        nivel6: { aplica: null, observacion: '' },
       }),
     },
     /** Acceso al predio en inspección CAT */

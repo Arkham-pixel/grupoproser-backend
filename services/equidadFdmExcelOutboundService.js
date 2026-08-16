@@ -58,6 +58,9 @@ const HEADER_TO_FIELD = {
   ESTADO: 'estado',
   CELULAR: 'celular',
   TELEFONO: 'celular',
+  CORREO: 'correo',
+  'CORREO ELECTRONICO': 'correo',
+  EMAIL: 'correo',
   OBSERVACIONES: 'observaciones',
   EDIFCIO: 'valorEdificio',
   EDIFICIO: 'valorEdificio',
@@ -213,6 +216,19 @@ function findRowByCedulaExcelJs(ws, headerRowNumber, colCedula, cedula) {
   return -1;
 }
 
+function ensureWorksheetRowsVisible(ws) {
+  if (!ws) return;
+  if (ws.state === 'hidden' || ws.state === 'veryHidden') ws.state = 'visible';
+  // Excel Online falla con "Can't display a hidden grid" si todas las filas quedan hidden.
+  const maxRow = Math.max(ws.rowCount || 0, 1);
+  for (let r = 1; r <= maxRow; r += 1) {
+    const row = ws.getRow(r);
+    if (row.hidden) row.hidden = false;
+    if (row.height === 0) row.height = 15;
+  }
+  if (ws.autoFilter) ws.autoFilter = undefined;
+}
+
 async function resolveSourceItem() {
   const cfg = getEquidadFdmExcelSharePointConfig();
   const source = await EquidadFdmExcelSharePointSource.findOne({
@@ -304,6 +320,7 @@ export async function processEquidadFdmExcelOutboundUpdate(doc) {
     }
   }
   dataRow.commit();
+  ensureWorksheetRowsVisible(ws);
 
   const outBuf = Buffer.from(await wb.xlsx.writeBuffer());
 

@@ -35,6 +35,8 @@ const EquidadFdmCasoSchema = new mongoose.Schema({
   nombre: { type: String, required: true },
   cedula: String,
   celular: String,
+  /** Correo electrónico del asegurado o de quien lo asiste (cierre del siniestro) */
+  correo: String,
   direccionAfectada: String,
   municipio: String,
   departamento: String,

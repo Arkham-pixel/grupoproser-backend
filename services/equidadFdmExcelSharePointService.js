@@ -188,10 +188,24 @@ function localizarCasoFdm(fila, indice, existentes, eventoPreferido) {
   return { action: 'CREATE' };
 }
 
+function pareceDireccionAjustador(valor) {
+  const s = String(valor || '').trim();
+  if (!s) return false;
+  if (/\(sistema\s*osiris\)/i.test(s)) return true;
+  if (/^(CLL|CRA|CR |CALLE|CARRERA|MZ|MANZANA|SUBA|DIAG|AV |AVENIDA|TRANSVERSAL|TV )/i.test(s)) {
+    return true;
+  }
+  // Direcciones típicas: contienen # y números, sin parecer nombre de persona
+  if (/#\s*\d/.test(s) && !/\b(TAPIA|GARCIA|PINILLA|MORENO|ESCALANTE)\b/i.test(s)) return true;
+  return false;
+}
+
 function diffInbound(fila, caso) {
   const changes = {};
   for (const field of FDM_EXCEL_INBOUND_FIELDS) {
     if (!(field in fila) || fila[field] == null || fila[field] === '') continue;
+    // No importar direcciones/basura a la columna Ajustador.
+    if (field === 'ajustador' && pareceDireccionAjustador(fila[field])) continue;
     if (!valuesEqual(fila[field], caso?.[field])) {
       changes[field] = { from: caso?.[field] ?? null, to: fila[field] };
     }

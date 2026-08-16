@@ -55,6 +55,8 @@ const SegurosSuraCasoSchema = new mongoose.Schema(
     numeroCredito: String,
     informacionContacto: String,
     correo: String,
+    /** Celular del asegurado o de quien lo asiste (cierre del siniestro) */
+    celular: String,
     canalRadicacion: String,
     ciudad: String,
     departamento: String,

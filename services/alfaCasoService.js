@@ -102,6 +102,7 @@ export function buildAlfaCasoPayload(data = {}, base = {}) {
       base.informacionContacto ?? null
     ),
     correo: toStringOrNull(data.correo, base.correo ?? null),
+    celular: toStringOrNull(data.celular, base.celular ?? null),
     canalRadicacion: toStringOrNull(data.canalRadicacion, base.canalRadicacion ?? null),
     ciudad: toStringOrNull(data.ciudad, base.ciudad ?? null),
     departamento: toStringOrNull(data.departamento, base.departamento ?? null),

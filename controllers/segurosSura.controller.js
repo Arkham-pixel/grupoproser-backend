@@ -247,6 +247,7 @@ export const buildSuraPayload = (data = {}, base = {}) => {
     numeroCredito: toStringOrNull(data.numeroCredito, base.numeroCredito ?? null),
     informacionContacto: toStringOrNull(data.informacionContacto, base.informacionContacto ?? null),
     correo: toStringOrNull(data.correo, base.correo ?? null),
+    celular: toStringOrNull(data.celular, base.celular ?? null),
     canalRadicacion: toStringOrNull(data.canalRadicacion, base.canalRadicacion ?? null),
     ciudad: primerTexto(
       data.ciudad,
@@ -380,6 +381,7 @@ const mergeImportacionSura = (incomingPayload = {}, existente = {}) => {
     'numeroCredito',
     'informacionContacto',
     'correo',
+    'celular',
     'canalRadicacion',
     'ciudad',
     'departamento',

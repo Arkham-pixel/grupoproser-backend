@@ -61,12 +61,20 @@ const normalizeSeveridadNivelItem = (raw) => {
   return { aplica: null, observacion: '' };
 };
 
+const itemNivelDesdeRaw = (raw, n) => {
+  if (raw == null) return undefined;
+  if (Array.isArray(raw)) {
+    const porNivel = raw.find((it) => Number(it?.nivel) === n);
+    return porNivel ?? raw[n] ?? raw[n - 1];
+  }
+  if (typeof raw !== 'object') return undefined;
+  return raw[`nivel${n}`] ?? raw[String(n)] ?? raw[n];
+};
+
 const normalizeSeveridadCatNiveles = (raw = {}, severidadCatLegacy = null) => {
-  const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
   const out = {};
   for (let n = 1; n <= 6; n += 1) {
-    const key = String(n);
-    out[key] = normalizeSeveridadNivelItem(src[key] ?? src[n]);
+    out[String(n)] = normalizeSeveridadNivelItem(itemNivelDesdeRaw(raw, n));
   }
   const legacy = Number(severidadCatLegacy);
   const hayAlguno = Object.values(out).some((v) => v.aplica === 'SI' || v.aplica === 'NO');
@@ -75,6 +83,21 @@ const normalizeSeveridadCatNiveles = (raw = {}, severidadCatLegacy = null) => {
   }
   return out;
 };
+
+/** Claves nivel1…nivel6: Mongo no convierte el Mixed en arreglo (pasaba con "1"…"6"). */
+const serializarSeveridadCatNiveles = (raw = {}, severidadCatLegacy = null) => {
+  const norm = normalizeSeveridadCatNiveles(raw, severidadCatLegacy);
+  const out = {};
+  for (let n = 1; n <= 6; n += 1) {
+    out[`nivel${n}`] = norm[String(n)];
+  }
+  return out;
+};
+
+const nivelesTienenRespuesta = (raw) =>
+  Object.values(normalizeSeveridadCatNiveles(raw, null)).some(
+    (v) => v.aplica === 'SI' || v.aplica === 'NO'
+  );
 
 const derivarSeveridadCatDesdeNiveles = (niveles = {}) => {
   const norm = normalizeSeveridadCatNiveles(niveles);
@@ -90,28 +113,23 @@ const aplicaRespondido = (valor) =>
 
 /** Checklist CAT lleno: los 6 niveles de severidad tienen APLICA o NO APLICA (tras guardar la inspección). */
 const esChecklistCatLleno = (caso = {}) => {
-  const niveles = caso.severidadCatNiveles && typeof caso.severidadCatNiveles === 'object'
-    ? caso.severidadCatNiveles
-    : {};
-  for (let n = 1; n <= 6; n += 1) {
-    const item = niveles[String(n)] ?? niveles[n];
-    const aplica = item && typeof item === 'object' ? item.aplica : item;
-    if (!aplicaRespondido(aplica)) return false;
-  }
-  return true;
+  const norm = normalizeSeveridadCatNiveles(caso.severidadCatNiveles, caso.severidadCat);
+  return [1, 2, 3, 4, 5, 6].every((n) => aplicaRespondido(norm[String(n)]?.aplica));
 };
 
 /** Filtro Mongo para casos con checklist CAT completo (flag o niveles 1–6 respondidos). */
-const filtroMongoChecklistCatLleno = () => ({
-  $or: [
-    { checklistCatCompleto: true },
-    {
-      $and: [1, 2, 3, 4, 5, 6].map((n) => ({
-        [`severidadCatNiveles.${n}.aplica`]: { $in: ['SI', 'NO', true, false] },
-      })),
-    },
-  ],
-});
+const filtroMongoChecklistCatLleno = () => {
+  const aplica = { $in: ['SI', 'NO', true, false] };
+  const porPrefijo = [1, 2, 3, 4, 5, 6].map((n) => ({
+    [`severidadCatNiveles.nivel${n}.aplica`]: aplica,
+  }));
+  const porNumero = [1, 2, 3, 4, 5, 6].map((n) => ({
+    [`severidadCatNiveles.${n}.aplica`]: aplica,
+  }));
+  return {
+    $or: [{ checklistCatCompleto: true }, { $and: porPrefijo }, { $and: porNumero }],
+  };
+};
 
 const rolDesdeReq = (req) =>
   normalizarRol(req?.user?.role || req?.usuario?.role || '');
@@ -287,6 +305,7 @@ const buildZurichPayload = (data = {}, base = {}) => {
   numeroCredito: toStringOrNull(data.numeroCredito, base.numeroCredito ?? null),
   informacionContacto: toStringOrNull(data.informacionContacto, base.informacionContacto ?? null),
   correo: toStringOrNull(data.correo, base.correo ?? null),
+  celular: toStringOrNull(data.celular, base.celular ?? null),
   canalRadicacion: toStringOrNull(data.canalRadicacion, base.canalRadicacion ?? null),
   ciudad: toStringOrNull(data.ciudad, base.ciudad ?? null),
   departamento: toStringOrNull(data.departamento, base.departamento ?? null),
@@ -354,16 +373,33 @@ const buildZurichPayload = (data = {}, base = {}) => {
   lucroCesante: toStringOrNull(data.lucroCesante, base.lucroCesante ?? null),
   severidadCatNiveles: (() => {
     const incoming = data.severidadCatNiveles;
-    const prev = base.severidadCatNiveles;
-    if (incoming && typeof incoming === 'object') {
-      // No mezclar con legacy: el payload CAT ya trae SI/NO por nivel
-      return normalizeSeveridadCatNiveles({ ...(prev || {}), ...incoming }, null);
+    const prevNorm = normalizeSeveridadCatNiveles(base.severidadCatNiveles, base.severidadCat);
+    if (incoming === undefined || incoming === null) {
+      return serializarSeveridadCatNiveles(prevNorm);
     }
-    return normalizeSeveridadCatNiveles(prev || {}, base.severidadCat);
+    if (typeof incoming !== 'object') {
+      return serializarSeveridadCatNiveles(prevNorm);
+    }
+    if (!nivelesTienenRespuesta(incoming)) {
+      return serializarSeveridadCatNiveles(prevNorm);
+    }
+    const incomingNorm = normalizeSeveridadCatNiveles(incoming, null);
+    const merged = {};
+    for (let n = 1; n <= 6; n += 1) {
+      const key = String(n);
+      const inc = incomingNorm[key];
+      merged[key] =
+        inc?.aplica === 'SI' || inc?.aplica === 'NO' ? inc : prevNorm[key];
+    }
+    return serializarSeveridadCatNiveles(merged);
   })(),
   severidadCat: (() => {
-    // Preferir derivado desde niveles si vienen en el payload (null = ninguno aplica)
-    if (data.severidadCatNiveles && typeof data.severidadCatNiveles === 'object') {
+    // Solo derivar desde niveles si el payload trae respuestas reales (no borrar con vacío)
+    if (
+      data.severidadCatNiveles &&
+      typeof data.severidadCatNiveles === 'object' &&
+      nivelesTienenRespuesta(data.severidadCatNiveles)
+    ) {
       return derivarSeveridadCatDesdeNiveles(
         normalizeSeveridadCatNiveles(data.severidadCatNiveles, null)
       );
@@ -421,6 +457,7 @@ export const mapExpressAZurich = (express = {}) => ({
   numeroCredito: null,
   informacionContacto: null,
   correo: express.correoNotificacion || null,
+  celular: null,
   canalRadicacion: 'EXPRESS',
   ciudad: express.ciudadSiniestro || null,
   departamento: null,
@@ -458,6 +495,7 @@ const mergeImportacionZurich = (incomingPayload = {}, existente = {}) => {
     'numeroCredito',
     'informacionContacto',
     'correo',
+    'celular',
     'canalRadicacion',
     'ciudad',
     'departamento',
@@ -502,7 +540,7 @@ const mergeImportacionZurich = (incomingPayload = {}, existente = {}) => {
     historialCatastroficoId: existente.historialCatastroficoId ?? null,
     expressCasoId: existente.expressCasoId ?? null,
     consecutivoExpress: existente.consecutivoExpress ?? null,
-    severidadCatNiveles: normalizeSeveridadCatNiveles(
+    severidadCatNiveles: serializarSeveridadCatNiveles(
       existente.severidadCatNiveles,
       existente.severidadCat
     ),
@@ -514,11 +552,10 @@ const mergeImportacionZurich = (incomingPayload = {}, existente = {}) => {
     out[campo] = mergeCampoImport(incomingPayload[campo], existente[campo]);
   }
   if (incomingPayload.severidadCatNiveles && typeof incomingPayload.severidadCatNiveles === 'object') {
-    out.severidadCatNiveles = normalizeSeveridadCatNiveles({
-      ...normalizeSeveridadCatNiveles(existente.severidadCatNiveles, existente.severidadCat),
-      ...incomingPayload.severidadCatNiveles,
-    });
-    out.severidadCat = derivarSeveridadCatDesdeNiveles(out.severidadCatNiveles);
+    if (nivelesTienenRespuesta(incomingPayload.severidadCatNiveles)) {
+      out.severidadCatNiveles = serializarSeveridadCatNiveles(incomingPayload.severidadCatNiveles);
+      out.severidadCat = derivarSeveridadCatDesdeNiveles(out.severidadCatNiveles);
+    }
   }
   // evidenciaCat: merge por sección (aplica + observación)
   if (incomingPayload.evidenciaCat && typeof incomingPayload.evidenciaCat === 'object') {
@@ -638,9 +675,11 @@ export const actualizarCasoZurich = async (req, res) => {
       });
     }
 
-    const actualizado = await ZurichCaso.findByIdAndUpdate(registroActual._id, payload, {
-      new: true,
-    });
+    const actualizado = await ZurichCaso.findByIdAndUpdate(
+      registroActual._id,
+      { $set: payload },
+      { new: true, runValidators: false }
+    );
 
     res.json({ success: true, data: actualizado });
   } catch (error) {
