@@ -23,12 +23,15 @@ export function poblarUsuarioOpcional(req, res, next) {
   }
 
   try {
-    req.usuario = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.usuario = payload;
+    req.user = payload;
   } catch {
     try {
       const decoded = jwt.decode(token);
       if (decoded && (decoded.id || decoded.login)) {
         req.usuario = decoded;
+        req.user = decoded;
       }
     } catch {
       // Sin usuario autenticado

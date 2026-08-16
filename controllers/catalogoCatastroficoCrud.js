@@ -17,11 +17,7 @@ export function crearCatalogoCatastroficoCrud(Model, etiqueta = 'registro') {
 
       if (ciudadQuery) {
         const target = normCiudad(ciudadQuery);
-        docs = docs.filter((d) => {
-          const c = normCiudad(d.ciudad);
-          if (!c || c === 'TODAS' || c === 'TODOS') return true;
-          return c === target;
-        });
+        docs = docs.filter((d) => normCiudad(d.ciudad) === target);
       }
 
       res.json({ success: true, data: docs });

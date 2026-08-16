@@ -40,7 +40,7 @@ import {
   listAlfaCondicionesDocuments,
   openAlfaCondicionDownloadStream,
 } from '../services/alfaCondicionesService.js';
-import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
+import { aplicarRestriccionRolCaso, obtenerIdentidadUsuarioReq, construirFiltroVistaAsignacion, casoVisibleParaIdentidad, collationVistaAsignacion, combinarFiltrosMongo } from '../utils/permisosCasoPorRol.js';
 import * as XLSX from 'xlsx';
 
 const esValorVacio = (valor) =>
@@ -338,13 +338,20 @@ export const listarCasosAlfa = async (req, res) => {
   try {
     const { limit = 25, page = 1 } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
-    const [total, documentos] = await Promise.all([
-      SegurosAlfaCaso.countDocuments(),
-      SegurosAlfaCaso.find()
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(Number(limit)),
-    ]);
+    const identidad = await obtenerIdentidadUsuarioReq(req);
+    const filtroAsignacion = construirFiltroVistaAsignacion(identidad);
+    const filtro = combinarFiltrosMongo(filtroAsignacion);
+    const collation = filtroAsignacion ? collationVistaAsignacion() : undefined;
+    const countQuery = SegurosAlfaCaso.countDocuments(filtro);
+    const findQuery = SegurosAlfaCaso.find(filtro)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit));
+    if (collation) {
+      countQuery.collation(collation);
+      findQuery.collation(collation);
+    }
+    const [total, documentos] = await Promise.all([countQuery, findQuery]);
 
     res.json({
       success: true,
@@ -384,6 +391,13 @@ export const obtenerCasoAlfa = async (req, res) => {
     if (!documento) {
       return res.status(404).json({ success: false, error: 'Caso Seguros Alfa no encontrado' });
     }
+    const identidad = await obtenerIdentidadUsuarioReq(req);
+    if (!casoVisibleParaIdentidad(documento, identidad)) {
+      return res.status(403).json({
+        success: false,
+        error: 'No tiene permiso para ver este caso (solo los asignados a usted).',
+      });
+    }
     res.json({ success: true, data: documento });
   } catch (error) {
     console.error('❌ Error al obtener caso Seguros Alfa:', error);
@@ -400,6 +414,14 @@ export const actualizarCasoAlfa = async (req, res) => {
     const registroActual = await buscarCasoPorId(req.params.id);
     if (!registroActual) {
       return res.status(404).json({ success: false, error: 'Caso Seguros Alfa no encontrado' });
+    }
+
+    const identidad = await obtenerIdentidadUsuarioReq(req);
+    if (!casoVisibleParaIdentidad(registroActual, identidad)) {
+      return res.status(403).json({
+        success: false,
+        error: 'No tiene permiso para modificar este caso (solo los asignados a usted).',
+      });
     }
 
     const base = registroActual.toObject();

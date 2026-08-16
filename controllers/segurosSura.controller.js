@@ -28,7 +28,7 @@ import {
   corregirDestinatarioEnvioFacturacion,
   eliminarRegistroEnvioFacturacion,
 } from '../services/facturacionBandejaService.js';
-import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
+import { aplicarRestriccionRolCaso, obtenerIdentidadUsuarioReq, construirFiltroVistaAsignacion, casoVisibleParaIdentidad, collationVistaAsignacion, combinarFiltrosMongo } from '../utils/permisosCasoPorRol.js';
 import {
   normalizarClaveGerente,
   resolverGerenteDesdeLogin,
@@ -467,18 +467,25 @@ export const listarCasosSura = async (req, res) => {
   try {
     const { limit = 25, page = 1, nmroAjste, consecutivo } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
-    const filtro = {};
+    const identidad = await obtenerIdentidadUsuarioReq(req);
+    const filtroAsignacion = construirFiltroVistaAsignacion(identidad);
+    let filtroNumero = null;
     const numero = String(nmroAjste || consecutivo || '').trim();
     if (numero) {
-      filtro.$or = [{ nmroAjste: numero }, { consecutivo: numero }, { siniestro: numero }];
+      filtroNumero = { $or: [{ nmroAjste: numero }, { consecutivo: numero }, { siniestro: numero }] };
     }
-    const [total, documentos] = await Promise.all([
-      SegurosSuraCaso.countDocuments(filtro),
-      SegurosSuraCaso.find(filtro)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(Number(limit)),
-    ]);
+    const filtro = combinarFiltrosMongo(filtroAsignacion, filtroNumero);
+    const collation = filtroAsignacion ? collationVistaAsignacion() : undefined;
+    const countQuery = SegurosSuraCaso.countDocuments(filtro);
+    const findQuery = SegurosSuraCaso.find(filtro)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit));
+    if (collation) {
+      countQuery.collation(collation);
+      findQuery.collation(collation);
+    }
+    const [total, documentos] = await Promise.all([countQuery, findQuery]);
 
     res.json({
       success: true,
@@ -521,6 +528,13 @@ export const obtenerCasoSura = async (req, res) => {
     if (!documento) {
       return res.status(404).json({ success: false, error: 'Caso Seguros Sura no encontrado' });
     }
+    const identidad = await obtenerIdentidadUsuarioReq(req);
+    if (!casoVisibleParaIdentidad(documento, identidad)) {
+      return res.status(403).json({
+        success: false,
+        error: 'No tiene permiso para ver este caso (solo los asignados a usted).',
+      });
+    }
     res.json({ success: true, data: documento });
   } catch (error) {
     console.error('❌ Error al obtener caso Seguros Sura:', error);
@@ -537,6 +551,14 @@ export const actualizarCasoSura = async (req, res) => {
     const registroActual = await buscarCasoPorId(req.params.id);
     if (!registroActual) {
       return res.status(404).json({ success: false, error: 'Caso Seguros Sura no encontrado' });
+    }
+
+    const identidad = await obtenerIdentidadUsuarioReq(req);
+    if (!casoVisibleParaIdentidad(registroActual, identidad)) {
+      return res.status(403).json({
+        success: false,
+        error: 'No tiene permiso para modificar este caso (solo los asignados a usted).',
+      });
     }
 
     const base = registroActual.toObject();

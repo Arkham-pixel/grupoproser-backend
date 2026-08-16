@@ -37,6 +37,7 @@ import {
 import { createMulterUpload, attachPersistedFileMiddleware } from '../storage/multerStorageFactory.js';
 import { STORAGE_CATEGORIES, getPublicPathForSingle } from '../services/fileStorageService.js';
 import { verificarToken } from '../middleware/auth.js';
+import { poblarUsuarioOpcional } from '../middleware/usuarioOpcional.js';
 import { verificarAdminSoporte } from '../middleware/verificarAdminSoporte.js';
 
 const router = express.Router();
@@ -58,7 +59,7 @@ const excelUpload = multer({
   limits: { fileSize: 15 * 1024 * 1024 },
 });
 
-router.get('/', listarCasosSura);
+router.get('/', poblarUsuarioOpcional, listarCasosSura);
 
 const persistSuraUpload = attachPersistedFileMiddleware({
   category: STORAGE_CATEGORIES.SEGUROS_SURA,
@@ -156,7 +157,7 @@ router.post(
 );
 router.patch('/:id/archivos/:archivoId', verificarToken, actualizarArchivoSura);
 router.delete('/:id/archivos/:archivoId', eliminarArchivoSura);
-router.get('/:id', obtenerCasoSura);
+router.get('/:id', poblarUsuarioOpcional, obtenerCasoSura);
 router.post('/', crearCasoSura);
 router.put('/:id', verificarToken, actualizarCasoSura);
 router.delete('/:id', eliminarCasoSura);

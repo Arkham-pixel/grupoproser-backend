@@ -32,6 +32,7 @@ import {
 import { createMulterUpload, attachPersistedFileMiddleware } from '../storage/multerStorageFactory.js';
 import { STORAGE_CATEGORIES } from '../services/fileStorageService.js';
 import { verificarToken } from '../middleware/auth.js';
+import { poblarUsuarioOpcional } from '../middleware/usuarioOpcional.js';
 import { verificarAdminSoporte } from '../middleware/verificarAdminSoporte.js';
 import { getAlfaExcelImportConfig } from '../config/alfaExcelImport.js';
 
@@ -54,7 +55,7 @@ const excelUpload = multer({
   limits: { fileSize: getAlfaExcelImportConfig().maxFileBytes },
 });
 
-router.get('/', listarCasosAlfa);
+router.get('/', poblarUsuarioOpcional, listarCasosAlfa);
 
 /** Bloques de cercanía (solo ARNALD; no SharePoint) — DEBE ir antes de /:id */
 router.get('/bloques-cercania', getBloquesCercaniaAlfa);
@@ -133,7 +134,7 @@ router.post(
 );
 router.patch('/:id/archivos/:archivoId', verificarToken, actualizarArchivoAlfa);
 router.delete('/:id/archivos/:archivoId', eliminarArchivoAlfa);
-router.get('/:id', obtenerCasoAlfa);
+router.get('/:id', poblarUsuarioOpcional, obtenerCasoAlfa);
 router.post('/', crearCasoAlfa);
 router.put('/:id', verificarToken, actualizarCasoAlfa);
 router.delete('/:id', eliminarCasoAlfa);
