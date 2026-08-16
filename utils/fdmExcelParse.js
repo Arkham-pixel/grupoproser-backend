@@ -50,6 +50,8 @@ const HEADER_MAP = {
   'VIGENCIA POLIZA': 'vigenciaPoliza',
   'AFECTACIONES ANTERIORES': 'afectacionesAnteriores',
   'SINIESTRO INDEMNIZADO': 'siniestroIndemnizado',
+  'SINIESTRO O INDEMNIZADO': 'siniestroIndemnizado',
+  'SINIESTRO O AFECTACION': 'siniestroIndemnizado',
   EDIFCIO: 'valorEdificio',
   EDIFICIO: 'valorEdificio',
   'VALOR EDIFICIO': 'valorEdificio',
@@ -110,10 +112,16 @@ const esEncabezadoCedula = (celda) => {
 const resolverCampoEncabezado = (headerNorm) => {
   if (!headerNorm) return null;
   if (HEADER_MAP[headerNorm]) return HEADER_MAP[headerNorm];
+  // "SINIESTRO O INDEMNIZADO" / "... AFECTACION" NUNCA es el campo siniestro (columna AE).
+  if (headerNorm.startsWith('SINIESTRO ') && /(INDEMNIZ|AFECTAC)/.test(headerNorm)) {
+    return 'siniestroIndemnizado';
+  }
   let mejorCampo = null;
   let mejorLen = 0;
   for (const [key, campo] of Object.entries(HEADER_MAP)) {
     if (key.length < 6) continue;
+    // SINIESTRO / AJUSTADOR solo exacto (HEADER_MAP arriba).
+    if (key === 'SINIESTRO' || key === 'AJUSTADOR') continue;
     if (headerNorm !== key && !headerNorm.startsWith(`${key} `)) continue;
     if (key.length > mejorLen) {
       mejorLen = key.length;
@@ -382,7 +390,7 @@ const mapRow = (row, indice, meta) => {
     }
   }
 
-  if (!doc.estado) doc.estado = 'PENDIENTE';
+  // No forzar PENDIENTE aquí: en updates el Excel vacío pisaba ARNALD.
   return doc;
 };
 

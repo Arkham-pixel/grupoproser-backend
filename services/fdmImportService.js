@@ -24,6 +24,27 @@ const mergeCampoFdm = (incoming, existing) => {
   return existing ?? null;
 };
 
+/** Estado / liquidación viven en ARNALD; el Excel vacío no debe devolverlos a PENDIENTE. */
+const CAMPOS_PROTEGIDOS_IMPORT_FDM = new Set([
+  'estado',
+  'perdidaContenidos',
+  'perdidaEdificio',
+  'totalPerdida',
+  'deducible',
+  'subsidio',
+  'totalLiquidado',
+  'valorIndemnizadoAjustador',
+  'valorIndemnizado',
+  'fechaLiquidacion',
+  'fechaGiro',
+]);
+
+const mergeCampoProtegidoFdm = (incoming, existing) => {
+  // En actualización siempre gana ARNALD si ya tiene valor.
+  if (!esPlaceholderFdm(existing)) return existing;
+  return mergeCampoFdm(incoming, existing);
+};
+
 const normClaveFdm = (valor) =>
   String(valor ?? '')
     .normalize('NFD')
@@ -304,6 +325,10 @@ const mergeImportacionFdm = (incomingPayload = {}, existente = {}) => {
   };
   for (const campo of CAMPOS_MERGE_FDM) {
     if (campo === 'cedula' || campo === 'nombre' || campo === 'celular') continue;
+    if (CAMPOS_PROTEGIDOS_IMPORT_FDM.has(campo)) {
+      out[campo] = mergeCampoProtegidoFdm(incomingPayload[campo], existente[campo]);
+      continue;
+    }
     out[campo] = mergeCampoFdm(incomingPayload[campo], existente[campo]);
   }
   out.cedula = elegirMejorCedulaFdm(incomingPayload.cedula, existente.cedula);
@@ -414,13 +439,23 @@ export const ejecutarImportacionFdm = async (filas = []) => {
         resumen.errores.push({ fila: filaNum, motivo: 'Fila sin nombre, cédula ni dirección' });
         continue;
       }
-      if (!payloadBase.estado) payloadBase.estado = 'PENDIENTE';
       if (!payloadBase.evento) payloadBase.evento = eventoClaveFdm(payloadBase);
 
       const existente = localizarExistenteFdm(payloadBase, indice, existentes);
 
       if (existente?._id) {
+        // Excel NUNCA pisa estado/liquidación en update: se quitan del payload.
+        for (const campo of CAMPOS_PROTEGIDOS_IMPORT_FDM) {
+          delete payloadBase[campo];
+        }
         const merge = mergeImportacionFdm(payloadBase, existente);
+        // Refuerzo: conservar siempre los protegidos del caso existente.
+        for (const campo of CAMPOS_PROTEGIDOS_IMPORT_FDM) {
+          if (!esPlaceholderFdm(existente[campo])) {
+            merge[campo] = existente[campo];
+          }
+        }
+        if (existente.liquidador) merge.liquidador = existente.liquidador;
         if (!merge.consecutivo) {
           secuencial += 1;
           merge.consecutivo = `FDM-${año}-${mes}-${secuencial}`;
@@ -433,6 +468,7 @@ export const ejecutarImportacionFdm = async (filas = []) => {
         if (idx >= 0) existentes[idx] = actualizado;
         indexarClavesFdm(indice, actualizado);
       } else {
+        if (!payloadBase.estado) payloadBase.estado = 'PENDIENTE';
         secuencial += 1;
         payloadBase.consecutivo = `FDM-${año}-${mes}-${secuencial}`;
         payloadBase.esNuevo = true;

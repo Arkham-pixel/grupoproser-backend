@@ -339,7 +339,23 @@ export async function executeEquidadFdmExcelImport(
     throw err;
   }
 
-  const toApply = applicable.map((r) => r.payload);
+  const toApply = applicable.map((r) => {
+    const payload = { ...(r.payload || {}) };
+    // Defensa: el Excel no debe empujar estado ni liquidación a ARNALD.
+    delete payload.estado;
+    delete payload.liquidador;
+    delete payload.perdidaContenidos;
+    delete payload.perdidaEdificio;
+    delete payload.totalPerdida;
+    delete payload.deducible;
+    delete payload.subsidio;
+    delete payload.totalLiquidado;
+    delete payload.valorIndemnizadoAjustador;
+    delete payload.valorIndemnizado;
+    delete payload.fechaLiquidacion;
+    delete payload.fechaGiro;
+    return payload;
+  });
   const resumen = await ejecutarImportacionFdm(toApply);
 
   session.status = 'executed';

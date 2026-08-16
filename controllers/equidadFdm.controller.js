@@ -34,8 +34,37 @@ const parseDateFlexible = (value, fallback = null) => {
 
 const parseNumberFlexible = (value, fallback = null) => {
   if (esValorVacio(value)) return fallback ?? null;
-  const number = Number(String(value).replace(/[^\d.,-]/g, '').replace(/,/g, ''));
-  return Number.isNaN(number) ? fallback ?? null : number;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : fallback ?? null;
+  }
+  let numero = String(value).replace(/[^\d.,-]/g, '').trim();
+  if (!numero || numero === '-' || numero === '.' || numero === ',') return fallback ?? null;
+
+  if (numero.includes(',') && numero.includes('.')) {
+    // 1.313.178,75 (es-CO) vs 1,313,178.75 (en-US)
+    if (numero.lastIndexOf(',') > numero.lastIndexOf('.')) {
+      numero = numero.replace(/\./g, '').replace(',', '.');
+    } else {
+      numero = numero.replace(/,/g, '');
+    }
+  } else if (numero.includes(',')) {
+    // 1313178,75 → decimal; 1,313,178 → miles
+    const partes = numero.split(',');
+    if (partes.length === 2 && partes[1].length > 0 && partes[1].length <= 2) {
+      numero = `${partes[0].replace(/\./g, '')}.${partes[1]}`;
+    } else {
+      numero = numero.replace(/,/g, '');
+    }
+  } else if (numero.includes('.')) {
+    const partes = numero.split('.');
+    // 1.750.905 (miles) vs 1313178.75 (decimal)
+    if (partes.length > 2 || (partes[1] && partes[1].length === 3)) {
+      numero = numero.replace(/\./g, '');
+    }
+  }
+
+  const n = Number(numero);
+  return Number.isFinite(n) ? n : fallback ?? null;
 };
 
 const toStringOrNull = (value, fallback = null) => {
@@ -376,12 +405,7 @@ export const importarCasosFdm = async (req, res) => {
       });
     }
 
-    const normalizadas = filas.map((fila) =>
-      buildFdmPayload({
-        ...fila,
-        estado: fila?.estado || 'PENDIENTE',
-      })
-    );
+    const normalizadas = filas.map((fila) => buildFdmPayload({ ...fila }));
     const resumen = await ejecutarImportacionFdm(normalizadas);
     res.json({ success: true, data: resumen });
   } catch (error) {

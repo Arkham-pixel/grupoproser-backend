@@ -39,7 +39,8 @@ export function getEquidadFdmExcelSharePointConfig() {
   });
 }
 
-/** Campos que el Excel puede empujar a ARNALD (inbound). */
+/** Campos que el Excel puede empujar a ARNALD (inbound).
+ * No incluye estado ni montos de liquidación: esos los manda ARNALD → Excel. */
 export const FDM_EXCEL_INBOUND_FIELDS = Object.freeze([
   'nombre',
   'cedula',
@@ -56,23 +57,13 @@ export const FDM_EXCEL_INBOUND_FIELDS = Object.freeze([
   'vigenciaPoliza',
   'caso',
   'siniestro',
-  'estado',
   'observaciones',
   'cobertura',
   'valorEdificio',
   'valorContenido',
   'valoresIndemnizables',
-  'perdidaContenidos',
-  'perdidaEdificio',
-  'totalPerdida',
-  'deducible',
-  'subsidio',
-  'totalLiquidado',
-  'valorIndemnizadoAjustador',
-  'valorIndemnizado',
   'fechaRegistro',
   'fechaAviso',
-  'fechaLiquidacion',
 ]);
 
 /** Campos que ARNALD escribe de vuelta al Excel (outbound). */
@@ -95,4 +86,21 @@ export const FDM_EXCEL_OUTBOUND_FIELDS = Object.freeze([
   'valorIndemnizadoAjustador',
   'valorIndemnizado',
   'fechaLiquidacion',
+  'fechaGiro',
+]);
+
+/** Campos que el import Excel no debe pisar si ya hay valor en ARNALD. */
+export const FDM_EXCEL_PROTECTED_FROM_INBOUND = Object.freeze([
+  'estado',
+  'liquidador',
+  'perdidaContenidos',
+  'perdidaEdificio',
+  'totalPerdida',
+  'deducible',
+  'subsidio',
+  'totalLiquidado',
+  'valorIndemnizadoAjustador',
+  'valorIndemnizado',
+  'fechaLiquidacion',
+  'fechaGiro',
 ]);
