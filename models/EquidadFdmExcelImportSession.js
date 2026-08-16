@@ -29,6 +29,8 @@ const EquidadFdmExcelImportSessionSchema = new mongoose.Schema(
     rows: { type: [mongoose.Schema.Types.Mixed], default: [] },
     executedAt: Date,
     executedBy: mongoose.Schema.Types.Mixed,
+    /** Filas Excel aplicadas en el execute (si fue parcial). */
+    executedExcelRows: { type: [Number], default: undefined },
     error: String,
   },
   {

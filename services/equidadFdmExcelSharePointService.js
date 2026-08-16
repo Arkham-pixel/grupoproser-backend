@@ -307,7 +307,10 @@ export async function previewEquidadFdmExcelImport({
   return session.toObject();
 }
 
-export async function executeEquidadFdmExcelImport(sessionId, { usuario } = {}) {
+export async function executeEquidadFdmExcelImport(
+  sessionId,
+  { usuario, excelRows } = {}
+) {
   const session = await EquidadFdmExcelImportSession.findById(sessionId);
   if (!session) {
     const err = new Error('Sesión de importación no encontrada');
@@ -318,19 +321,39 @@ export async function executeEquidadFdmExcelImport(sessionId, { usuario } = {}) 
     return { alreadyExecuted: true, session: session.toObject() };
   }
 
-  const toApply = (session.rows || [])
-    .filter((r) => r.action === 'CREATE' || r.action === 'UPDATE')
-    .map((r) => r.payload)
-    .filter(Boolean);
+  const selectedSet =
+    Array.isArray(excelRows) && excelRows.length > 0
+      ? new Set(excelRows.map((n) => Number(n)).filter((n) => Number.isFinite(n)))
+      : null;
 
+  const applicable = (session.rows || []).filter((r) => {
+    if (r.action !== 'CREATE' && r.action !== 'UPDATE') return false;
+    if (!r.payload) return false;
+    if (selectedSet && !selectedSet.has(Number(r.excelRow))) return false;
+    return true;
+  });
+
+  if (selectedSet && applicable.length === 0) {
+    const err = new Error('No hay filas seleccionadas para aplicar');
+    err.code = 'NO_ROWS_SELECTED';
+    throw err;
+  }
+
+  const toApply = applicable.map((r) => r.payload);
   const resumen = await ejecutarImportacionFdm(toApply);
 
   session.status = 'executed';
   session.executedAt = new Date();
   session.executedBy = usuario || null;
+  session.executedExcelRows = applicable.map((r) => r.excelRow);
   await session.save();
 
-  return { alreadyExecuted: false, session: session.toObject(), resumen };
+  return {
+    alreadyExecuted: false,
+    session: session.toObject(),
+    resumen,
+    appliedRows: applicable.length,
+  };
 }
 
 async function getOrCreateSource() {
@@ -502,6 +525,35 @@ export async function dismissEquidadFdmExcelSharePointNotification() {
 export async function markEquidadFdmExcelSharePointExecuted(sessionId) {
   const source = await getOrCreateSource();
   const session = await EquidadFdmExcelImportSession.findById(sessionId).lean();
+  const allApplicable = (session?.rows || []).filter(
+    (r) => r.action === 'CREATE' || r.action === 'UPDATE'
+  );
+  const applied = Array.isArray(session?.executedExcelRows)
+    ? session.executedExcelRows.map(Number)
+    : allApplicable.map((r) => Number(r.excelRow));
+  const appliedSet = new Set(applied);
+  const partial =
+    allApplicable.length > 0 &&
+    allApplicable.some((r) => !appliedSet.has(Number(r.excelRow)));
+
+  if (partial) {
+    // Quedan filas por aplicar: no cerrar el eTag para que un nuevo detect las vuelva a listar.
+    source.hasChanges = true;
+    source.status = 'updates_available';
+    source.lastOutcome = 'EXECUTED_PARTIAL';
+    source.lastPreviewSessionId = null;
+    source.lastPreviewedEtag = null;
+    source.lastSyncAt = new Date();
+    if (source.notification) {
+      source.notification.pending = true;
+      source.notification.message =
+        'Aplicación parcial: quedan cambios del Excel por revisar';
+      source.notification.dismissedAt = null;
+    }
+    await source.save();
+    return source.toObject();
+  }
+
   if (session?.eTag) {
     source.lastExecutedEtag = session.eTag;
     source.lastProcessedEtag = session.eTag;

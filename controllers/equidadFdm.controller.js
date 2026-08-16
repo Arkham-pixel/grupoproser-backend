@@ -323,14 +323,17 @@ export const postBaseTerremotoFdmExecute = async (req, res) => {
       login: req.usuario?.login || req.user?.login,
       nombre: req.usuario?.nombre || req.user?.nombre,
     };
-    const result = await executeEquidadFdmExcelImport(sessionId, { usuario });
+    const excelRows = Array.isArray(req.body?.excelRows) ? req.body.excelRows : undefined;
+    const result = await executeEquidadFdmExcelImport(sessionId, { usuario, excelRows });
     if (!result.alreadyExecuted) {
       await markEquidadFdmExcelSharePointExecuted(sessionId);
     }
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('❌ Error execute Excel Equidad FDM:', error);
-    res.status(500).json({ success: false, error: error.message });
+    const status =
+      error.code === 'NO_ROWS_SELECTED' || error.code === 'SESSION_NOT_FOUND' ? 400 : 500;
+    res.status(status).json({ success: false, error: error.message });
   }
 };
 
