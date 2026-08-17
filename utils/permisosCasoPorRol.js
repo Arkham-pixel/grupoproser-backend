@@ -1,5 +1,7 @@
 /**
  * Permisos de update / vista de casos por rol (espejo del frontend).
+ *
+ * Excepción SURA: login 72288319 (Mario Pinilla) = poderes de líder solo en SURA.
  */
 import { normalizarRol } from '../config/roles.js';
 import SecurUser from '../models/SecurUser.js';
@@ -14,17 +16,36 @@ export const CAMPOS_ASIGNACION_CASO = Object.freeze([
   'inspector',
 ]);
 
+/** Logins con poderes de ajustador líder SOLO en módulo SURA. */
+export const SURA_LOGINS_PERMISO_LIDER = Object.freeze(['72288319']);
+
 const COLLATION_PERSONA = Object.freeze({ locale: 'es', strength: 1 });
 
-export function puedeEditarTodoElCaso(rol) {
+export function esLoginConPermisoLiderSura(login, modulo = '') {
+  if (String(modulo || '').toLowerCase() !== 'sura') return false;
+  const l = String(login || '').trim();
+  if (!l) return false;
+  return SURA_LOGINS_PERMISO_LIDER.includes(l);
+}
+
+/**
+ * @param {string} rol
+ * @param {{ modulo?: string, login?: string }} [opts]
+ */
+export function puedeEditarTodoElCaso(rol, opts = {}) {
   const r = normalizarRol(rol);
   if (['admin', 'soporte', ROL_AJUSTADOR_LIDER].includes(r)) return true;
+  if (esLoginConPermisoLiderSura(opts.login, opts.modulo)) return true;
   if (r === ROL_AJUSTADOR_CASO || r === ROL_INSPECTOR) return false;
   return true;
 }
 
-/** Ajustador e inspector solo ven casos que el líder les asignó. */
-export function rolConVistaRestringidaAsignacion(rol) {
+/**
+ * Ajustador e inspector solo ven casos que el líder les asignó.
+ * En SURA, Mario (72288319) ve todos.
+ */
+export function rolConVistaRestringidaAsignacion(rol, opts = {}) {
+  if (esLoginConPermisoLiderSura(opts.login, opts.modulo)) return false;
   const r = normalizarRol(rol);
   return r === ROL_AJUSTADOR_CASO || r === ROL_INSPECTOR;
 }
@@ -76,9 +97,15 @@ export async function obtenerIdentidadUsuarioReq(req) {
 /**
  * Filtro Mongo para listados. null = sin restricción.
  * Sin claves de identidad → filtro imposible (no ve nada).
+ * @param {{ rol: string, name?: string, login?: string } | null} identidad
+ * @param {{ modulo?: string }} [opts]
  */
-export function construirFiltroVistaAsignacion(identidad) {
-  if (!identidad || !rolConVistaRestringidaAsignacion(identidad.rol)) return null;
+export function construirFiltroVistaAsignacion(identidad, opts = {}) {
+  if (!identidad) return null;
+  const modulo = opts.modulo || identidad.modulo || '';
+  if (!rolConVistaRestringidaAsignacion(identidad.rol, { login: identidad.login, modulo })) {
+    return null;
+  }
   const campo = identidad.rol === ROL_INSPECTOR ? 'inspector' : 'ajustador';
   const claves = [...new Set([identidad.name, identidad.login].map((s) => String(s || '').trim()).filter(Boolean))];
   if (!claves.length) {
@@ -92,8 +119,12 @@ export function construirFiltroVistaAsignacion(identidad) {
   };
 }
 
-export function casoVisibleParaIdentidad(caso, identidad) {
-  if (!identidad || !rolConVistaRestringidaAsignacion(identidad.rol)) return true;
+export function casoVisibleParaIdentidad(caso, identidad, opts = {}) {
+  if (!identidad) return true;
+  const modulo = opts.modulo || identidad.modulo || '';
+  if (!rolConVistaRestringidaAsignacion(identidad.rol, { login: identidad.login, modulo })) {
+    return true;
+  }
   const campo = identidad.rol === ROL_INSPECTOR ? 'inspector' : 'ajustador';
   const valor = caso?.[campo];
   const claves = [identidad.name, identidad.login].filter(Boolean);
@@ -116,10 +147,10 @@ export function combinarFiltrosMongo(...partes) {
  * Filtra body de actualización según rol del usuario autenticado.
  * Si no hay rol (ruta sin token), no restringe (compat).
  */
-export function filtrarPayloadCasoPorRol(rol, payload = {}, base = {}) {
+export function filtrarPayloadCasoPorRol(rol, payload = {}, base = {}, opts = {}) {
   if (!rol) return { payload: { ...payload }, soloEstado: false };
   const r = normalizarRol(rol);
-  if (puedeEditarTodoElCaso(r)) {
+  if (puedeEditarTodoElCaso(r, opts)) {
     return { payload: { ...payload }, soloEstado: false };
   }
   if (r === ROL_INSPECTOR) {
@@ -145,8 +176,16 @@ export function filtrarPayloadCasoPorRol(rol, payload = {}, base = {}) {
 }
 
 /** Aplica filtro sobre data cruda antes de buildPayload. */
-export function aplicarRestriccionRolCaso(req, data, base = {}) {
+export function aplicarRestriccionRolCaso(req, data, base = {}, opts = {}) {
   const rol = req?.user?.role || req?.usuario?.role || null;
-  const { payload, soloEstado } = filtrarPayloadCasoPorRol(rol, data, base);
+  const login =
+    opts.login ||
+    req?.user?.login ||
+    req?.usuario?.login ||
+    null;
+  const { payload, soloEstado } = filtrarPayloadCasoPorRol(rol, data, base, {
+    modulo: opts.modulo,
+    login,
+  });
   return { data: payload, soloEstado, rol };
 }

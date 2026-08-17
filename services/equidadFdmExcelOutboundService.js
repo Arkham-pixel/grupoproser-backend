@@ -357,6 +357,14 @@ export async function runEquidadFdmExcelOutboundCycle({ batchSize } = {}) {
   const cfg = getEquidadFdmExcelSharePointConfig();
   const limit = batchSize || cfg.outboundBatchSize;
   const now = new Date();
+
+  // Recuperar jobs atascados en "processing" (crash / Excel bloqueado sin cerrar estado).
+  const stuckBefore = new Date(Date.now() - 2 * 60_000);
+  await EquidadFdmExcelOutboundUpdate.updateMany(
+    { status: 'processing', updatedAt: { $lte: stuckBefore } },
+    { $set: { status: 'pending', nextRetryAt: null } }
+  );
+
   const pending = await EquidadFdmExcelOutboundUpdate.find({
     status: 'pending',
     $or: [{ nextRetryAt: null }, { nextRetryAt: { $lte: now } }],
