@@ -14,7 +14,11 @@ import '../config/loadEnv.js';
 import mongoose from 'mongoose';
 import SegurosAlfaCaso from '../models/SegurosAlfaCaso.js';
 import AlfaPolicyDocument from '../models/AlfaPolicyDocument.js';
-import { normalizeIdentification } from '../utils/alfaIdentification.js';
+import {
+  normalizeIdentification,
+  isRealPolicyNumber,
+  isPlaceholderPolicyNumber,
+} from '../utils/alfaIdentification.js';
 import {
   assertAlfaPolicyImportPath,
   assertAlfaPolicyImportRoot,
@@ -301,6 +305,86 @@ async function testH_OneToN() {
   pass('H');
 }
 
+async function testK_PlaceholderDoesNotLeak() {
+  if (isRealPolicyNumber('POR CONFIRMAR OPERACIONES')) {
+    fail('K', new Error('placeholder con espacios tratado como póliza real'));
+  }
+  if (isRealPolicyNumber('PORCONFIRMAROPERACIONES')) {
+    fail('K', new Error('placeholder compacto tratado como póliza real'));
+  }
+  if (!isPlaceholderPolicyNumber('PORCONFIRMAROPERACIONES')) {
+    fail('K', new Error('compacto debe ser placeholder'));
+  }
+
+  const idA = `${TAG}-KA`;
+  const idB = `${TAG}-KB`;
+  const placeholder = 'POR CONFIRMAR OPERACIONES';
+  const casoA = await createCase({
+    identificacion: idA,
+    asegurado: 'ANGELICA TEST',
+    numeroPoliza: placeholder,
+  });
+  const casoB = await createCase({
+    identificacion: idB,
+    asegurado: 'OTRO ASEGURADO',
+    numeroPoliza: placeholder,
+  });
+  const doc = await createPolicyDoc({
+    sourceIdentifier: idA,
+    policyNumber: 'PORCONFIRMAROPERACIONES',
+    integrationSuffix: 'K',
+  });
+  const assoc = await associateAlfaPolicyDocument(doc);
+  if (assoc.status !== 'matched') fail('K', new Error(JSON.stringify(assoc)));
+
+  const reloaded = await AlfaPolicyDocument.findById(doc._id);
+  if (reloaded.policyNumber) {
+    fail('K', new Error(`placeholder copiado a policyNumber=${reloaded.policyNumber}`));
+  }
+
+  const listA = await listImportedAlfaPoliciesForCase(casoA);
+  const listB = await listImportedAlfaPoliciesForCase(casoB);
+  if (!listA.some((p) => p.id === String(doc._id))) {
+    fail('K', new Error('el documento debe salir en el caso de la misma cédula'));
+  }
+  if (listB.some((p) => p.id === String(doc._id))) {
+    fail('K', new Error('el documento no debe salir en un caso de otra cédula'));
+  }
+  pass('K');
+}
+
+async function testL_PollutedCaseIdsStillIsolated() {
+  const idA = `${TAG}-LA`;
+  const idB = `${TAG}-LB`;
+  const casoA = await createCase({
+    identificacion: idA,
+    asegurado: 'Carpeta A',
+    numeroPoliza: 'INC-LA-1',
+  });
+  const casoB = await createCase({
+    identificacion: idB,
+    asegurado: 'Carpeta B',
+    numeroPoliza: 'INC-LB-1',
+  });
+  const doc = await createPolicyDoc({
+    sourceIdentifier: idA,
+    integrationSuffix: 'L',
+  });
+  await associateAlfaPolicyDocument(doc);
+  doc.association.alfaCaseIds = [casoA._id, casoB._id];
+  await doc.save();
+
+  const listA = await listImportedAlfaPoliciesForCase(casoA);
+  const listB = await listImportedAlfaPoliciesForCase(casoB);
+  if (!listA.some((p) => p.id === String(doc._id))) {
+    fail('L', new Error('carpeta A debe verse en caso A'));
+  }
+  if (listB.some((p) => p.id === String(doc._id))) {
+    fail('L', new Error('carpeta A no puede verse en caso de otra cédula aunque alfaCaseIds esté contaminado'));
+  }
+  pass('L');
+}
+
 async function testJ_EmptyRoot() {
   if (!isSharePointConfigured()) {
     line('J: SharePoint no configurado — validando código NO_POLICY_FOLDERS_FOUND vía fixture lógica');
@@ -403,12 +487,14 @@ async function main() {
     await testD_Ambiguous();
     await testF_G_SourceVsPolicy();
     await testH_OneToN();
+    await testK_PlaceholderDoesNotLeak();
+    await testL_PollutedCaseIdsStillIsolated();
     await testJ_EmptyRoot();
     await testReal88187559();
 
     line('');
     line('--- Resultados ---');
-    for (const k of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'REAL']) {
+    for (const k of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'REAL']) {
       line(`${k}: ${results[k] || 'PENDING'}`);
     }
     line('');

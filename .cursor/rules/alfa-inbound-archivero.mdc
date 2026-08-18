@@ -1,0 +1,13 @@
+---
+description: Invariantes del inbound Alfa SharePoint → S3 → archivero (sin copias ni fugas)
+globs: "**/*alfa*Policy*"
+alwaysApply: false
+---
+
+# Alfa inbound: una copia, sin fugas entre casos
+
+- Un archivo de SharePoint (`itemId`) = un `AlfaPolicyDocument` = un objeto S3. Varios casos se asocian con `association.alfaCaseIds` (punteros). Nunca copiar el PDF a `caso.archivos` ni volver a subir a S3 en el rematch.
+- Aplica a **cualquier** carpeta bajo `SEGUROS ALFA/PÓLIZAS/{cedula}` y `SEGUROS ALFA/SINIESTROS/{cedula}`. Un documento de la carpeta X no puede listarse en un caso cuya identificación no sea X.
+- `listImportedAlfaPoliciesForCase` exige **las dos** condiciones: `association.alfaCaseIds` contiene el caso **y** `sourceIdentifier` = cédula del caso. Prohibido matchear por `numeroPoliza` / `policyNumber`.
+- No persistir `policyNumber` placeholder. El cron no debe reimportar si el `eTag` no cambió (`SKIP_ALREADY_IMPORTED`).
+- Antes de guardar `alfaCaseIds`, filtrar casos cuya identificación no coincida con la carpeta.

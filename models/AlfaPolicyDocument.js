@@ -213,6 +213,29 @@ AlfaPolicyDocumentSchema.index({ 'sharepoint.itemId': 1 });
 AlfaPolicyDocumentSchema.index({ 'association.alfaCaseIds': 1 });
 AlfaPolicyDocumentSchema.index({ 'association.candidateCaseIds': 1 });
 
+AlfaPolicyDocumentSchema.pre('save', function stripPlaceholderPolicyNumber() {
+  const raw = this.policyNumber;
+  if (raw == null || raw === '') {
+    this.policyNumber = null;
+    return;
+  }
+  const compact = String(raw)
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '');
+  if (
+    !compact ||
+    compact.startsWith('PORCONFIRMAR') ||
+    compact === 'PENDIENTE' ||
+    compact === 'NA' ||
+    compact === 'N/A'
+  ) {
+    this.policyNumber = null;
+  }
+});
+
 export const ALFA_POLICY_ASSOCIATION_STATUSES = ASSOCIATION_STATUSES;
 export const ALFA_POLICY_DOC_STATUSES = DOC_STATUSES;
 export const ALFA_POLICY_SOURCE_IDENTIFIER_TYPES = SOURCE_IDENTIFIER_TYPES;

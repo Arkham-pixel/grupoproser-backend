@@ -3,7 +3,7 @@
  * Reutiliza normalizeIdentification del Excel; añade regex de variantes.
  */
 
-import { normalizeIdentification } from './alfaExcelNormalize.js';
+import { normalizeIdentification, isPolicyPlaceholder } from './alfaExcelNormalize.js';
 
 export { normalizeIdentification };
 
@@ -32,16 +32,18 @@ export function identificationsEqual(a, b) {
   return Boolean(na) && na === nb;
 }
 
-/** Placeholder típico de Excel Alfa (no es número de póliza real). */
+/** La carpeta SharePoint {cedula} solo puede mostrarse en casos de esa misma cédula. */
+export function inboundFolderMatchesCase(sourceIdentifier, caso) {
+  return identificationsEqual(sourceIdentifier, caso?.identificacion);
+}
+
+/**
+ * Placeholder típico de Excel Alfa (no es número de póliza real).
+ * Incluye "POR CONFIRMAR OPERACIONES" y la forma compacta sin espacios
+ * (PORCONFIRMAROPERACIONES) que queda tras normalizePolicyNumber.
+ */
 export function isPlaceholderPolicyNumber(value) {
-  const s = String(value ?? '')
-    .trim()
-    .toUpperCase();
-  if (!s) return true;
-  if (s === 'N/A' || s === 'NA' || s === 'NULL' || s === '-') return true;
-  if (s.includes('POR CONFIRMAR')) return true;
-  if (s.includes('PENDIENTE')) return true;
-  return false;
+  return isPolicyPlaceholder(value);
 }
 
 export function isRealPolicyNumber(value) {

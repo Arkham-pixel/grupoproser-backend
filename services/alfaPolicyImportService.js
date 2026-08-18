@@ -1,7 +1,11 @@
 /**
  * Importación de pólizas Alfa: SharePoint → S3 → AlfaPolicyDocument.
  *
- * Asociación por identificación (carpeta bajo SEGUROS ALFA/PÓLIZAS/{IDENTIFICACION}/).
+ * Invariantes (sostenible, sin copias ni fugas entre casos):
+ * - 1 archivo SharePoint (itemId) → 1 AlfaPolicyDocument → 1 objeto S3.
+ * - N casos se asocian por puntero (association.alfaCaseIds), nunca duplicando S3.
+ * - El archivero lista SOLO por alfaCaseIds, nunca por número de póliza.
+ * - policyNumber placeholder (POR CONFIRMAR…) no se persiste ni se usa para match.
  * Independiente del worker ClaimDocument (S3 → SharePoint).
  */
 
@@ -23,6 +27,8 @@ import {
   normalizeIdentification,
   identificationMatchRegex,
   isRealPolicyNumber,
+  isPlaceholderPolicyNumber,
+  inboundFolderMatchesCase,
 } from '../utils/alfaIdentification.js';
 import {
   ALFA_POLICY_IMPORT_PREFIX,
@@ -222,6 +228,10 @@ function enrichPolicyNumberFromCases(doc, cases) {
   ];
   if (realPols.length === 1) {
     doc.policyNumber = realPols[0];
+    return;
+  }
+  if (!isRealPolicyNumber(doc.policyNumber) || isPlaceholderPolicyNumber(doc.policyNumber)) {
+    doc.policyNumber = null;
   }
 }
 
@@ -321,12 +331,21 @@ export async function associateAlfaPolicyDocument(doc, { hints = {} } = {}) {
     doc.association.matchedBy = undefined;
     doc.association.matchedAt = undefined;
   } else {
-    doc.association.status = 'matched';
-    doc.association.alfaCaseIds = cases.map((c) => c._id);
-    doc.association.candidateCaseIds = [];
-    doc.association.matchedBy = matchedBy;
-    doc.association.matchedAt = now;
-    enrichPolicyNumberFromCases(doc, cases);
+    const sameFolder = cases.filter((c) => inboundFolderMatchesCase(sourceId, c));
+    if (sameFolder.length === 0) {
+      doc.association.status = 'unmatched';
+      doc.association.alfaCaseIds = [];
+      doc.association.candidateCaseIds = [];
+      doc.association.matchedBy = undefined;
+      doc.association.matchedAt = undefined;
+    } else {
+      doc.association.status = 'matched';
+      doc.association.alfaCaseIds = sameFolder.map((c) => c._id);
+      doc.association.candidateCaseIds = [];
+      doc.association.matchedBy = matchedBy;
+      doc.association.matchedAt = now;
+      enrichPolicyNumberFromCases(doc, sameFolder);
+    }
   }
 
   await doc.save();
@@ -360,6 +379,7 @@ export async function enrichAlfaPolicyDocumentsForCase(caso) {
 
   let enriched = 0;
   for (const doc of docs) {
+    if (!isRealPolicyNumber(pol) || isPlaceholderPolicyNumber(pol)) continue;
     doc.policyNumber = pol;
     await doc.save();
     enriched += 1;
@@ -463,6 +483,7 @@ export async function importAlfaPolicyFile({
       if (resolvedType && existing.documentType !== resolvedType) {
         existing.documentType = resolvedType;
       }
+      // Reasocia punteros a casos. No re-descarga ni vuelve a escribir S3.
       const association = await associateAlfaPolicyDocument(existing, {
         hints: mergeHints,
       });
@@ -1034,60 +1055,34 @@ export async function runAlfaPolicyImportCycle({ batchSize } = {}) {
 /**
  * Lista pólizas/documentos importados asociados a un caso.
  * DTO listo para Archivero (origin=sharepoint).
+ *
+ * Candado para TODA carpeta SharePoint {cedula}:
+ * 1) el caso está en association.alfaCaseIds
+ * 2) sourceIdentifier === identificación del caso
+ * Nunca por número de póliza.
  */
 export async function listImportedAlfaPoliciesForCase(caso) {
   const caseId = caso?._id;
   const idNorm = normalizeIdentification(caso?.identificacion);
-  const polNorm = normalizePolicyNumber(caso?.numeroPoliza);
-
-  if (!caseId && !idNorm && !polNorm) {
+  if (!caseId || !idNorm) {
     return [];
-  }
-
-  const or = [];
-  if (caseId) {
-    or.push({ 'association.alfaCaseIds': caseId });
-  }
-  if (idNorm) {
-    or.push({
-      sourceIdentifier: idNorm,
-      sourceIdentifierType: 'identificacion',
-      'association.status': 'matched',
-    });
-  }
-  if (polNorm && isRealPolicyNumber(polNorm)) {
-    or.push({ policyNumber: polNorm, 'association.status': 'matched' });
   }
 
   const docs = await AlfaPolicyDocument.find({
     status: 'active',
     importStatus: { $in: ['imported', 'error'] },
-    $or: or,
+    sourceIdentifier: idNorm,
+    sourceIdentifierType: 'identificacion',
+    'association.alfaCaseIds': caseId,
   })
     .sort({ importedAt: -1, createdAt: -1 })
     .lean();
 
-  const filtered = docs.filter((d) => {
-    if (
-      caseId &&
+  const filtered = docs.filter(
+    (d) =>
+      inboundFolderMatchesCase(d.sourceIdentifier, caso) &&
       (d.association?.alfaCaseIds || []).some((id) => String(id) === String(caseId))
-    ) {
-      return true;
-    }
-    if (
-      idNorm &&
-      normalizeIdentification(d.sourceIdentifier) === idNorm &&
-      d.association?.status === 'matched'
-    ) {
-      return true;
-    }
-    return (
-      polNorm &&
-      isRealPolicyNumber(polNorm) &&
-      normalizePolicyNumber(d.policyNumber) === polNorm &&
-      d.association?.status === 'matched'
-    );
-  });
+  );
 
   const out = [];
   for (const d of filtered) {
