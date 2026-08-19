@@ -101,6 +101,8 @@ const SegurosSuraCasoSchema = new mongoose.Schema(
     informeUnico: { type: mongoose.Schema.Types.Mixed, default: null },
     informeAgil: { type: mongoose.Schema.Types.Mixed, default: null },
     salvamento: { type: mongoose.Schema.Types.Mixed, default: null },
+    /** Galería de la pestaña Fotos del formato ágil (independiente del presupuesto NSR-10). */
+    fotosAgil: { type: mongoose.Schema.Types.Mixed, default: null },
     archivos: { type: [ArchivoSuraSchema], default: [] },
 
     /** Campos tipo Complex (formulario agregar datos) */
