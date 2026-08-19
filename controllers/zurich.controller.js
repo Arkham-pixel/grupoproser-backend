@@ -218,11 +218,18 @@ const normClave = (valor) =>
     .toUpperCase()
     .replace(/\s+/g, '');
 
+/** Listado cliente: solo ZC. No cruzar con casos CAT de inspección. */
+const clavesDeduplicacionListado = (caso = {}) => {
+  const zc = normClave(caso.zc);
+  return zc ? [`ZC:${zc}`] : [];
+};
+
 /** Claves de deduplicación CAT/Zurich.
  * Risk ID solo no basta: el Excel CAT reutiliza el mismo Risk ID en distintos asegurados/predios.
  */
 const clavesDeduplicacion = (caso = {}) => {
   const claves = [];
+  const zc = normClave(caso.zc);
   const riskId = normClave(caso.riskId);
   const asegurado = normClave(caso.asegurado);
   const siniestro = normClave(caso.siniestro);
@@ -233,6 +240,7 @@ const clavesDeduplicacion = (caso = {}) => {
   const direccionInspeccion = normClave(caso.direccionInspeccionSugerida);
   const grupoInspeccion = normClave(caso.grupoInspeccion);
 
+  if (zc) claves.push(`ZC:${zc}`);
   if (riskId && asegurado) claves.push(`R:${riskId}|A:${asegurado}`);
   if (riskId && direccionInspeccion) claves.push(`R:${riskId}|DI:${direccionInspeccion}`);
   if (riskId && grupoInspeccion && asegurado) {
@@ -245,6 +253,14 @@ const clavesDeduplicacion = (caso = {}) => {
   if (identificacion && numeroPoliza) claves.push(`I:${identificacion}|P:${numeroPoliza}`);
   if (identificacion && direccionPredio) claves.push(`I:${identificacion}|D:${direccionPredio}`);
   return claves;
+};
+
+const completarIdentificacionZurich = (payload = {}) => {
+  if (payload.identificacion) return payload;
+  if (payload.zc) payload.identificacion = String(payload.zc);
+  else if (payload.siniestro) payload.identificacion = String(payload.siniestro);
+  else if (payload.riskId) payload.identificacion = String(payload.riskId);
+  return payload;
 };
 
 const obtenerMaxSecuencialZurich = async () => {
@@ -297,8 +313,15 @@ const buildZurichPayload = (data = {}, base = {}) => {
     base.consecutivoExpress ?? null
   ),
   siniestro: toStringOrNull(data.siniestro, base.siniestro ?? null),
+  zc: toStringOrNull(data.zc, base.zc ?? null),
   identificacion: toStringOrNull(data.identificacion, base.identificacion ?? null),
   asegurado: toStringOrNull(data.asegurado, base.asegurado ?? null),
+  contactoIntermediario: toStringOrNull(
+    data.contactoIntermediario,
+    base.contactoIntermediario ?? null
+  ),
+  contactoAsegurado: toStringOrNull(data.contactoAsegurado, base.contactoAsegurado ?? null),
+  observaciones: toStringOrNull(data.observaciones, base.observaciones ?? null),
   tomador: toStringOrNull(data.tomador, base.tomador ?? null),
   ajustadorLider: toStringOrNull(data.ajustadorLider, base.ajustadorLider ?? null),
   ajustador: toStringOrNull(data.ajustador, base.ajustador ?? null),
@@ -489,8 +512,12 @@ export const mapExpressAZurich = (express = {}) => ({
 const mergeImportacionZurich = (incomingPayload = {}, existente = {}) => {
   const campos = [
     'siniestro',
+    'zc',
     'identificacion',
     'asegurado',
+    'contactoIntermediario',
+    'contactoAsegurado',
+    'observaciones',
     'tomador',
     'ajustador',
     'numeroPoliza',
@@ -584,10 +611,7 @@ const validarRequeridos = (payload) => {
 
 export const crearCasoZurich = async (req, res) => {
   try {
-    const payload = buildZurichPayload(req.body);
-    if (!payload.identificacion && payload.riskId) {
-      payload.identificacion = String(payload.riskId);
-    }
+    const payload = completarIdentificacionZurich(buildZurichPayload(req.body));
     payload.consecutivo = await generarConsecutivoZurich();
 
     const faltantes = validarRequeridos(payload);
@@ -717,7 +741,8 @@ export const eliminarCasoZurich = async (req, res) => {
 
 /**
  * Importación masiva con deduplicación.
- * Si el caso ya existe (siniestro, o identificación+crédito/póliza/dirección), se actualiza; no se duplica.
+ * modo=listado: solo empareja por ZC (no cruza casos CAT de inspección).
+ * Si el caso ya existe, se actualiza; no se duplica.
  */
 export const importarCasosZurich = async (req, res) => {
   try {
@@ -737,6 +762,11 @@ export const importarCasosZurich = async (req, res) => {
     }
 
     const reemplazarTodo = req.body?.reemplazarTodo === true;
+    const esListado =
+      String(req.body?.modo || req.body?.origen || '')
+        .trim()
+        .toLowerCase() === 'listado';
+    const clavesDe = esListado ? clavesDeduplicacionListado : clavesDeduplicacion;
 
     if (reemplazarTodo) {
       await ZurichCaso.deleteMany({});
@@ -745,7 +775,7 @@ export const importarCasosZurich = async (req, res) => {
     const existentes = await ZurichCaso.find().lean();
     const indice = new Map();
     for (const doc of existentes) {
-      for (const clave of clavesDeduplicacion(doc)) {
+      for (const clave of clavesDe(doc)) {
         if (!indice.has(clave)) indice.set(clave, doc);
       }
     }
@@ -769,15 +799,23 @@ export const importarCasosZurich = async (req, res) => {
       const filaNum = i + 1;
 
       try {
-        const payloadBase = buildZurichPayload({
-          ...fila,
-          estado: fila.estado || 'PENDIENTE',
-        });
-        if (!payloadBase.identificacion && payloadBase.riskId) {
-          payloadBase.identificacion = String(payloadBase.riskId);
-        }
+        const payloadBase = completarIdentificacionZurich(
+          buildZurichPayload({
+            ...fila,
+            estado: fila.estado || 'PENDIENTE',
+          })
+        );
 
-        if (!payloadBase.identificacion) {
+        if (esListado) {
+          if (!payloadBase.zc && !payloadBase.siniestro && !payloadBase.asegurado) {
+            resumen.omitidos += 1;
+            resumen.errores.push({
+              fila: filaNum,
+              motivo: 'Falta ZC, STRO o asegurado',
+            });
+            continue;
+          }
+        } else if (!payloadBase.identificacion) {
           resumen.omitidos += 1;
           resumen.errores.push({
             fila: filaNum,
@@ -789,7 +827,7 @@ export const importarCasosZurich = async (req, res) => {
           payloadBase.estado = 'PENDIENTE';
         }
 
-        const claves = clavesDeduplicacion(payloadBase);
+        const claves = clavesDe(payloadBase);
         let existente = null;
         for (const clave of claves) {
           if (indice.has(clave)) {
@@ -810,7 +848,7 @@ export const importarCasosZurich = async (req, res) => {
           }).lean();
 
           resumen.actualizados += 1;
-          for (const clave of clavesDeduplicacion(actualizado)) {
+          for (const clave of clavesDe(actualizado)) {
             indice.set(clave, actualizado);
           }
         } else {
@@ -819,7 +857,7 @@ export const importarCasosZurich = async (req, res) => {
           const creado = await ZurichCaso.create(payloadBase);
           const lean = creado.toObject();
           resumen.creados += 1;
-          for (const clave of clavesDeduplicacion(lean)) {
+          for (const clave of clavesDe(lean)) {
             indice.set(clave, lean);
           }
         }

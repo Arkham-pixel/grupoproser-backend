@@ -35,9 +35,17 @@ const ZurichCasoSchema = new mongoose.Schema(
     expressCasoId: { type: mongoose.Schema.Types.ObjectId, default: null },
     consecutivoExpress: String,
     siniestro: String,
+    /** Código ZC del listado cliente (columna ZC). Clave de alta/importación. */
+    zc: String,
     identificacion: { type: String, required: true },
     /** Nombre del asegurado (columna ASEGURADO / NOMBRE del Excel) */
     asegurado: String,
+    /** Contacto del intermediario (listado cliente) */
+    contactoIntermediario: String,
+    /** Contacto del asegurado (listado cliente) */
+    contactoAsegurado: String,
+    /** Notas libres del listado cliente */
+    observaciones: String,
     tomador: String,
     /** Ajustador líder (quien asigna) */
     ajustadorLider: String,

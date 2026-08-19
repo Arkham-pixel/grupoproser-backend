@@ -31,9 +31,10 @@ export function restringirContractorZurich(req, res, next) {
   if (!config) return next();
 
   const path = String(req.originalUrl || req.url || '').split('?')[0];
+  const coincidePrefijo = (prefix) => path === prefix || path.startsWith(`${prefix}/`);
   const permitido =
-    [...PREFIJOS_COMUNES, ...config.apis].some((p) => path.startsWith(p)) ||
-    (req.method === 'GET' && PREFIJOS_SOLO_LECTURA.some((p) => path.startsWith(p)));
+    [...PREFIJOS_COMUNES, ...config.apis].some(coincidePrefijo) ||
+    (req.method === 'GET' && PREFIJOS_SOLO_LECTURA.some(coincidePrefijo));
   if (!permitido) {
     return res.status(403).json({ error: config.mensaje });
   }

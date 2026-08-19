@@ -44,6 +44,7 @@ import equidadFdmRoutes from './routes/equidadFdm.routes.js';
 import segurosAlfaRoutes from './routes/segurosAlfa.routes.js';
 import segurosSuraRoutes from './routes/segurosSura.routes.js';
 import zurichRoutes from './routes/zurich.routes.js';
+import zurichListadoRoutes from './routes/zurichListado.routes.js';
 import propiedadesRoutes from './routes/propiedades.routes.js';
 import chatgptRoutes from './routes/chatgpt.routes.js';
 import inspeccionPropiedadesRoutes from './routes/inspeccionPropiedades.routes.js';
@@ -239,6 +240,9 @@ app.use('/api/siniestros-express', siniestroExpressRoutes);
 app.use('/api/equidad-fdm', equidadFdmRoutes);
 app.use('/api/seguros-alfa', segurosAlfaRoutes);
 app.use('/api/sura', segurosSuraRoutes);
+// /api/zurich-listado ANTES de /api/zurich: Express trata /api/zurich como prefijo
+// y, si va primero, captura /api/zurich-listado como GET /:id.
+app.use('/api/zurich-listado', zurichListadoRoutes);
 app.use('/api/zurich', zurichRoutes);
 app.use('/api/propiedades', propiedadesRoutes);
 app.use('/api/chatgpt', chatgptRoutes);

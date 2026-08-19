@@ -29,7 +29,7 @@ export const SUFIJO_NOMBRE_POR_ROL = {
 
 const SUFIJOS_LEGACY = ['Contractor Zurich', 'Zurich', 'Alfa', 'Sura'];
 
-const APIS_TRES = ['/api/zurich', '/api/seguros-alfa', '/api/sura'];
+const APIS_TRES = ['/api/zurich', '/api/zurich-listado', '/api/seguros-alfa', '/api/sura'];
 const APIS_SOLO_ZURICH = ['/api/zurich'];
 
 export const CONTRATISTAS_MODULO = {

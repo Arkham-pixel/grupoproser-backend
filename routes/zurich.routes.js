@@ -20,6 +20,7 @@ import { STORAGE_CATEGORIES } from '../services/fileStorageService.js';
 import { verificarToken } from '../middleware/auth.js';
 
 const router = express.Router();
+const ID_MONGO = '[0-9a-fA-F]{24}';
 
 const upload = createMulterUpload({
   category: STORAGE_CATEGORIES.ZURICH,
@@ -42,17 +43,17 @@ router.post('/alertas/enviar', postEnviarAlertasZurichTodas);
 router.post('/alertas/enviar/:ajustador', postEnviarAlertasZurichAjustador);
 
 router.post(
-  '/:id/archivos',
+  `/:id(${ID_MONGO})/archivos`,
   upload.single('archivo'),
   persistZurich,
   subirArchivoZurich
 );
-router.put('/:id/archivos/orden', reordenarArchivosZurich);
-router.patch('/:id/archivos/:archivoId', actualizarArchivoZurich);
-router.delete('/:id/archivos/:archivoId', eliminarArchivoZurich);
-router.get('/:id', obtenerCasoZurich);
+router.put(`/:id(${ID_MONGO})/archivos/orden`, reordenarArchivosZurich);
+router.patch(`/:id(${ID_MONGO})/archivos/:archivoId`, actualizarArchivoZurich);
+router.delete(`/:id(${ID_MONGO})/archivos/:archivoId`, eliminarArchivoZurich);
+router.get(`/:id(${ID_MONGO})`, obtenerCasoZurich);
 router.post('/', crearCasoZurich);
-router.put('/:id', verificarToken, actualizarCasoZurich);
-router.delete('/:id', eliminarCasoZurich);
+router.put(`/:id(${ID_MONGO})`, verificarToken, actualizarCasoZurich);
+router.delete(`/:id(${ID_MONGO})`, eliminarCasoZurich);
 
 export default router;
