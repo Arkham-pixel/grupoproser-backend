@@ -14,6 +14,7 @@ import '../config/loadEnv.js';
 import mongoose from 'mongoose';
 import SegurosAlfaCaso from '../models/SegurosAlfaCaso.js';
 import AlfaPolicyDocument from '../models/AlfaPolicyDocument.js';
+import ClaimDocument from '../models/ClaimDocument.js';
 import {
   normalizeIdentification,
   isRealPolicyNumber,
@@ -29,6 +30,7 @@ import {
   applyAssociationReinforcements,
   findAlfaCasesByIdentification,
   listImportedAlfaPoliciesForCase,
+  findArnaldOutboundBySharePointItemId,
   runAlfaPolicyImportCycle,
 } from '../services/alfaPolicyImportService.js';
 import { getAlfaPolicyImportConfig } from '../config/alfaPolicyImport.js';
@@ -37,6 +39,7 @@ import { isSharePointConfigured } from '../config/sharepoint.js';
 const TAG = `IDPOL-${Date.now()}`;
 const createdCaseIds = [];
 const createdDocIds = [];
+const createdClaimIds = [];
 const results = {};
 
 function line(msg) {
@@ -100,6 +103,13 @@ async function createPolicyDoc({
 }
 
 async function cleanup() {
+  for (const id of createdClaimIds) {
+    try {
+      await ClaimDocument.deleteOne({ _id: id });
+    } catch {
+      /* */
+    }
+  }
   for (const id of createdDocIds) {
     try {
       await AlfaPolicyDocument.deleteOne({ _id: id });
@@ -385,6 +395,44 @@ async function testL_PollutedCaseIdsStillIsolated() {
   pass('L');
 }
 
+async function testM_SkipArnaldOutboundItem() {
+  const cedula = '88187559';
+  const caso = await createCase({
+    identificacion: cedula,
+    asegurado: 'Skip outbound',
+    numeroPoliza: 'INC-M-1',
+  });
+  const itemId = `item-arnald-${TAG}`;
+  const claim = await ClaimDocument.create({
+    sourceModule: 'alfa',
+    claimId: caso._id,
+    claimNumber: caso.consecutivo,
+    insurer: 'SEGUROS ALFA',
+    documentType: 'liquidacion',
+    originalName: 'Liquidador.pdf',
+    storedName: 'Liquidador.pdf',
+    alfaIdentificacion: cedula,
+    destinationStatus: 'ready',
+    storage: { provider: 's3', bucket: 'test-bucket', key: `alfa/${caso._id}/liq.pdf` },
+    sharepoint: {
+      itemId,
+      path: `SEGUROS ALFA/SINIESTROS/${cedula}/LIQUIDACION/Liquidador.pdf`,
+      syncStatus: 'synced',
+    },
+    status: 'active',
+    integrationKey: `alfa:${caso._id}:test-m-${TAG}`,
+  });
+  createdClaimIds.push(claim._id);
+
+  const hit = await findArnaldOutboundBySharePointItemId(itemId);
+  if (!hit || String(hit._id) !== String(claim._id)) {
+    fail('M', new Error('debía reconocer el item outbound de ARNALD'));
+  }
+  const miss = await findArnaldOutboundBySharePointItemId(`other-${TAG}`);
+  if (miss) fail('M', new Error('no debe matchear otro itemId'));
+  pass('M');
+}
+
 async function testJ_EmptyRoot() {
   if (!isSharePointConfigured()) {
     line('J: SharePoint no configurado — validando código NO_POLICY_FOLDERS_FOUND vía fixture lógica');
@@ -489,12 +537,13 @@ async function main() {
     await testH_OneToN();
     await testK_PlaceholderDoesNotLeak();
     await testL_PollutedCaseIdsStillIsolated();
+    await testM_SkipArnaldOutboundItem();
     await testJ_EmptyRoot();
     await testReal88187559();
 
     line('');
     line('--- Resultados ---');
-    for (const k of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'REAL']) {
+    for (const k of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'REAL']) {
       line(`${k}: ${results[k] || 'PENDING'}`);
     }
     line('');

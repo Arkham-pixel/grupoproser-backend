@@ -1,11 +1,15 @@
 /**
- * Path documental definitivo Seguros Alfa (ARNALD ↔ SharePoint).
+ * Path documental Seguros Alfa (ARNALD ↔ SharePoint).
  *
- * Root:
+ * Outbound (fotos, informe, liquidador, finiquito):
+ *   SEGUROS ALFA/SINIESTROS/{CEDULA}/{SUBCARPETA}
+ * Misma cédula = una carpeta (como la aseguradora). Sin consecutivo.
+ * Si Alfa ya creó la carpeta, ensureFolder la reutiliza; no se duplica.
+ *
+ * Inbound pólizas (compat):
  *   SEGUROS ALFA/PÓLIZAS/{IDENTIFICACION} - {NUMERO_POLIZA}/{SUBCARPETA}
  *
- * El número de siniestro NO interviene.
- * Placeholder de póliza → no construir carpeta definitiva.
+ * El número de siniestro NO interviene en la carpeta.
  */
 
 import { normalizeIdentification } from './alfaIdentification.js';
@@ -15,7 +19,15 @@ import { sanitizeSharePointSegment } from './sharepointClaimPath.js';
 
 export const ALFA_DOC_SHAREPOINT_ROOT = 'SEGUROS ALFA';
 export const ALFA_DOC_SHAREPOINT_POLIZAS = 'PÓLIZAS';
+export const ALFA_DOC_SHAREPOINT_SINIESTROS = 'SINIESTROS';
 export const ALFA_DOC_IMPORT_PREFIX = `${ALFA_DOC_SHAREPOINT_ROOT}/${ALFA_DOC_SHAREPOINT_POLIZAS}`;
+/** Carpeta de la aseguradora por cédula. No se duplica si ya existe. */
+export const ALFA_DOC_SINIESTROS_PREFIX = `${ALFA_DOC_SHAREPOINT_ROOT}/${ALFA_DOC_SHAREPOINT_SINIESTROS}`;
+
+const SINIESTROS_SKIP_FOLDER_NAMES = new Set([
+  'PENDIENTES_NUMERO_SINIESTRO',
+  'PENDIENTES',
+]);
 
 /** Subcarpetas definitivas bajo el expediente. */
 export const ALFA_DOCUMENT_SUBFOLDERS = Object.freeze({
@@ -141,6 +153,53 @@ export function buildAlfaDocumentPath({
 }
 
 /**
+ * Carpeta de siniestro como la maneja Alfa: SEGUROS ALFA/SINIESTROS/{cedula}
+ * Sin consecutivo. Misma cédula = una carpeta.
+ */
+export function buildAlfaSiniestrosFolderPath(identificacion) {
+  const id = normalizeIdentification(identificacion);
+  if (!id || !/^\d{5,15}$/.test(id)) return null;
+  const idSeg = sanitizeSharePointSegment(id, { fallback: '' });
+  if (!idSeg) return null;
+  return `${ALFA_DOC_SINIESTROS_PREFIX}/${idSeg}`;
+}
+
+export function isAlfaSiniestrosCedulaWritePath(pathValue) {
+  const n = String(pathValue || '')
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/\\/g, '/');
+  if (!n.startsWith(`${ALFA_DOC_SINIESTROS_PREFIX}/`)) return false;
+  const rest = n.slice(ALFA_DOC_SINIESTROS_PREFIX.length).replace(/^\//, '');
+  const first = rest.split('/')[0] || '';
+  if (SINIESTROS_SKIP_FOLDER_NAMES.has(first.toUpperCase())) return false;
+  const id = normalizeIdentification(first);
+  return Boolean(id && /^\d{5,15}$/.test(id));
+}
+
+/**
+ * Destino outbound ARNALD → SharePoint (fotos, informe, liquidador, finiquito).
+ * Reutiliza la carpeta {cedula} si Alfa ya la creó; ensureFolder es idempotente.
+ */
+export function buildAlfaSiniestrosDocumentPath({ identificacion, documentType } = {}) {
+  const folder = buildAlfaSiniestrosFolderPath(identificacion);
+  if (!folder) {
+    return {
+      ok: false,
+      code: 'MISSING_IDENTIFICATION',
+      reason: 'MISSING_IDENTIFICATION',
+    };
+  }
+  const subfolder = getAlfaDocumentSubfolder(documentType);
+  return {
+    ok: true,
+    path: `${folder}/${subfolder}`,
+    siniestrosFolder: folder,
+    subfolder,
+    identificacion: normalizeIdentification(identificacion),
+  };
+}
+
+/**
  * Parsea nombre de carpeta bajo PÓLIZAS.
  * - "88187559" → provisional (solo identificación)
  * - "88187559 - INC-008" → definitiva
@@ -238,6 +297,13 @@ export function classifyAlfaSharePointPath(pathValue) {
     return { kind: 'OLD_ALFA_SHAREPOINT_PATH', subtype: 'pendientes_consecutivo' };
   }
   if (n.startsWith('SEGUROS ALFA/SINIESTROS/') || n === 'SEGUROS ALFA/SINIESTROS') {
+    if (isAlfaSiniestrosCedulaWritePath(n)) {
+      const cedula = n.slice(ALFA_DOC_SINIESTROS_PREFIX.length).replace(/^\//, '').split('/')[0];
+      return {
+        kind: 'NEW_ALFA_SINIESTROS_PATH',
+        identificacion: normalizeIdentification(cedula),
+      };
+    }
     return { kind: 'OLD_ALFA_SHAREPOINT_PATH', subtype: 'siniestros_module' };
   }
   if (n.startsWith(`${ALFA_DOC_IMPORT_PREFIX}/`) || n === ALFA_DOC_IMPORT_PREFIX) {

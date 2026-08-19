@@ -7,6 +7,7 @@ import ExcelJS from 'exceljs';
 import {
   getEquidadFdmExcelSharePointConfig,
   FDM_EXCEL_OUTBOUND_FIELDS,
+  FDM_EXCEL_APPEND_FIELDS,
 } from '../config/equidadFdmExcelSharePoint.js';
 import {
   downloadDriveItemBuffer,
@@ -83,6 +84,27 @@ const HEADER_TO_FIELD = {
   'FECHA GIRO': 'fechaGiro',
   CEDULA: 'cedula',
   IDENTIFICACION: 'cedula',
+  NOMBRE: 'nombre',
+  ASEGURADO: 'nombre',
+  'NOMBRE CLIENTE': 'nombre',
+  'NOMBRE DEL CLIENTE': 'nombre',
+  'NOMBRE DEL ASEGURADO': 'nombre',
+  EVENTO: 'evento',
+  'FECHA DE REGISTRO': 'fechaRegistro',
+  'FECHA REGISTRO': 'fechaRegistro',
+  'FECHA DE AVISO': 'fechaAviso',
+  'FECHA AVISO': 'fechaAviso',
+  'DIRECCION AFECTADA': 'direccionAfectada',
+  DIRECCION: 'direccionAfectada',
+  MUNICIPIO: 'municipio',
+  DEPARTAMENTO: 'departamento',
+  'OFICINA RADICADORA': 'oficinaRadicadora',
+  OFICINA: 'oficinaRadicadora',
+  AIF: 'aif',
+  'POLIZA AFECTAR': 'polizaAfectar',
+  COBERTURA: 'cobertura',
+  'TIPO DE NEGOCIO': 'tipoNegocio',
+  'TIPO NEGOCIO': 'tipoNegocio',
 };
 
 function cellDisplay(value) {
@@ -122,12 +144,20 @@ export function buildEquidadFdmOutboundChanges(before = {}, after = {}) {
   return changes;
 }
 
-export async function enqueueEquidadFdmExcelOutboundFromCaseUpdate(casoId, before, after) {
+export async function enqueueEquidadFdmExcelOutboundFromCaseUpdate(
+  casoId,
+  before,
+  after,
+  { force = false } = {}
+) {
   const cfg = getEquidadFdmExcelSharePointConfig();
   if (!cfg.outboundCronEnabled) return null;
 
   const changes = buildEquidadFdmOutboundChanges(before, after);
-  if (!Object.keys(changes).length) return null;
+  if (!Object.keys(changes).length) {
+    if (!force) return null;
+    changes.estado = { from: before?.estado ?? null, to: after?.estado || 'PENDIENTE' };
+  }
 
   const caso = after || (await EquidadFdmCaso.findById(casoId).lean());
   if (!caso) return null;
@@ -177,6 +207,7 @@ function mapHeadersFromWorksheet(ws, headerRowNumber) {
       else if (h.includes('TOTAL') && h.includes('PERDIDA')) field = 'totalPerdida';
       else if (h.includes('TOTAL') && h.includes('LIQUIDADO')) field = 'totalLiquidado';
       else if (h.includes('VALORES') && h.includes('INDEMNIZ')) field = 'valoresIndemnizables';
+      else if (h === 'NOMBRE' || h.startsWith('NOMBRE ')) field = 'nombre';
       else if (h === 'EDIFCIO' || h === 'EDIFICIO' || h.includes('VALOR EDIFICIO')) {
         field = 'valorEdificio';
       } else if (h === 'CONTENIDO' || h.includes('VALOR CONTENIDO')) field = 'valorContenido';
@@ -214,6 +245,69 @@ function findRowByCedulaExcelJs(ws, headerRowNumber, colCedula, cedula) {
     if (digits && digits === target) return r;
   }
   return -1;
+}
+
+function findRowByNombreExcelJs(ws, headerRowNumber, colNombre, colCedula, caso) {
+  const target = normHeader(caso?.nombre);
+  if (!target || target === 'SIN NOMBRE' || colNombre == null) return -1;
+  const casoCed = String(caso?.cedula || '').replace(/\D/g, '');
+  const matches = [];
+  const maxRow = ws.rowCount || 0;
+  for (let r = headerRowNumber + 1; r <= maxRow; r += 1) {
+    const nombre = normHeader(headerCellText(ws.getRow(r).getCell(colNombre).value));
+    if (nombre !== target) continue;
+    if (colCedula != null && casoCed) {
+      const rowCed = String(headerCellText(ws.getRow(r).getCell(colCedula).value) || '').replace(
+        /\D/g,
+        ''
+      );
+      if (rowCed && rowCed !== casoCed) continue;
+    }
+    matches.push(r);
+  }
+  return matches.length === 1 ? matches[0] : -1;
+}
+
+function findRowForCasoExcelJs(ws, headerRowNumber, colByField, caso) {
+  const byCedula = findRowByCedulaExcelJs(ws, headerRowNumber, colByField.cedula, caso?.cedula);
+  if (byCedula > 0) return byCedula;
+  return findRowByNombreExcelJs(
+    ws,
+    headerRowNumber,
+    colByField.nombre,
+    colByField.cedula,
+    caso
+  );
+}
+
+function nextDataRowNumber(ws, headerRowNumber) {
+  return Math.max(ws.rowCount || 0, headerRowNumber) + 1;
+}
+
+function copyRowStyle(fromRow, toRow) {
+  if (!fromRow || !toRow) return;
+  toRow.height = fromRow.height && fromRow.height > 0 ? fromRow.height : 15;
+  fromRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    const dest = toRow.getCell(colNumber);
+    if (cell.style) dest.style = { ...cell.style };
+  });
+}
+
+function writeCasoFieldsToRow(dataRow, colByField, caso, fields) {
+  for (const field of fields) {
+    const col = colByField[field];
+    if (col == null) continue;
+    const to = caso?.[field];
+    if (to == null || to === '') continue;
+    if (/^(SIN INFO|SIN INFORMACION|SIN DATO|-)$/i.test(String(to).trim())) continue;
+    const cell = dataRow.getCell(col);
+    const display = cellDisplay(to);
+    cell.value = display;
+    if (display instanceof Date) {
+      cell.numFmt = 'dd/mm/yyyy';
+    }
+  }
+  dataRow.commit();
 }
 
 function ensureWorksheetRowsVisible(ws) {
@@ -288,38 +382,42 @@ export async function processEquidadFdmExcelOutboundUpdate(doc) {
   if (colByField.fechaLiquidacion == null && colByField.fechaGiro != null) {
     colByField.fechaLiquidacion = colByField.fechaGiro;
   }
-  const rowIdx = findRowByCedulaExcelJs(ws, headerIdx, colByField.cedula, caso.cedula);
+  let rowIdx = findRowForCasoExcelJs(ws, headerIdx, colByField, caso);
+  let appended = false;
   if (rowIdx < 0) {
-    doc.status = 'skipped';
-    doc.lastError = 'Fila no encontrada por cédula en Excel';
-    await doc.save();
-    return { skipped: true, reason: 'ROW_NOT_FOUND' };
+    rowIdx = nextDataRowNumber(ws, headerIdx);
+    const templateRow = ws.getRow(Math.max(headerIdx + 1, rowIdx - 1));
+    copyRowStyle(templateRow, ws.getRow(rowIdx));
+    appended = true;
   }
 
   const dataRow = ws.getRow(rowIdx);
   const changes = doc.changes || {};
-  // Campos a escribir: los del cambio + siniestro/caso actuales del caso (por si el Excel quedó vacío).
-  const fieldsToWrite = new Set([
-    ...Object.keys(changes),
-    ...(caso.siniestro ? ['siniestro'] : []),
-    ...(caso.caso ? ['caso'] : []),
-  ]);
-  for (const field of fieldsToWrite) {
-    const col = colByField[field];
-    if (col == null) continue;
-    const to =
-      changes[field]?.to !== undefined && changes[field]?.to !== null && changes[field]?.to !== ''
-        ? changes[field].to
-        : caso[field];
-    if (to == null || to === '') continue;
-    const cell = dataRow.getCell(col);
-    const display = cellDisplay(to);
-    cell.value = display;
-    if (display instanceof Date) {
-      cell.numFmt = 'dd/mm/yyyy';
+  if (appended) {
+    writeCasoFieldsToRow(dataRow, colByField, caso, FDM_EXCEL_APPEND_FIELDS);
+  } else {
+    const fieldsToWrite = new Set([
+      ...Object.keys(changes),
+      ...(caso.siniestro ? ['siniestro'] : []),
+      ...(caso.caso ? ['caso'] : []),
+    ]);
+    for (const field of fieldsToWrite) {
+      const col = colByField[field];
+      if (col == null) continue;
+      const to =
+        changes[field]?.to !== undefined && changes[field]?.to !== null && changes[field]?.to !== ''
+          ? changes[field].to
+          : caso[field];
+      if (to == null || to === '') continue;
+      const cell = dataRow.getCell(col);
+      const display = cellDisplay(to);
+      cell.value = display;
+      if (display instanceof Date) {
+        cell.numFmt = 'dd/mm/yyyy';
+      }
     }
+    dataRow.commit();
   }
-  dataRow.commit();
   ensureWorksheetRowsVisible(ws);
 
   const outBuf = Buffer.from(await wb.xlsx.writeBuffer());
@@ -350,16 +448,20 @@ export async function processEquidadFdmExcelOutboundUpdate(doc) {
   doc.lastSyncedAt = new Date();
   doc.lastError = null;
   await doc.save();
-  return { synced: true, eTag: newEtag };
+  return { synced: true, appended, eTag: newEtag };
 }
 
 export async function runEquidadFdmExcelOutboundCycle({ batchSize } = {}) {
   const cfg = getEquidadFdmExcelSharePointConfig();
   const limit = batchSize || cfg.outboundBatchSize;
   const now = new Date();
-
-  // Recuperar jobs atascados en "processing" (crash / Excel bloqueado sin cerrar estado).
   const stuckBefore = new Date(Date.now() - 2 * 60_000);
+
+  // Jobs viejos que se saltaron porque la fila no existía: ahora se agrega la fila.
+  await EquidadFdmExcelOutboundUpdate.updateMany(
+    { status: 'skipped', lastError: /Fila no encontrada/i },
+    { $set: { status: 'pending', nextRetryAt: null, lastError: null, attempts: 0 } }
+  );
   await EquidadFdmExcelOutboundUpdate.updateMany(
     { status: 'processing', updatedAt: { $lte: stuckBefore } },
     { $set: { status: 'pending', nextRetryAt: null } }
@@ -400,5 +502,101 @@ export async function runEquidadFdmExcelOutboundCycle({ batchSize } = {}) {
     }
   }
 
+  try {
+    const missing = await syncMissingArnaldCasosToExcel();
+    summary.appended = missing.appended || 0;
+    if (summary.appended) {
+      console.log(
+        `📤 Equidad FDM Excel: se agregaron ${summary.appended} fila(s) nuevas desde ARNALD`
+      );
+    }
+  } catch (missErr) {
+    console.warn('⚠️ Sync filas faltantes Excel FDM:', missErr.message);
+  }
+
   return summary;
+}
+
+/**
+ * Agrega al Excel de SharePoint los casos ARNALD (terremoto) que aún no tienen fila.
+ */
+export async function syncMissingArnaldCasosToExcel() {
+  const cfg = getEquidadFdmExcelSharePointConfig();
+  const resolved = await resolveSourceItem();
+  if (!resolved?.itemId) {
+    const err = new Error('Excel Equidad FDM no localizado en SharePoint');
+    err.code = 'EXCEL_NOT_LOCATED';
+    throw err;
+  }
+
+  const casos = await EquidadFdmCaso.find({
+    $or: [{ evento: cfg.eventoPreferido }, { evento: /TERREMOTO/i }],
+  }).lean();
+
+  const downloaded = await downloadDriveItemBuffer({
+    driveId: resolved.driveId,
+    itemId: resolved.itemId,
+  });
+  const buffer = downloaded?.buffer || downloaded;
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buffer);
+  const ws = wb.worksheets[0];
+  if (!ws) {
+    const err = new Error('El Excel no tiene hojas');
+    err.code = 'NO_SHEETS';
+    throw err;
+  }
+
+  const headerIdx = findHeaderRowNumber(ws);
+  if (headerIdx < 0) {
+    const err = new Error('No se encontró encabezado CEDULA en el Excel');
+    err.code = 'HEADER_NOT_FOUND';
+    throw err;
+  }
+
+  const colByField = mapHeadersFromWorksheet(ws, headerIdx);
+  if (colByField.fechaLiquidacion == null && colByField.fechaGiro != null) {
+    colByField.fechaLiquidacion = colByField.fechaGiro;
+  }
+
+  let appended = 0;
+  const missing = [];
+  for (const caso of casos) {
+    if (!caso?.nombre) continue;
+    const existing = findRowForCasoExcelJs(ws, headerIdx, colByField, caso);
+    if (existing > 0) continue;
+    const rowIdx = nextDataRowNumber(ws, headerIdx);
+    copyRowStyle(ws.getRow(Math.max(headerIdx + 1, rowIdx - 1)), ws.getRow(rowIdx));
+    writeCasoFieldsToRow(ws.getRow(rowIdx), colByField, caso, FDM_EXCEL_APPEND_FIELDS);
+    appended += 1;
+    missing.push(caso.consecutivo || caso.nombre);
+  }
+
+  if (!appended) {
+    return { appended: 0, missing: [] };
+  }
+
+  ensureWorksheetRowsVisible(ws);
+  const outBuf = Buffer.from(await wb.xlsx.writeBuffer());
+  const metaBefore = await getItemMetadata(resolved.itemId);
+  const uploaded = await replaceDriveItemContentBuffer({
+    driveId: resolved.driveId,
+    itemId: resolved.itemId,
+    buffer: outBuf,
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ifMatch: metaBefore.eTag || resolved.eTag,
+  });
+  const newEtag = uploaded?.eTag || uploaded?.id;
+  await EquidadFdmExcelSharePointSource.findOneAndUpdate(
+    { integrationKey: cfg.integrationKey },
+    {
+      $set: {
+        lastArnaldWrittenEtag: newEtag || metaBefore.eTag,
+        eTag: newEtag || metaBefore.eTag,
+        lastSyncAt: new Date(),
+      },
+    }
+  );
+
+  return { appended, missing, eTag: newEtag };
 }

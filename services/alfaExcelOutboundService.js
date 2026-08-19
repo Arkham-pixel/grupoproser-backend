@@ -19,6 +19,7 @@ import {
   assertFieldWritableOrThrow,
 } from '../config/alfaExcelOwnershipMap.js';
 import { ALFA_EXCEL_DATE_FIELDS, ALFA_EXCEL_MONEY_FIELDS } from '../config/alfaExcelColumnMap.js';
+import { isAlfaOutboundEmptyValue } from '../utils/alfaExcelNormalize.js';
 import {
   matchAlfaCaseForExcelRow,
   parseAlfaExcelBuffer,
@@ -152,7 +153,24 @@ export async function enqueueAlfaExcelOutboundFromCaseUpdate({
   try {
     if (!afterDoc?._id) return null;
 
-    const { writable, rejected } = buildOutboundCandidateChanges(beforeDoc, afterDoc);
+    const { writable: rawWritable, rejected } = buildOutboundCandidateChanges(beforeDoc, afterDoc);
+    const writable = {};
+    for (const [field, diff] of Object.entries(rawWritable)) {
+      if (isAlfaOutboundEmptyValue(diff.after)) {
+        rejected.push({
+          field,
+          code: 'SKIP_EMPTY_DOES_NOT_CLEAR',
+          reason: 'ARNALD vacío no borra dato lleno en Excel',
+        });
+        logOut('ALFA_EXCEL_OUTBOUND_SKIP_EMPTY', {
+          caseId: String(afterDoc._id),
+          consecutivo: afterDoc.consecutivo || null,
+          field,
+        });
+        continue;
+      }
+      writable[field] = diff;
+    }
 
     for (const r of rejected) {
       if (r.code === 'OUTBOUND_FIELD_NOT_MAPPED' || r.code === 'ALFA_EXCEL_FIELD_NOT_WRITABLE') {
@@ -401,6 +419,9 @@ export async function patchYellowCellsInWorkbookBuffer({
       throw err;
     }
 
+    if (isAlfaOutboundEmptyValue(upd.value)) {
+      continue;
+    }
     allowedCols.add(colNum);
     const cell = dataRow.getCell(colNum);
     cell.value = toExcelCellValue(upd.field, upd.value);
@@ -562,30 +583,28 @@ async function writeOutboundCells({
     for (const upd of cellUpdates) {
       assertFieldWritableOrThrow(upd.field);
       const address = `${upd.column}${excelRowNumber}`;
-      if (isClearValue(upd.value)) {
-        await clearWorkbookRange({
-          driveId,
-          itemId,
-          worksheetName: sheetName,
-          address,
-          sessionId,
-          applyTo: 'Contents',
+      if (isClearValue(upd.value) || isAlfaOutboundEmptyValue(upd.value)) {
+        logOut('ALFA_EXCEL_OUTBOUND_SKIP_CLEAR', {
+          field: upd.field,
+          column: upd.column,
+          reason: 'ARNALD vacío no borra Excel',
         });
-      } else {
-        await updateWorkbookRange({
-          driveId,
-          itemId,
-          worksheetName: sheetName,
-          address,
-          values: [[toGraphRangeValue(upd.field, upd.value)]],
-          sessionId,
-        });
+        continue;
       }
+      await updateWorkbookRange({
+        driveId,
+        itemId,
+        worksheetName: sheetName,
+        address,
+        values: [[toGraphRangeValue(upd.field, upd.value)]],
+        sessionId,
+      });
     }
 
     // Verificar celdas escritas
     const verified = [];
     for (const upd of cellUpdates) {
+      if (isClearValue(upd.value) || isAlfaOutboundEmptyValue(upd.value)) continue;
       const address = `${upd.column}${excelRowNumber}`;
       const range = await readWorkbookRange({
         driveId,
@@ -749,11 +768,19 @@ export async function processAlfaExcelOutboundUpdate(doc) {
     const parsed = parseAlfaExcelBuffer(downloaded.buffer);
     const hit = findExcelRowForCase(caseDoc, parsed.rows);
 
-    const cellUpdates = fields.map((field) => ({
-      field,
-      column: changes[field].column || getOwnershipEntry(field).column,
-      value: changes[field].after,
-    }));
+    const cellUpdates = fields
+      .filter((field) => !isAlfaOutboundEmptyValue(changes[field].after))
+      .map((field) => ({
+        field,
+        column: changes[field].column || getOwnershipEntry(field).column,
+        value: changes[field].after,
+      }));
+    if (cellUpdates.length === 0) {
+      doc.status = 'cancelled';
+      doc.lastError = 'empty after skip: ARNALD vacío no borra Excel';
+      await doc.save();
+      return { outcome: 'cancelled', code: 'SKIP_EMPTY_DOES_NOT_CLEAR' };
+    }
 
     const written = await writeOutboundCells({
       driveId: resolved.driveId,

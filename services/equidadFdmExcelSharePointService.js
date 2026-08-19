@@ -23,6 +23,8 @@ import {
   eventoClaveFdm,
   clavesDeduplicacionFdm,
   ejecutarImportacionFdm,
+  sonElMismoCasoFdm,
+  elegirKeeperFdm,
 } from './fdmImportService.js';
 
 function notifyKey(itemId, eTag) {
@@ -154,6 +156,20 @@ function indexarCasosFdm(existentes) {
   return indice;
 }
 
+function colapsarCandidatosFdm(docs = []) {
+  const grupos = [];
+  for (const doc of docs) {
+    const grupo = grupos.find((g) => sonElMismoCasoFdm(g[0], doc));
+    if (grupo) grupo.push(doc);
+    else grupos.push([doc]);
+  }
+  return grupos;
+}
+
+function keeperDeGrupoFdm(grupo = []) {
+  return grupo.reduce((acc, doc) => elegirKeeperFdm(acc, doc));
+}
+
 function localizarCasoFdm(fila, indice, existentes, eventoPreferido) {
   const payload = {
     ...fila,
@@ -166,26 +182,22 @@ function localizarCasoFdm(fila, indice, existentes, eventoPreferido) {
       hits.set(String(doc._id), doc);
     }
   }
-  const list = [...hits.values()];
-  if (list.length === 1) return { action: 'MATCH', caso: list[0] };
-  if (list.length > 1) {
-    const terr = list.filter((c) => eventoClaveFdm(c).includes('TERREMOTO'));
-    if (terr.length === 1) return { action: 'MATCH', caso: terr[0] };
-    return { action: 'AMBIGUOUS', casos: list };
+  let list = [...hits.values()];
+  if (list.length === 0) {
+    list = existentes.filter((c) => sonElMismoCasoFdm(payload, c));
   }
 
-  // Fallback: misma cédula + terremoto
-  const ced = String(fila.cedula || '').replace(/\D/g, '');
-  if (ced.length >= 6) {
-    const sameCed = existentes.filter((c) => {
-      const d = String(c.cedula || '').replace(/\D/g, '');
-      return d === ced && eventoClaveFdm(c).includes('TERREMOTO');
-    });
-    if (sameCed.length === 1) return { action: 'MATCH', caso: sameCed[0] };
-    if (sameCed.length > 1) return { action: 'AMBIGUOUS', casos: sameCed };
+  if (list.length === 0) return { action: 'CREATE' };
+
+  const grupos = colapsarCandidatosFdm(list);
+  if (grupos.length === 1) {
+    return { action: 'MATCH', caso: keeperDeGrupoFdm(grupos[0]) };
   }
 
-  return { action: 'CREATE' };
+  const terr = grupos.filter((g) => eventoClaveFdm(g[0]).includes('TERREMOTO'));
+  if (terr.length === 1) return { action: 'MATCH', caso: keeperDeGrupoFdm(terr[0]) };
+
+  return { action: 'AMBIGUOUS', casos: grupos.map((g) => keeperDeGrupoFdm(g)) };
 }
 
 function pareceDireccionAjustador(valor) {

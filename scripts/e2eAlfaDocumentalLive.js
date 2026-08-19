@@ -28,7 +28,7 @@ import { getSharePointSyncConfig } from '../config/sharepointSync.js';
 import { getAlfaExcelOutboundConfig } from '../config/alfaExcelOutbound.js';
 import { getAlfaPolicyImportConfig } from '../config/alfaPolicyImport.js';
 import { getAlfaExcelSharePointImportConfig } from '../config/alfaExcelSharePointImport.js';
-import { buildAlfaDocumentPath } from '../utils/alfaDocumentPath.js';
+import { buildAlfaSiniestrosDocumentPath } from '../utils/alfaDocumentPath.js';
 import { sanitizeStoredFileName } from '../utils/sharepointClaimPath.js';
 import {
   parseE2eArgs,
@@ -49,7 +49,7 @@ const PILOT = {
   numeroPoliza: 'INC-008',
   consecutivo: 'ALFA-2026-08-1',
 };
-const ROOT = `SEGUROS ALFA/PÓLIZAS/${PILOT.identificacion} - ${PILOT.numeroPoliza}`;
+const ROOT = `SEGUROS ALFA/SINIESTROS/${PILOT.identificacion}`;
 const STAMP = Date.now();
 const TEST_RUN_ID = `TEST_E2E_${STAMP}`;
 const created = {
@@ -210,12 +210,6 @@ async function uploadViaArchiveroFlow(caso, etiqueta, ext, mime, bodyBuf) {
     if (doc?.sharepoint?.itemId) created.spItemIds.push(doc.sharepoint.itemId);
   }
 
-  const expectedFolder = buildAlfaDocumentPath({
-    identificacion: PILOT.identificacion,
-    numeroPoliza: PILOT.numeroPoliza,
-    documentType: etiqueta === 'FOTOS' ? 'fotografia' : etiqueta.toLowerCase() === 'informe' ? 'informe' : etiqueta.toLowerCase(),
-  });
-  // map etiqueta properly
   const typeMap = {
     FOTOS: 'fotografia',
     INSPECCION: 'inspeccion',
@@ -225,9 +219,8 @@ async function uploadViaArchiveroFlow(caso, etiqueta, ext, mime, bodyBuf) {
     POLIZA: 'poliza',
     GENERAL: 'general',
   };
-  const built = buildAlfaDocumentPath({
+  const built = buildAlfaSiniestrosDocumentPath({
     identificacion: PILOT.identificacion,
-    numeroPoliza: PILOT.numeroPoliza,
     documentType: typeMap[etiqueta] || 'otro',
   });
 
@@ -519,7 +512,7 @@ let pendingCaso = null;
 try {
   pendingCaso = await SegurosAlfaCaso.create({
     consecutivo: `E2E-PEND-${STAMP}`,
-    identificacion: '99887766',
+    identificacion: '',
     numeroPoliza: 'POR CONFIRMAR OPERACIONES',
     tomador: 'E2E TEST',
     asegurado: 'E2E TEST',
@@ -570,7 +563,7 @@ try {
 
   const pendingOk =
     doc?.destinationStatus === 'pending_destination' &&
-    doc?.destinationReason === 'MISSING_REAL_POLICY_NUMBER' &&
+    doc?.destinationReason === 'MISSING_IDENTIFICATION' &&
     !badFolderExists &&
     (sync?.result === 'PENDING_DESTINATION' || doc?.sharepoint?.itemId == null);
 

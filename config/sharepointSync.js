@@ -89,7 +89,7 @@ export function getNextRetryAt(attempts) {
   return new Date(Date.now() + delay);
 }
 
-/** ¿Este ClaimDocument puede escribir bajo SINIESTROS/? */
+/** ¿Este ClaimDocument puede escribir en SEGUROS ALFA/SINIESTROS/{cedula}? */
 export function canUseSiniestrosPath(docOrModule) {
   const cfg = getSharePointSyncConfig();
   const module =

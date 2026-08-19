@@ -14,7 +14,9 @@ const esPlaceholderFdm = (valor) => {
     .toUpperCase()
     .replace(/\s+/g, ' ');
   if (!t) return true;
-  return /^(N\/?A|NA|NULL|UNDEFINED|-|SIN DATO)$/i.test(t);
+  return /^(N\/?A|NA|NULL|UNDEFINED|-|S\/I|SIN DATO|SIN INFO|SIN INFORMACION|PENDIENTE( DE INFORMACION)?)$/i.test(
+    t
+  );
 };
 
 const mergeCampoFdm = (incoming, existing) => {
@@ -154,6 +156,14 @@ export const clavesDeduplicacionFdm = (caso = {}) => {
   if (cedula.length >= 6 && direccion) claves.push(`E:${evento}|I:${cedula}|D:${direccion}`);
   if (nombre && nombre !== 'SIN NOMBRE' && direccion) claves.push(`E:${evento}|N:${nombre}|D:${direccion}`);
   if (nombre && nombre !== 'SIN NOMBRE' && celular.length >= 7) claves.push(`E:${evento}|N:${nombre}|T:${celular}`);
+  // Filas incompletas de SharePoint (solo nombre, sin cédula): misma persona no debe crear otro caso.
+  if (nombre && nombre !== 'SIN NOMBRE' && cedula.length < 6) {
+    claves.push(`E:${evento}|N:${nombre}|NOID`);
+  }
+  const nro = caso.numero;
+  if (nro != null && nro !== '' && Number.isFinite(Number(nro))) {
+    claves.push(`E:${evento}|NUM:${Number(nro)}`);
+  }
   return claves;
 };
 
@@ -216,6 +226,14 @@ export const sonElMismoCasoFdm = (a = {}, b = {}) => {
   if (nomExacto && mismoTel) return true;
   if (nomExacto && mismaDir) return true;
   if (nomExacto && tokensNombreFdm(a.nombre).length >= 3) return true;
+  // Nombre exacto + al menos un lado sin cédula/celular: típico re-guardado de Fundación/SharePoint.
+  if (nomExacto && !conflictoCedula && (identidadPobreFdm(a) || identidadPobreFdm(b))) {
+    const munA = normClaveFdm(a.municipio);
+    const munB = normClaveFdm(b.municipio);
+    if (tokensNombreFdm(a.nombre).length >= 2) return true;
+    if (!munA || !munB || munA === munB) return true;
+    return false;
+  }
   if (!nomExacto && nomParecido && (identidadPobreFdm(a) || identidadPobreFdm(b) || mismoTel || mismaDir)) {
     return true;
   }
@@ -234,7 +252,7 @@ const camposLlenosFdm = (caso = {}) =>
     (campo) => !esPlaceholderFdm(caso[campo])
   ).length;
 
-const elegirKeeperFdm = (a, b) => {
+export const elegirKeeperFdm = (a, b) => {
   if (a.liquidador && !b.liquidador) return a;
   if (b.liquidador && !a.liquidador) return b;
   const ca = calidadCedulaFdm(a.cedula);
@@ -246,6 +264,18 @@ const elegirKeeperFdm = (a, b) => {
   const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
   const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
   return ta <= tb ? a : b;
+};
+
+const fusionarArchivosFdm = (keeper = {}, other = {}) => {
+  const vistos = new Set();
+  const out = [];
+  for (const arch of [...(keeper.archivos || []), ...(other.archivos || [])]) {
+    const clave = String(arch?.ruta || arch?._id || `${arch?.nombreOriginal}:${arch?.tamaño}`);
+    if (vistos.has(clave)) continue;
+    vistos.add(clave);
+    out.push(arch);
+  }
+  return out;
 };
 
 export const fusionarDuplicadosExistentesFdm = async () => {
@@ -260,6 +290,16 @@ export const fusionarDuplicadosExistentesFdm = async () => {
         const keeper = elegirKeeperFdm(docs[i], docs[j]);
         const other = String(keeper._id) === String(docs[i]._id) ? docs[j] : docs[i];
         const merge = mergeImportacionFdm(other, keeper);
+        merge.archivos = fusionarArchivosFdm(keeper, other);
+        if (other.liquidador && !keeper.liquidador) merge.liquidador = other.liquidador;
+        if (other.checklistHecho && !keeper.checklistHecho) {
+          merge.checklistHecho = true;
+          merge.checklistHechoAt = other.checklistHechoAt || null;
+          merge.checklistHechoPor = other.checklistHechoPor || null;
+        }
+        if (other.fechaUltimoDocumento && !keeper.fechaUltimoDocumento) {
+          merge.fechaUltimoDocumento = other.fechaUltimoDocumento;
+        }
         await EquidadFdmCaso.findByIdAndUpdate(keeper._id, merge);
         await EquidadFdmCaso.findByIdAndDelete(other._id);
         fusionados += 1;
@@ -277,6 +317,7 @@ const CAMPOS_MERGE_FDM = [
   'nombre',
   'cedula',
   'celular',
+  'correo',
   'direccionAfectada',
   'municipio',
   'departamento',

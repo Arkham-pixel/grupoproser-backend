@@ -10,4 +10,12 @@ alwaysApply: false
 - Aplica a **cualquier** carpeta bajo `SEGUROS ALFA/PÓLIZAS/{cedula}` y `SEGUROS ALFA/SINIESTROS/{cedula}`. Un documento de la carpeta X no puede listarse en un caso cuya identificación no sea X.
 - `listImportedAlfaPoliciesForCase` exige **las dos** condiciones: `association.alfaCaseIds` contiene el caso **y** `sourceIdentifier` = cédula del caso. Prohibido matchear por `numeroPoliza` / `policyNumber`.
 - No persistir `policyNumber` placeholder. El cron no debe reimportar si el `eTag` no cambió (`SKIP_ALREADY_IMPORTED`).
+- El cron no reimporta lo que ARNALD ya subió (`SKIP_ARNALD_OUTBOUND` por el mismo `sharepoint.itemId`).
 - Antes de guardar `alfaCaseIds`, filtrar casos cuya identificación no coincida con la carpeta.
+
+# Alfa outbound: carpeta de la aseguradora por cédula
+
+- Destino: `SEGUROS ALFA/SINIESTROS/{cedula}/{SUBCARPETA}` (FOTOS, INFORMES, LIQUIDACION…). Sin consecutivo.
+- Si Alfa ya creó `{cedula}`, `ensureFolder` la reutiliza. No duplicar. No crear 231 carpetas vacías: solo al primer archivo.
+- Misma cédula, varios casos → una sola carpeta.
+- `pending_destination` solo si falta cédula. La póliza placeholder no bloquea el destino.

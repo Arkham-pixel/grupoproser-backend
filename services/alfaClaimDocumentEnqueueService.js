@@ -1,8 +1,8 @@
 /**
  * Encola ClaimDocument tras upload Seguros Alfa (S3 OK + caso guardado).
- * Destino SharePoint: SEGUROS ALFA/PÓLIZAS/{ID} - {POLIZA}/{SUBCARPETA}
- *
- * Si póliza es placeholder → destinationStatus=pending_destination (no carpeta inválida).
+ * Destino SharePoint: SEGUROS ALFA/SINIESTROS/{CEDULA}/{SUBCARPETA}
+ * Si Alfa ya creó la carpeta de cédula, ensureFolder la reutiliza (no duplica).
+ * Sin identificación → pending_destination. La póliza placeholder no bloquea.
  */
 
 import mongoose from 'mongoose';
@@ -13,7 +13,7 @@ import { mapAlfaDocumentType } from '../config/alfaClaimDocumentMap.js';
 import { sanitizeStoredFileName } from '../utils/sharepointClaimPath.js';
 import { parseS3KeyFromStoredPath } from '../utils/storageKeyBuilder.js';
 import {
-  buildAlfaDocumentPath,
+  buildAlfaSiniestrosDocumentPath,
   isRealAlfaPolicyNumber,
 } from '../utils/alfaDocumentPath.js';
 import { normalizeIdentification as normId } from '../utils/alfaIdentification.js';
@@ -73,20 +73,19 @@ function logEnqueueFailed(payload = {}) {
 }
 
 /**
- * Reactiva documentos PENDING_DESTINATION cuando el caso obtiene póliza real.
+ * Reactiva documentos PENDING_DESTINATION cuando el caso obtiene cédula.
  * No re-sube a S3.
  */
 export async function releaseAlfaPendingDestinationDocuments(caso) {
   if (!caso?._id) return { released: 0 };
   const id = normId(caso.identificacion);
   const pol = normalizePolicyNumber(caso.numeroPoliza);
-  if (!id || !isRealAlfaPolicyNumber(pol)) {
-    return { released: 0, reason: 'STILL_PLACEHOLDER' };
+  if (!id) {
+    return { released: 0, reason: 'STILL_NO_IDENTIFICATION' };
   }
 
-  const built = buildAlfaDocumentPath({
+  const built = buildAlfaSiniestrosDocumentPath({
     identificacion: id,
-    numeroPoliza: pol,
     documentType: 'general',
   });
   if (!built.ok) return { released: 0, reason: built.reason };
@@ -103,7 +102,7 @@ export async function releaseAlfaPendingDestinationDocuments(caso) {
     doc.destinationStatus = 'ready';
     doc.destinationReason = undefined;
     doc.alfaIdentificacion = id;
-    doc.alfaNumeroPoliza = pol;
+    doc.alfaNumeroPoliza = isRealAlfaPolicyNumber(pol) ? pol : undefined;
     doc.claimNumberSource = 'identificacion_poliza';
     if (doc.sharepoint?.syncStatus === 'disabled' || !doc.sharepoint?.itemId) {
       doc.sharepoint = doc.sharepoint || {};
@@ -139,7 +138,7 @@ export async function migrateAlfaSharePointFolderWhenSiniestroAssigned(_claimId)
     ok: true,
     result: 'NOOP_PATH_INDEPENDENT_OF_SINIESTRO',
     message:
-      'El path Alfa definitivo usa identificación + póliza; el siniestro no renombra carpetas.',
+      'El path Alfa outbound usa SEGUROS ALFA/SINIESTROS/{cedula}; el siniestro no renombra carpetas.',
   };
 }
 
@@ -196,16 +195,15 @@ export async function enqueueAlfaClaimDocumentAfterUpload({
 
     const identificacion = normId(caso.identificacion);
     const numeroPoliza = normalizePolicyNumber(caso.numeroPoliza);
-    const pathBuild = buildAlfaDocumentPath({
+    const pathBuild = buildAlfaSiniestrosDocumentPath({
       identificacion,
-      numeroPoliza,
       documentType: mapped.documentType,
     });
 
     const pendingDestination = !pathBuild.ok;
     const destinationStatus = pendingDestination ? 'pending_destination' : 'ready';
     const destinationReason = pendingDestination
-      ? pathBuild.reason || 'MISSING_REAL_POLICY_NUMBER'
+      ? pathBuild.reason || 'MISSING_IDENTIFICATION'
       : undefined;
 
     const user = req?.usuario || req?.user || {};
@@ -341,4 +339,4 @@ export async function onAlfaCasePolicyMaybeReady(casoId) {
   return releaseAlfaPendingDestinationDocuments(caso);
 }
 
-export { ALFA_INSURER, buildAlfaDocumentPath };
+export { ALFA_INSURER, buildAlfaSiniestrosDocumentPath };

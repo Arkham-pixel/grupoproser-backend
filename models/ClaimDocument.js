@@ -44,8 +44,8 @@ const ClaimDocumentSchema = new mongoose.Schema(
     },
 
     /**
-     * Destino SharePoint Alfa (esquema PÓLIZAS/{id} - {póliza}).
-     * pending_destination = falta póliza real; no crear carpeta inválida.
+     * Destino SharePoint Alfa: SEGUROS ALFA/SINIESTROS/{cedula}/{SUBCARPETA}.
+     * pending_destination = falta cédula; no crear carpeta inválida.
      */
     destinationStatus: {
       type: String,

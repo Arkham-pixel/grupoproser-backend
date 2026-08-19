@@ -5,6 +5,7 @@
 import '../config/loadEnv.js';
 import {
   buildAlfaDocumentPath,
+  buildAlfaSiniestrosDocumentPath,
   parseAlfaPolizasFolderName,
   getAlfaDocumentSubfolder,
   isAlfaPolicyNumberPlaceholder,
@@ -137,22 +138,35 @@ pass('J');
   pass('N');
 }
 
-// path guard write
+// path guard write (pilot + flag, como producción Alfa)
+process.env.SHAREPOINT_SYNC_ALFA_ENABLED = 'true';
 {
   assertAllowedSharePointPath({
     path: 'SEGUROS ALFA/PÓLIZAS/88187559 - INC-008/INFORMES/x.pdf',
     sourceModule: 'alfa',
     mode: 'pilot',
   });
+  assertAllowedSharePointPath({
+    path: 'SEGUROS ALFA/SINIESTROS/88187559/INFORMES/x.pdf',
+    sourceModule: 'alfa',
+    mode: 'pilot',
+  });
   try {
     assertAllowedSharePointPath({
-      path: 'SEGUROS ALFA/SINIESTROS/88187559/02_POLIZA/x.pdf',
+      path: 'SEGUROS ALFA/SINIESTROS/PENDIENTES_NUMERO_SINIESTRO/x.pdf',
       sourceModule: 'alfa',
       mode: 'pilot',
     });
-    fail('GUARD', new Error('debía bloquear SINIESTROS write'));
+    fail('GUARD', new Error('debía bloquear PENDIENTES write'));
   } catch (e) {
     if (e.code !== 'INVALID_SHAREPOINT_PATH') fail('GUARD', e);
+  }
+  const sin = buildAlfaSiniestrosDocumentPath({
+    identificacion: '88187559',
+    documentType: 'informe',
+  });
+  if (!sin.ok || sin.path !== 'SEGUROS ALFA/SINIESTROS/88187559/INFORMES') {
+    fail('GUARD', new Error(JSON.stringify(sin)));
   }
   pass('GUARD');
 }

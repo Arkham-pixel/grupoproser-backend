@@ -203,6 +203,18 @@ export const crearCasoFdm = async (req, res) => {
     }
 
     const documento = await EquidadFdmCaso.create(payload);
+
+    try {
+      await enqueueEquidadFdmExcelOutboundFromCaseUpdate(
+        documento._id,
+        {},
+        documento.toObject(),
+        { force: true }
+      );
+    } catch (outErr) {
+      console.warn('⚠️ Encolado outbound Excel Equidad FDM (alta) omitido:', outErr.message);
+    }
+
     res.status(201).json({ success: true, data: documento });
   } catch (error) {
     console.error('❌ Error al crear caso Equidad FDM:', error);

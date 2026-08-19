@@ -11,7 +11,7 @@ import {
 } from '../config/sharepointSync.js';
 import { getSharePointTestRoot } from '../utils/sharepointTestPath.js';
 import { buildSharePointClaimPath } from '../utils/sharepointClaimPath.js';
-import { buildAlfaDocumentPath } from '../utils/alfaDocumentPath.js';
+import { buildAlfaSiniestrosDocumentPath } from '../utils/alfaDocumentPath.js';
 import SegurosAlfaCaso from '../models/SegurosAlfaCaso.js';
 import {
   acquireSyncLock,
@@ -39,26 +39,23 @@ function logSync(event, payload = {}) {
 }
 
 /**
- * Destino Alfa: PÓLIZAS/{id} - {póliza}/{SUBCARPETA}
- * Carga caso si hace falta para id/póliza actuales.
+ * Destino Alfa: SINIESTROS/{cedula}/{SUBCARPETA}
+ * Reutiliza la carpeta que ya creó la aseguradora.
  */
 async function resolveAlfaDestinationFolder(doc) {
   let identificacion = doc.alfaIdentificacion;
-  let numeroPoliza = doc.alfaNumeroPoliza;
 
   if (doc.claimId) {
     const caso = await SegurosAlfaCaso.findById(doc.claimId)
-      .select('identificacion numeroPoliza')
+      .select('identificacion')
       .lean();
     if (caso) {
       identificacion = caso.identificacion || identificacion;
-      numeroPoliza = caso.numeroPoliza || numeroPoliza;
     }
   }
 
-  const built = buildAlfaDocumentPath({
+  const built = buildAlfaSiniestrosDocumentPath({
     identificacion,
-    numeroPoliza,
     documentType: doc.documentType,
   });
 
@@ -75,7 +72,7 @@ async function resolveAlfaDestinationFolder(doc) {
 function resolveDestinationFolder(doc) {
   const cfg = getSharePointSyncConfig();
 
-  // Alfa: nuevo esquema PÓLIZAS (async path resuelto en syncClaimDocument)
+  // Alfa pilot: SINIESTROS/{cedula} (async en syncClaimDocument)
   if (canUseSiniestrosPath(doc) && doc.sourceModule === 'alfa') {
     return null; // señal: usar resolveAlfaDestinationFolder
   }
@@ -138,7 +135,7 @@ export async function syncClaimDocument(documentId, { now = new Date() } = {}) {
     return { result: 'SKIPPED', document: before };
   }
 
-  // Póliza placeholder: no crear carpeta inválida; esperar póliza real
+  // Sin cédula: no crear carpeta; esperar identificación
   if (
     before.sourceModule === 'alfa' &&
     before.destinationStatus === 'pending_destination'
@@ -148,7 +145,7 @@ export async function syncClaimDocument(documentId, { now = new Date() } = {}) {
       claimNumber: before.claimNumber,
       sourceModule: before.sourceModule,
       result: 'PENDING_DESTINATION',
-      errorCode: before.destinationReason || 'MISSING_REAL_POLICY_NUMBER',
+      errorCode: before.destinationReason || 'MISSING_IDENTIFICATION',
       durationMs: Date.now() - started,
     });
     return { result: 'PENDING_DESTINATION', document: before };
@@ -210,7 +207,11 @@ export async function syncClaimDocument(documentId, { now = new Date() } = {}) {
       destinationPath = resolveDestinationFolder(doc);
     }
   } catch (error) {
-    if (error?.code === 'PENDING_DESTINATION' || error?.code === 'MISSING_REAL_POLICY_NUMBER') {
+    if (
+      error?.code === 'PENDING_DESTINATION' ||
+      error?.code === 'MISSING_IDENTIFICATION' ||
+      error?.code === 'MISSING_REAL_POLICY_NUMBER'
+    ) {
       doc.destinationStatus = 'pending_destination';
       doc.destinationReason = error.reason || error.code;
       if (doc.sharepoint) {

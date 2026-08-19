@@ -131,7 +131,12 @@ export function matchAlfaCaseForExcelRow(payload, allCases) {
   const siniestro = normKeyClaim(payload.siniestro);
   const id = normKeyId(payload.identificacion);
   const polExcel = normKeyPolicy(payload.numeroPoliza);
-  const polExcelReal = polExcel && !isPolicyPlaceholder(payload.numeroPoliza);
+  const polizaPareceDia =
+    /^\d{1,2}$/.test(String(payload.numeroPoliza ?? '').trim()) &&
+    Number(String(payload.numeroPoliza).trim()) >= 1 &&
+    Number(String(payload.numeroPoliza).trim()) <= 31;
+  const polExcelReal =
+    polExcel && !isPolicyPlaceholder(payload.numeroPoliza) && !polizaPareceDia;
   const credit = normKeyCredit(payload.numeroCredito);
   const fecha = fechaKey(payload.fechaSiniestro);
   const dir = normKeyAddress(payload.direccionPredio);
@@ -453,6 +458,32 @@ function canSafelyCreate(payload = {}) {
   return hasPol || hasCredit || hasSin || (hasFecha && hasAseg);
 }
 
+/**
+ * Filas Excel con columnas corridas (ej. póliza=día, crédito=CIUDAD, correo=teléfono).
+ * No deben actualizar ARNALD.
+ */
+export function looksLikeAlfaExcelColumnShiftCorruption(payload = {}) {
+  const pol = String(payload.numeroPoliza ?? '').trim();
+  const cred = String(payload.numeroCredito ?? '')
+    .trim()
+    .toUpperCase();
+  const ciudad = String(payload.ciudad ?? '')
+    .trim()
+    .toUpperCase();
+  const correo = String(payload.correo ?? '').trim();
+  const contact = String(payload.informacionContacto ?? '').trim();
+
+  const creditoEsCiudad = Boolean(cred && ciudad && cred === ciudad);
+  const polizaPareceDia = /^\d{1,2}$/.test(pol) && Number(pol) >= 1 && Number(pol) <= 31;
+  const correoEsTelefono = /^\d{7,15}$/.test(correo);
+  const contactoPareceCredito =
+    /^\d{5,}$/.test(contact) && (correoEsTelefono || creditoEsCiudad);
+
+  if (creditoEsCiudad && (polizaPareceDia || correoEsTelefono)) return true;
+  if (polizaPareceDia && correoEsTelefono && contactoPareceCredito) return true;
+  return false;
+}
+
 export function planRow(row, allCases) {
   const warnings = [];
   const ignoredFields = {};
@@ -479,6 +510,31 @@ export function planRow(row, allCases) {
       claimNumberAssigned: false,
       claimNumberEventPending: false,
       warnings,
+    };
+  }
+
+  if (looksLikeAlfaExcelColumnShiftCorruption(rawPayload)) {
+    return {
+      rowNumber: row.rowNumber,
+      action: 'REJECTED',
+      errorCode: 'EXCEL_COLUMN_SHIFT',
+      message:
+        'Fila Excel con columnas corridas (póliza/crédito/correo inválidos). Corrija o elimine el duplicado en SharePoint.',
+      payload: rawPayload,
+      changes: null,
+      ignoredFields,
+      matchedCaseId: null,
+      candidateCaseIds: [],
+      matchStrategy: 'REJECTED',
+      matchEvidence: buildEvidence(),
+      previewSnapshot: {
+        identificacion: rawPayload.identificacion,
+        numeroPolizaExcel: rawPayload.numeroPoliza || null,
+        siniestroExcel: rawPayload.siniestro || null,
+      },
+      claimNumberAssigned: false,
+      claimNumberEventPending: false,
+      warnings: ['EXCEL_COLUMN_SHIFT'],
     };
   }
 

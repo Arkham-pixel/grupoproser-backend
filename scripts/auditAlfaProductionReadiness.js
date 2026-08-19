@@ -29,7 +29,7 @@ import { getAlfaExcelOutboundConfig } from '../config/alfaExcelOutbound.js';
 import { getAlfaPolicyImportConfig } from '../config/alfaPolicyImport.js';
 import { getAlfaExcelSharePointImportConfig } from '../config/alfaExcelSharePointImport.js';
 import * as ownershipMap from '../config/alfaExcelOwnershipMap.js';
-import { buildAlfaDocumentPath, classifyAlfaSharePointPath } from '../utils/alfaDocumentPath.js';
+import { buildAlfaDocumentPath, buildAlfaSiniestrosDocumentPath, classifyAlfaSharePointPath, isAlfaSiniestrosCedulaWritePath } from '../utils/alfaDocumentPath.js';
 import { isPolicyPlaceholder } from '../utils/alfaExcelNormalize.js';
 import { normalizeIdentification } from '../utils/alfaIdentification.js';
 import { normalizePolicyNumber } from '../utils/alfaPolicyNumber.js';
@@ -278,12 +278,28 @@ const b2 = buildAlfaDocumentPath({
   numeroPoliza: 'POR CONFIRMAR OPERACIONES',
   documentType: 'general',
 });
+const s1 = buildAlfaSiniestrosDocumentPath({
+  identificacion: '88187559',
+  documentType: 'informe',
+});
+const s2 = buildAlfaSiniestrosDocumentPath({
+  identificacion: '',
+  documentType: 'general',
+});
+const s3 = buildAlfaSiniestrosDocumentPath({
+  identificacion: '1112461634',
+  documentType: 'informe',
+});
 const pathOk =
   b1.ok &&
   b1.path === 'SEGUROS ALFA/PÓLIZAS/88187559 - INC-008/INFORMES' &&
   !b2.ok &&
-  b2.reason === 'MISSING_REAL_POLICY_NUMBER';
-line(JSON.stringify({ b1, b2, pathOk }, null, 2));
+  b2.reason === 'MISSING_REAL_POLICY_NUMBER' &&
+  s1.ok &&
+  s1.path === 'SEGUROS ALFA/SINIESTROS/88187559/INFORMES' &&
+  !s2.ok &&
+  s1.path !== s3.path;
+line(JSON.stringify({ b1, b2, s1, s2, s3, pathOk }, null, 2));
 set('DOCUMENT_PATH_BUILDER', pathOk ? 'PASS' : 'FAIL');
 
 // ---------- 7/8) Document outbound evidence ----------
@@ -301,12 +317,16 @@ const syncedClaims = await ClaimDocument.find({
   .limit(30)
   .lean();
 
-const newScheme = syncedClaims.filter((d) =>
-  String(d.sharepoint?.path || '').startsWith('SEGUROS ALFA/PÓLIZAS/')
-);
+const newScheme = syncedClaims.filter((d) => {
+  const p = String(d.sharepoint?.path || '');
+  return p.startsWith('SEGUROS ALFA/PÓLIZAS/') || isAlfaSiniestrosCedulaWritePath(p);
+});
 const oldScheme = syncedClaims.filter((d) => {
   const p = String(d.sharepoint?.path || '');
-  return p.includes('SINIESTROS') || p.includes('PENDIENTES_NUMERO_SINIESTRO');
+  return (
+    p.includes('PENDIENTES_NUMERO_SINIESTRO') ||
+    p.startsWith('SINIESTROS/SEGUROS ALFA')
+  );
 });
 const informes = syncedClaims.filter(
   (d) =>
@@ -455,9 +475,12 @@ const pendingCount = await ClaimDocument.countDocuments({
   destinationStatus: 'pending_destination',
 });
 const pendingUnit =
-  !buildAlfaDocumentPath({
-    identificacion: '1',
-    numeroPoliza: 'POR CONFIRMAR OPERACIONES',
+  !buildAlfaSiniestrosDocumentPath({
+    identificacion: '',
+    documentType: 'general',
+  }).ok &&
+  buildAlfaSiniestrosDocumentPath({
+    identificacion: '88187559',
     documentType: 'general',
   }).ok;
 set(

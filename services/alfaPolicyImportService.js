@@ -6,10 +6,11 @@
  * - N casos se asocian por puntero (association.alfaCaseIds), nunca duplicando S3.
  * - El archivero lista SOLO por alfaCaseIds, nunca por número de póliza.
  * - policyNumber placeholder (POR CONFIRMAR…) no se persiste ni se usa para match.
- * Independiente del worker ClaimDocument (S3 → SharePoint).
+ * - El cron no debe reimportar archivos que ARNALD ya subió (`SKIP_ARNALD_OUTBOUND` por `sharepoint.itemId`).
  */
 
 import AlfaPolicyDocument from '../models/AlfaPolicyDocument.js';
+import ClaimDocument from '../models/ClaimDocument.js';
 import SegurosAlfaCaso from '../models/SegurosAlfaCaso.js';
 import { getAlfaPolicyImportConfig } from '../config/alfaPolicyImport.js';
 import { isSharePointConfigured, getSharePointConfig } from '../config/sharepoint.js';
@@ -65,6 +66,22 @@ export function isIdentificationInboundFolderName(name) {
 
 export function buildAlfaPolicyIntegrationKey(driveId, itemId) {
   return `sharepoint:${driveId}:${itemId}`;
+}
+
+/**
+ * Si ARNALD ya subió este item a SharePoint, no reimportarlo a S3/archivero inbound.
+ * 1 itemId = 1 copia. Evita duplicar liquidador/informe/fotos.
+ */
+export async function findArnaldOutboundBySharePointItemId(itemId) {
+  const id = String(itemId || '').trim();
+  if (!id) return null;
+  return ClaimDocument.findOne({
+    sourceModule: 'alfa',
+    status: 'active',
+    'sharepoint.itemId': id,
+  })
+    .select('_id claimId alfaIdentificacion documentType')
+    .lean();
 }
 
 function buildS3Key(sourceIdentifier, storedName) {
@@ -475,6 +492,16 @@ export async function importAlfaPolicyFile({
   const eTag = item.eTag || null;
   const integrationKey = buildAlfaPolicyIntegrationKey(driveId, itemId);
 
+  const arnaldOutbound = await findArnaldOutboundBySharePointItemId(itemId);
+  if (arnaldOutbound) {
+    return {
+      result: 'SKIP_ARNALD_OUTBOUND',
+      claimDocumentId: String(arnaldOutbound._id),
+      sourceIdentifier: normalizedId,
+      name: item?.name,
+    };
+  }
+
   const existing = await AlfaPolicyDocument.findOne({ integrationKey });
   if (existing && existing.status === 'active') {
     const sameEtag =
@@ -785,6 +812,7 @@ export async function runAlfaPolicyImportCycle({ batchSize } = {}) {
     processedFiles: 0,
     imported: 0,
     skippedAlready: 0,
+    skippedArnaldOutbound: 0,
     updated: 0,
     unmatched: 0,
     matched: 0,
@@ -920,6 +948,7 @@ export async function runAlfaPolicyImportCycle({ batchSize } = {}) {
     summary.outcomes.push(outcome);
     if (outcome.result === 'IMPORTED') summary.imported += 1;
     else if (outcome.result === 'SKIP_ALREADY_IMPORTED') summary.skippedAlready += 1;
+    else if (outcome.result === 'SKIP_ARNALD_OUTBOUND') summary.skippedArnaldOutbound += 1;
     else if (outcome.result === 'SOURCE_UPDATED') summary.updated += 1;
     else if (outcome.result === 'INVALID_POLICY_FILE_TYPE') summary.invalidType += 1;
     else if (outcome.result === 'ERROR') summary.errors += 1;
@@ -1039,6 +1068,7 @@ export async function runAlfaPolicyImportCycle({ batchSize } = {}) {
       processedFiles: summary.processedFiles,
       imported: summary.imported,
       skippedAlready: summary.skippedAlready,
+      skippedArnaldOutbound: summary.skippedArnaldOutbound,
       updated: summary.updated,
       matched: summary.matched,
       unmatched: summary.unmatched,

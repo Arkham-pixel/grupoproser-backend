@@ -1,11 +1,11 @@
 /**
  * Rutas SharePoint exclusivas del módulo Seguros Alfa (LEGACY outbound).
  *
- * NUEVO esquema (usar buildAlfaDocumentPath):
- *   SEGUROS ALFA/PÓLIZAS/{IDENTIFICACION} - {NUMERO_POLIZA}/{SUBCARPETA}
+ * Outbound nuevo: buildAlfaSiniestrosDocumentPath
+ *   SEGUROS ALFA/SINIESTROS/{CEDULA}/{SUBCARPETA}
+ * Compat PÓLIZAS: buildAlfaDocumentPath.
  *
- * Este módulo se conserva para clasificar/leer históricos SINIESTROS.
- * Los NUEVOS writes van por utils/alfaDocumentPath.js.
+ * Este módulo se conserva para clasificar/leer históricos (PENDIENTES, raíz global).
  */
 
 import { getSharePointFolderForDocumentType } from '../config/claimDocumentTypes.js';
@@ -13,6 +13,7 @@ import { sanitizeSharePointSegment } from './sharepointClaimPath.js';
 import {
   ALFA_DOC_IMPORT_PREFIX,
   isAlfaDefinitiveDocumentPath,
+  isAlfaSiniestrosCedulaWritePath,
 } from './alfaDocumentPath.js';
 
 export const ALFA_SHAREPOINT_ROOT = 'SEGUROS ALFA';
@@ -63,6 +64,7 @@ export function isAlfaLegacySharePointPath(pathValue) {
   const normalized = String(pathValue || '')
     .replace(/^\/+|\/+$/g, '')
     .replace(/\\/g, '/');
+  if (isAlfaSiniestrosCedulaWritePath(normalized)) return false;
   return getAlfaSharePointLegacyPrefixes().some(
     (prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`)
   );

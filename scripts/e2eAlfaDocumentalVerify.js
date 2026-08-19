@@ -223,7 +223,7 @@ line(
 const stampPend = Date.now();
 const pendingCaso = await SegurosAlfaCaso.create({
   consecutivo: `E2E-PEND-${stampPend}`,
-  identificacion: '99887766',
+  identificacion: '',
   numeroPoliza: 'POR CONFIRMAR OPERACIONES',
   estado: 'PENDIENTE',
   archivos: [],
@@ -273,7 +273,7 @@ try {
 }
 const pendingPass =
   pendDoc?.destinationStatus === 'pending_destination' &&
-  pendDoc?.destinationReason === 'MISSING_REAL_POLICY_NUMBER' &&
+  pendDoc?.destinationReason === 'MISSING_IDENTIFICATION' &&
   !bad;
 line(`PENDING_DESTINATION: ${pendingPass ? 'PASS' : 'FAIL'}`);
 await ClaimDocument.deleteOne({ _id: docId });

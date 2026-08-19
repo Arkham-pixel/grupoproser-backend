@@ -181,6 +181,19 @@ export const limpiarTexto = (value) => {
   return texto || null;
 };
 
+const esPlaceholderIdentidadExcel = (valor) => {
+  if (valor == null || valor === '') return true;
+  const t = String(valor)
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, ' ');
+  return /^(N\/?A|NA|NULL|UNDEFINED|-|S\/I|SIN DATO|SIN INFO|SIN INFORMACION|PENDIENTE( DE INFORMACION)?)$/i.test(
+    t
+  );
+};
+
 export const limpiarTextoMayusculas = (value) => {
   const texto = limpiarTexto(value);
   return texto ? texto.toUpperCase() : null;
@@ -333,9 +346,15 @@ const celdaConDato = (value) => {
 };
 
 const mapRow = (row, indice, meta) => {
-  const nombre = limpiarTexto(valorCelda(row, indice, 'nombre'));
-  const cedula = limpiarTexto(valorCelda(row, indice, 'cedula'));
-  const celularPre = limpiarTexto(valorCelda(row, indice, 'celular'));
+  const nombre = esPlaceholderIdentidadExcel(limpiarTexto(valorCelda(row, indice, 'nombre')))
+    ? null
+    : limpiarTexto(valorCelda(row, indice, 'nombre'));
+  const cedula = esPlaceholderIdentidadExcel(limpiarTexto(valorCelda(row, indice, 'cedula')))
+    ? null
+    : limpiarTexto(valorCelda(row, indice, 'cedula'));
+  const celularPre = esPlaceholderIdentidadExcel(limpiarTexto(valorCelda(row, indice, 'celular')))
+    ? null
+    : limpiarTexto(valorCelda(row, indice, 'celular'));
   const direccionPre = limpiarTexto(valorCelda(row, indice, 'direccionAfectada'));
   const numeroPre = valorCelda(row, indice, 'numero');
   if (!nombre && !cedula && !celularPre && !direccionPre && !celdaConDato(numeroPre)) return null;

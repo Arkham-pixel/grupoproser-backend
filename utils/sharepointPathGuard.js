@@ -2,8 +2,8 @@
  * Guard central de rutas SharePoint (réplica).
  * Conserva assertTestPath para scripts/pruebas aisladas.
  *
- * Alfa NUEVOS writes: solo SEGUROS ALFA/PÓLIZAS/**
- * Excel: guard independiente (CONTROL Y SEGUIMIENTO) — no usa este guard.
+ * Alfa NUEVOS writes: SEGUROS ALFA/SINIESTROS/{cedula}/** (carpeta aseguradora)
+ * y SEGUROS ALFA/PÓLIZAS/** (compat inbound). Excel no usa este guard.
  */
 
 import { getSharePointSyncConfig } from '../config/sharepointSync.js';
@@ -12,7 +12,11 @@ import {
   getAlfaSharePointAllowedPrefix,
   isAlfaSharePointPath,
 } from './alfaSharePointPath.js';
-import { ALFA_DOC_IMPORT_PREFIX } from './alfaDocumentPath.js';
+import {
+  ALFA_DOC_IMPORT_PREFIX,
+  ALFA_DOC_SINIESTROS_PREFIX,
+  isAlfaSiniestrosCedulaWritePath,
+} from './alfaDocumentPath.js';
 
 const ALWAYS_BLOCKED_ROOTS = new Set([
   'CONTROL Y SEGUIMIENTO',
@@ -57,7 +61,7 @@ export function assertAllowedSharePointPath({ path, sourceModule, mode } = {}) {
   const underTestRoot =
     normalized === testRoot || normalized.startsWith(`${testRoot}/`);
 
-  // Alfa: NUEVOS writes solo SEGUROS ALFA/PÓLIZAS/**
+  // Alfa: mode=test → TEST_ARNALD; pilot → SINIESTROS/{cedula} o PÓLIZAS (compat)
   if (module === 'alfa') {
     if (effectiveMode === 'test' || (cfg.forceTestRoot && effectiveMode !== 'pilot')) {
       if (!underTestRoot) {
@@ -76,27 +80,31 @@ export function assertAllowedSharePointPath({ path, sourceModule, mode } = {}) {
       );
     }
 
-    // Bloquear raíz global SINIESTROS y el esquema viejo SEGUROS ALFA/SINIESTROS
+    // Alfa writes: PÓLIZAS (histórico) o SINIESTROS/{cedula} (carpeta de la aseguradora).
+    // No crear PENDIENTES_NUMERO_SINIESTRO ni carpetas que no sean cédula.
     if (first === 'SINIESTROS' || firstUpper === 'SINIESTROS') {
       deny(
         'INVALID_SHAREPOINT_PATH',
-        'Alfa ya no escribe en la raíz global SINIESTROS/; use SEGUROS ALFA/PÓLIZAS/...'
+        'Alfa no escribe en la raíz global SINIESTROS/; use SEGUROS ALFA/SINIESTROS/{cedula}/...'
       );
     }
     if (
-      normalized.startsWith('SEGUROS ALFA/SINIESTROS/') ||
-      normalized === 'SEGUROS ALFA/SINIESTROS'
+      normalized === 'SEGUROS ALFA/SINIESTROS' ||
+      normalized.startsWith('SEGUROS ALFA/SINIESTROS/PENDIENTES')
     ) {
       deny(
         'INVALID_SHAREPOINT_PATH',
-        'Alfa ya no crea nuevos documentos en SEGUROS ALFA/SINIESTROS/**; use SEGUROS ALFA/PÓLIZAS/{ID} - {POLIZA}/...'
+        'Alfa no escribe en SEGUROS ALFA/SINIESTROS raíz ni PENDIENTES_*; solo {cedula}/subcarpeta'
       );
     }
-
-    if (!isAlfaSharePointPath(normalized)) {
+    const siniestrosCedula = isAlfaSiniestrosCedulaWritePath(normalized);
+    if (
+      !isAlfaSharePointPath(normalized) &&
+      !siniestrosCedula
+    ) {
       deny(
         'INVALID_SHAREPOINT_PATH',
-        `Alfa solo permite ${getAlfaSharePointAllowedPrefix()}/** (recibido: ${normalized})`
+        `Alfa solo permite ${getAlfaSharePointAllowedPrefix()}/** o ${ALFA_DOC_SINIESTROS_PREFIX}/{cedula}/** (recibido: ${normalized})`
       );
     }
 

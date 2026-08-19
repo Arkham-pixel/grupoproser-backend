@@ -38,7 +38,8 @@ dns.setServers(['8.8.8.8', '1.1.1.1']);
 const S3_KEY = 'test/sharepoint-sync/arnald-s3-test.txt';
 const S3_CONTENT = 'Prueba ARNALD S3 → Microsoft SharePoint\n';
 const PILOT_SINIESTRO = 'TEST-ARNALD-FASE6-001';
-const PILOT_FOLDER = `SEGUROS ALFA/SINIESTROS/${PILOT_SINIESTRO}`;
+const PILOT_CEDULA = '9999999999';
+const PILOT_FOLDER = `SEGUROS ALFA/SINIESTROS/${PILOT_CEDULA}`;
 
 const createdClaimIds = [];
 let pilotCasoId = null;
@@ -212,7 +213,7 @@ async function main() {
   });
   if (rB.document?._id) createdClaimIds.push(rB.document._id);
   line(`result=${rB.result}`);
-  if (rB.result !== 'ENQUEUED') fail('TEST B', new Error(rB.result));
+  if (rB.result !== 'PENDING_DESTINATION') fail('TEST B', new Error(rB.result));
   pass('TEST B');
 
   // ---------- C: caso inexistente (no enqueue) ----------
@@ -250,7 +251,7 @@ async function main() {
   });
   if (rD.document?._id) createdClaimIds.push(rD.document._id);
   line(`result=${rD.result} claimNumber=${rD.document?.claimNumber} source=${rD.document?.claimNumberSource}`);
-  if (rD.result !== 'ENQUEUED') fail('TEST D', new Error(rD.result));
+  if (rD.result !== 'PENDING_DESTINATION') fail('TEST D', new Error(rD.result));
   if (rD.document?.claimNumber !== consecD || rD.document?.claimNumberSource !== 'consecutivo') {
     fail('TEST D', new Error('claimNumber/source'));
   }
@@ -289,7 +290,7 @@ async function main() {
   const casoF = await SegurosAlfaCaso.create({
     consecutivo: `ALFA-FASE6-${Date.now()}`,
     siniestro: PILOT_SINIESTRO,
-    identificacion: 'FASE6-TEST',
+    identificacion: PILOT_CEDULA,
     asegurado: 'Asegurado Prueba FASE6',
     estado: 'PENDIENTE',
     numeroPoliza: 'POL-FASE6',
@@ -396,7 +397,7 @@ async function main() {
   }
   setEnv('SHAREPOINT_SYNC_ALFA_ENABLED', 'true');
   const okPath = assertAllowedSharePointPath({
-    path: `${PILOT_FOLDER}/02_POLIZA`,
+    path: `${PILOT_FOLDER}/POLIZA`,
     sourceModule: 'alfa',
     mode: 'pilot',
   });

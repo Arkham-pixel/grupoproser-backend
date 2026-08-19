@@ -215,10 +215,55 @@ export function mergeAlfaImportValue(incoming, existing, { field } = {}) {
   return existing ?? null;
 }
 
-export function valuesEqualForDiff(a, b) {
+const PERSON_NAME_FIELDS = new Set(['asegurado', 'tomador', 'ajustador']);
+const ADDRESS_FIELDS = new Set(['direccionPredio', 'ciudad', 'departamento']);
+
+/** Mayúsculas, tildes y puntuación (#, -, .) no cuentan como cambio real. */
+export function foldAlfaComparableText(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toUpperCase()
+    .replace(/[#º°]/g, ' ')
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function nameTokenSet(value) {
+  const folded = foldAlfaComparableText(value);
+  if (!folded) return new Set();
+  return new Set(folded.split(' ').filter(Boolean));
+}
+
+function setEquals(a, b) {
+  if (a.size !== b.size) return false;
+  for (const x of a) {
+    if (!b.has(x)) return false;
+  }
+  return true;
+}
+
+function setIsSubset(inner, outer) {
+  if (inner.size === 0) return false;
+  for (const x of inner) {
+    if (!outer.has(x)) return false;
+  }
+  return true;
+}
+
+/** Excel recortó el nombre (quitó un apellido) → no es un cambio real. */
+export function isIncomingPersonNameWeaker(incoming, existing) {
+  const inc = nameTokenSet(incoming);
+  const cur = nameTokenSet(existing);
+  if (inc.size === 0 || cur.size === 0) return false;
+  if (setEquals(inc, cur)) return false;
+  return setIsSubset(inc, cur) && inc.size < cur.size;
+}
+
+export function valuesEqualForDiff(a, b, field) {
   if (a instanceof Date) a = a.toISOString().slice(0, 10);
   if (b instanceof Date) b = b.toISOString().slice(0, 10);
-  // Fechas string normalizadas
   const da = typeof a === 'string' ? normalizeDate(a) : null;
   const db = typeof b === 'string' ? normalizeDate(b) : null;
   if (da && db && da === db) return true;
@@ -231,9 +276,77 @@ export function valuesEqualForDiff(a, b) {
     if (na != null && nb != null) return Number(na) === Number(nb);
     return Number(a) === Number(b);
   }
-  // Pólizas / ids: comparar normalizado
-  return String(a).trim().replace(/\s+/g, '') === String(b).trim().replace(/\s+/g, '') ||
-    String(a).trim() === String(b).trim();
+
+  const key = String(field || '');
+  if (key === 'correo') {
+    return String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+  }
+  if (PERSON_NAME_FIELDS.has(key)) {
+    return setEquals(nameTokenSet(a), nameTokenSet(b));
+  }
+  if (ADDRESS_FIELDS.has(key)) {
+    return foldAlfaComparableText(a) === foldAlfaComparableText(b);
+  }
+
+  return (
+    foldAlfaComparableText(a) === foldAlfaComparableText(b) ||
+    String(a).trim().replace(/\s+/g, '') === String(b).trim().replace(/\s+/g, '') ||
+    String(a).trim() === String(b).trim()
+  );
+}
+
+/**
+ * Mapeo al pulsar Actualizar (Excel ↔ ARNALD). Nunca borra un lado lleno con un vacío.
+ *
+ * - Excel vacío + ARNALD lleno → conservar ARNALD
+ * - Excel lleno + ARNALD vacío → tomar Excel
+ * - Ambos llenos, campo amarillo (ARNALD) → conservar ARNALD
+ * - Ambos llenos, campo verde (Alfa) → tomar Excel
+ */
+export function decideAlfaExcelMerge(incoming, existing, { field, arnaldOwned = false } = {}) {
+  const incomingOk = isMeaningfulExcelValue(incoming);
+  const existingOk = isMeaningfulExcelValue(existing);
+
+  if (!incomingOk && existingOk) {
+    return { value: existing, action: 'KEEP_ARNALD_EXCEL_EMPTY' };
+  }
+  if (incomingOk && !existingOk) {
+    return { value: incoming, action: 'FILL_FROM_EXCEL' };
+  }
+  if (!incomingOk && !existingOk) {
+    return { value: existing ?? incoming ?? null, action: 'BOTH_EMPTY' };
+  }
+
+  if (
+    field === 'numeroPoliza' &&
+    !isPolicyPlaceholder(existing) &&
+    isPolicyPlaceholder(incoming)
+  ) {
+    return { value: existing, action: 'INCOMING_PLACEHOLDER_IGNORED' };
+  }
+
+  if (arnaldOwned) {
+    if (valuesEqualForDiff(incoming, existing, field)) {
+      return { value: existing, action: 'UNCHANGED' };
+    }
+    return { value: existing, action: 'KEEP_ARNALD_OWNED' };
+  }
+
+  if (valuesEqualForDiff(incoming, existing, field)) {
+    return { value: existing, action: 'UNCHANGED' };
+  }
+  if (PERSON_NAME_FIELDS.has(String(field || '')) && isIncomingPersonNameWeaker(incoming, existing)) {
+    return { value: existing, action: 'KEEP_ARNALD_EXCEL_WEAKER_NAME' };
+  }
+  return { value: incoming, action: 'UPDATE_FROM_EXCEL' };
+}
+
+/** ARNALD vacío no debe borrar una celda Excel llena (columnas amarillas). */
+export function isAlfaOutboundEmptyValue(value) {
+  if (value === undefined || value === null || value === '') return true;
+  if (value instanceof Date) return Number.isNaN(value.getTime());
+  if (typeof value === 'number') return !Number.isFinite(value);
+  return String(value).trim() === '';
 }
 
 /** Póliza: si Excel entrega number, intentar conservar ceros no es posible;

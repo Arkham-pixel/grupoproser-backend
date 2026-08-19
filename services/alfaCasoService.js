@@ -6,11 +6,11 @@ import mongoose from 'mongoose';
 import SegurosAlfaCaso from '../models/SegurosAlfaCaso.js';
 import { PROTECTED_ALFA_FIELDS } from '../config/alfaExcelColumnMap.js';
 import {
-  mergeAlfaImportValue,
   valuesEqualForDiff,
   normalizeDate,
-  isPolicyPlaceholder,
+  decideAlfaExcelMerge,
 } from '../utils/alfaExcelNormalize.js';
+import { isArnaldOwnedField } from '../config/alfaExcelOwnershipMap.js';
 
 const COUNTER_ID = 'seguros_alfa_consecutivo';
 
@@ -170,25 +170,34 @@ export function computeAlfaImportDiff(incomingPayload = {}, existing = {}, updat
   for (const field of updatableFields) {
     const incoming = incomingPayload[field];
     const current = existing[field];
+    const decided = decideAlfaExcelMerge(incoming, current, {
+      field,
+      arnaldOwned: isArnaldOwnedField(field),
+    });
 
-    // Real → placeholder: no pisar
     if (
-      field === 'numeroPoliza' &&
-      !isPolicyPlaceholder(current) &&
-      isPolicyPlaceholder(incoming)
+      decided.action === 'KEEP_ARNALD_OWNED' ||
+      decided.action === 'INCOMING_PLACEHOLDER_IGNORED'
     ) {
-      if (!valuesEqualForDiff(incoming, current) && incoming != null && String(incoming).trim() !== '') {
-        ignored[field] = {
-          before: current ?? null,
-          afterExcel: incoming,
-          action: 'INCOMING_PLACEHOLDER_IGNORED',
-        };
-      }
+      ignored[field] = {
+        before: current ?? null,
+        afterExcel: incoming ?? null,
+        action: decided.action,
+      };
       continue;
     }
 
-    const merged = mergeAlfaImportValue(incoming, current, { field });
-    if (!valuesEqualForDiff(merged, current)) {
+    if (
+      decided.action === 'KEEP_ARNALD_EXCEL_EMPTY' ||
+      decided.action === 'BOTH_EMPTY' ||
+      decided.action === 'UNCHANGED' ||
+      decided.action === 'KEEP_ARNALD_EXCEL_WEAKER_NAME'
+    ) {
+      continue;
+    }
+
+    const merged = decided.value;
+    if (!valuesEqualForDiff(merged, current, field)) {
       changes[field] = {
         before: current ?? null,
         after: merged,

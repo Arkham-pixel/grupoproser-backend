@@ -263,33 +263,49 @@ export async function runAlfaExcelSharePointDetectCycle({ force = false } = {}) 
     source.lastDetectedAt = new Date();
     source.candidates = [];
 
-    // Anti-loop: versión escrita por ARNALD outbound (antes del skip genérico)
+    // Anti-loop: versión escrita por ARNALD outbound (antes del skip genérico).
+    // No borrar un preview pendiente (p. ej. 90 CREATED) solo porque outbound
+    // reescribió el mismo etag: el banner quedaría en "sin pendientes" con falso.
     if (
       !force &&
       source.lastArnaldWrittenEtag &&
       source.lastArnaldWrittenEtag === meta.eTag
     ) {
+      const keepPendingReview =
+        Boolean(source.lastPreviewImportId) &&
+        (source.status === 'updates_available' ||
+          source.status === 'requires_review' ||
+          source.hasChanges === true ||
+          source.hasIncidents === true);
+
       source.eTag = meta.eTag;
       source.lastDetectedEtag = meta.eTag;
-      source.lastPreviewedEtag = meta.eTag;
       source.lastOutcome = 'SKIP_ARNALD_GENERATED_VERSION';
-      source.hasChanges = false;
-      source.hasIncidents = false;
-      source.status = 'up_to_date';
       source.lastSuccessfulCheckAt = new Date();
       source.lastError = null;
-      if (source.notification) source.notification.pending = false;
+
+      if (!keepPendingReview) {
+        source.lastPreviewedEtag = meta.eTag;
+        source.hasChanges = false;
+        source.hasIncidents = false;
+        source.status = 'up_to_date';
+        if (source.notification) source.notification.pending = false;
+      }
+
       await source.save();
       logSp('SKIP_ARNALD_GENERATED_VERSION', {
         itemId: meta.id,
         eTag: meta.eTag,
         lastArnaldWrittenEtag: source.lastArnaldWrittenEtag,
+        keepPendingReview,
+        status: source.status,
         durationMs: Date.now() - started,
       });
       return {
         outcome: 'SKIP_ARNALD_GENERATED_VERSION',
         status: source.status,
-        hasChanges: false,
+        hasChanges: source.hasChanges,
+        hasIncidents: source.hasIncidents,
         summary: source.summary,
         importSessionId: source.lastPreviewImportId
           ? String(source.lastPreviewImportId)
@@ -310,7 +326,13 @@ export async function runAlfaExcelSharePointDetectCycle({ force = false } = {}) 
       source.lastOutcome = 'SKIP_ALREADY_PREVIEWED';
       source.lastSuccessfulCheckAt = new Date();
       source.lastError = null;
-      // Mantener status de negocio (up_to_date / updates_available / …)
+      // Mantener status de negocio (up_to_date / updates_available / …),
+      // pero salir de 'error' si Graph ya respondió bien (etag sin cambios).
+      if (source.status === 'error') {
+        if (source.hasIncidents) source.status = 'requires_review';
+        else if (source.hasChanges) source.status = 'updates_available';
+        else source.status = 'up_to_date';
+      }
       await source.save();
       logSp('ALFA_EXCEL_SP_ETAG_UNCHANGED', {
         itemId: meta.id,

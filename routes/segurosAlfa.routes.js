@@ -35,6 +35,7 @@ import { verificarToken } from '../middleware/auth.js';
 import { poblarUsuarioOpcional } from '../middleware/usuarioOpcional.js';
 import { verificarAdminSoporte } from '../middleware/verificarAdminSoporte.js';
 import { getAlfaExcelImportConfig } from '../config/alfaExcelImport.js';
+import { verificarLoginAlfaExcelActualizar } from '../config/alfaExcelActualizarPermitido.js';
 
 const router = express.Router();
 
@@ -73,6 +74,7 @@ router.post(
   '/import/preview',
   verificarToken,
   verificarAdminSoporte,
+  verificarLoginAlfaExcelActualizar,
   excelUpload.single('file'),
   previewImportExcelAlfa
 );
@@ -80,6 +82,7 @@ router.post(
   '/import/execute',
   verificarToken,
   verificarAdminSoporte,
+  verificarLoginAlfaExcelActualizar,
   executeImportExcelAlfa
 );
 router.get(
@@ -109,6 +112,7 @@ router.post(
   '/control-seguimiento/check',
   verificarToken,
   verificarAdminSoporte,
+  verificarLoginAlfaExcelActualizar,
   postControlSeguimientoAlfaCheck
 );
 router.post(

@@ -91,6 +91,24 @@ export const FDM_EXCEL_OUTBOUND_FIELDS = Object.freeze([
   'fechaGiro',
 ]);
 
+/** Columnas de identidad al crear una fila nueva desde ARNALD. */
+export const FDM_EXCEL_APPEND_FIELDS = Object.freeze([
+  'nombre',
+  'cedula',
+  'evento',
+  'fechaRegistro',
+  'fechaAviso',
+  'direccionAfectada',
+  'municipio',
+  'departamento',
+  'oficinaRadicadora',
+  'aif',
+  'polizaAfectar',
+  'cobertura',
+  'tipoNegocio',
+  ...FDM_EXCEL_OUTBOUND_FIELDS,
+]);
+
 /** Campos que el import Excel no debe pisar si ya hay valor en ARNALD. */
 export const FDM_EXCEL_PROTECTED_FROM_INBOUND = Object.freeze([
   'estado',
