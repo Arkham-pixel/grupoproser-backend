@@ -38,6 +38,8 @@ const ZurichCasoSchema = new mongoose.Schema(
     /** Código ZC del listado cliente (columna ZC). Clave de alta/importación. */
     zc: String,
     identificacion: { type: String, required: true },
+    /** CC, CE, NIT, PASAPORTE, PEP, RC, TI, OTRO */
+    tipoIdentificacion: String,
     /** Nombre del asegurado (columna ASEGURADO / NOMBRE del Excel) */
     asegurado: String,
     /** Contacto del intermediario (listado cliente) */
@@ -54,6 +56,9 @@ const ZurichCasoSchema = new mongoose.Schema(
     /** Inspector del caso */
     inspector: String,
     numeroPoliza: String,
+    tipoPoliza: String,
+    /** Causa del siniestro */
+    causa: String,
     direccionPredio: String,
     numeroCredito: String,
     informacionContacto: String,
