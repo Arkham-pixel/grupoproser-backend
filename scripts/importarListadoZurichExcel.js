@@ -68,6 +68,12 @@ const HEADER_MAP = {
   'CORREO INTERMEDIARIO': 'correoIntermediario',
   'TELEFONO INTERMEDIARIO': 'telefonoIntermediario',
   'CONTACTO ASEGURADO': 'contactoAsegurado',
+  'TELEFONO ASEGURADO': 'telefonoAsegurado',
+  'TEL ASEGURADO': 'telefonoAsegurado',
+  'CELULAR ASEGURADO': 'telefonoAsegurado',
+  'CORREO ASEGURADO': 'correoAsegurado',
+  'EMAIL ASEGURADO': 'correoAsegurado',
+  'MAIL ASEGURADO': 'correoAsegurado',
   CIUDAD: 'ciudad',
   'FECHA ASIGNACION': 'fechaAsignacion',
   'FECHA VISITA': 'fechaVisita',
@@ -104,6 +110,18 @@ const parsearExcel = (filePath) => {
       caso.correoIntermediario,
       caso.telefonoIntermediario,
     ]
+      .filter(Boolean)
+      .join(' | ');
+    const contactoAseguradoTexto = String(caso.contactoAsegurado || '').trim();
+    if (contactoAseguradoTexto && !caso.telefonoAsegurado && !caso.correoAsegurado) {
+      const email = contactoAseguradoTexto.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+      if (email) caso.correoAsegurado = email[0];
+      const resto = email
+        ? contactoAseguradoTexto.replace(email[0], ' ').replace(/[|,;]/g, ' ').trim()
+        : contactoAseguradoTexto;
+      if (resto.replace(/\D/g, '').length >= 7) caso.telefonoAsegurado = resto;
+    }
+    caso.contactoAsegurado = [caso.telefonoAsegurado, caso.correoAsegurado]
       .filter(Boolean)
       .join(' | ');
     caso.identificacion = caso.zc || caso.siniestro;
@@ -197,6 +215,8 @@ for (const fila of casosExcel) {
         incoming.contactoIntermediario,
         existente.contactoIntermediario
       ),
+      telefonoAsegurado: completar(incoming.telefonoAsegurado, existente.telefonoAsegurado),
+      correoAsegurado: completar(incoming.correoAsegurado, existente.correoAsegurado),
       contactoAsegurado: completar(incoming.contactoAsegurado, existente.contactoAsegurado),
       ciudad: completar(incoming.ciudad, existente.ciudad),
       inspector: completar(incoming.inspector, existente.inspector),
@@ -222,6 +242,8 @@ for (const fila of casosExcel) {
       correoIntermediario: incoming.correoIntermediario || null,
       telefonoIntermediario: incoming.telefonoIntermediario || null,
       contactoIntermediario: incoming.contactoIntermediario || null,
+      telefonoAsegurado: incoming.telefonoAsegurado || null,
+      correoAsegurado: incoming.correoAsegurado || null,
       contactoAsegurado: incoming.contactoAsegurado || null,
       ciudad: incoming.ciudad || null,
       inspector: incoming.inspector || null,
@@ -238,5 +260,43 @@ for (const fila of casosExcel) {
 }
 
 const total = await ZurichListadoCaso.countDocuments();
-console.log(JSON.stringify({ ...resumen, totalListado: total, mapeos: resumen.mapeos }, null, 2));
+const pendientes = await ZurichListadoCaso.find({}).lean();
+let migradosContactoAsegurado = 0;
+for (const doc of pendientes) {
+  let telefono = doc.telefonoAsegurado || null;
+  let correo = doc.correoAsegurado || null;
+  const texto = String(doc.contactoAsegurado || '').trim();
+  if ((!telefono || !correo) && texto) {
+    const email = texto.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    if (!correo && email) correo = email[0];
+    const resto = email
+      ? texto.replace(email[0], ' ').replace(/[|,;]/g, ' ').trim()
+      : texto;
+    if (!telefono && resto.replace(/\D/g, '').length >= 7) telefono = resto;
+  }
+  const legado = [telefono, correo].filter(Boolean).join(' | ') || null;
+  const mismoTel = String(telefono || '') === String(doc.telefonoAsegurado || '');
+  const mismoCorreo = String(correo || '') === String(doc.correoAsegurado || '');
+  const mismoLegado = String(legado || '') === String(doc.contactoAsegurado || '');
+  if (mismoTel && mismoCorreo && mismoLegado) continue;
+  await ZurichListadoCaso.updateOne(
+    { _id: doc._id },
+    {
+      $set: {
+        telefonoAsegurado: telefono,
+        correoAsegurado: correo,
+        contactoAsegurado: legado,
+      },
+    }
+  );
+  migradosContactoAsegurado += 1;
+}
+
+console.log(
+  JSON.stringify(
+    { ...resumen, totalListado: total, migradosContactoAsegurado, mapeos: resumen.mapeos },
+    null,
+    2
+  )
+);
 await mongoose.disconnect();

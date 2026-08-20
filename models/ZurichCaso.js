@@ -47,7 +47,9 @@ const ZurichCasoSchema = new mongoose.Schema(
     telefonoIntermediario: String,
     /** Contacto del intermediario (listado cliente, legado) */
     contactoIntermediario: String,
-    /** Contacto del asegurado (listado cliente) */
+    correoAsegurado: String,
+    telefonoAsegurado: String,
+    /** Contacto del asegurado (listado cliente, legado) */
     contactoAsegurado: String,
     /** Notas libres del listado cliente */
     observaciones: String,
@@ -60,6 +62,7 @@ const ZurichCasoSchema = new mongoose.Schema(
     inspector: String,
     numeroPoliza: String,
     tipoPoliza: String,
+    tipoPolizaOtro: String,
     /** Causa del siniestro */
     causa: String,
     direccionPredio: String,

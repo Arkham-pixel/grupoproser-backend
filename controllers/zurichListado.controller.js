@@ -49,6 +49,21 @@ const partirContactoIntermediario = (texto) => {
   return out;
 };
 
+const armarContactoAsegurado = (payload = {}) => {
+  const texto = String(payload.contactoAsegurado || '');
+  if (!payload.correoAsegurado || !payload.telefonoAsegurado) {
+    const email = texto.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    if (email && !payload.correoAsegurado) payload.correoAsegurado = email[0];
+    const resto = email ? texto.replace(email[0], ' ').replace(/[|,;]/g, ' ').trim() : texto;
+    if (!payload.telefonoAsegurado && resto.replace(/\D/g, '').length >= 7) {
+      payload.telefonoAsegurado = resto;
+    }
+  }
+  const armado = [payload.telefonoAsegurado, payload.correoAsegurado].filter(Boolean);
+  if (armado.length) payload.contactoAsegurado = armado.join(' | ');
+  return payload;
+};
+
 const armarContactoIntermediario = (payload = {}) => {
   const partido = partirContactoIntermediario(payload.contactoIntermediario);
   if (!payload.intermediario) payload.intermediario = partido.intermediario;
@@ -101,6 +116,12 @@ const completarIdentificacion = (payload = {}) => {
   return payload;
 };
 
+const pickObjeto = (incoming, existing) => {
+  if (incoming === undefined) return existing ?? null;
+  if (incoming && typeof incoming === 'object' && !Array.isArray(incoming)) return incoming;
+  return existing ?? null;
+};
+
 const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
   const pick = pisar ? toStr : completarCampo;
   const pickFecha = pisar ? parseFecha : completarFecha;
@@ -112,12 +133,15 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     tipoIdentificacion: pick(data.tipoIdentificacion, base.tipoIdentificacion ?? null),
     numeroPoliza: pick(data.numeroPoliza, base.numeroPoliza ?? null),
     tipoPoliza: pick(data.tipoPoliza, base.tipoPoliza ?? null),
+    tipoPolizaOtro: pick(data.tipoPolizaOtro, base.tipoPolizaOtro ?? null),
     causa: pick(data.causa, base.causa ?? null),
     asegurado: pick(data.asegurado, base.asegurado ?? null),
     intermediario: pick(data.intermediario, base.intermediario ?? null),
     correoIntermediario: pick(data.correoIntermediario, base.correoIntermediario ?? null),
     telefonoIntermediario: pick(data.telefonoIntermediario, base.telefonoIntermediario ?? null),
     contactoIntermediario: pick(data.contactoIntermediario, base.contactoIntermediario ?? null),
+    correoAsegurado: pick(data.correoAsegurado, base.correoAsegurado ?? null),
+    telefonoAsegurado: pick(data.telefonoAsegurado, base.telefonoAsegurado ?? null),
     contactoAsegurado: pick(data.contactoAsegurado, base.contactoAsegurado ?? null),
     observaciones: pick(data.observaciones, base.observaciones ?? null),
     ciudad: pick(data.ciudad, base.ciudad ?? null),
@@ -128,8 +152,10 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     fechaAsignacion: pickFecha(data.fechaAsignacion, base.fechaAsignacion ?? null),
     fechaVisita: pickFecha(data.fechaVisita, base.fechaVisita ?? null),
     estado: pick(data.estado, base.estado ?? 'PENDIENTE') || 'PENDIENTE',
+    liquidador: pickObjeto(data.liquidador, base.liquidador ?? null),
+    informeUnico: pickObjeto(data.informeUnico, base.informeUnico ?? null),
   });
-  return armarContactoIntermediario(payload);
+  return armarContactoAsegurado(armarContactoIntermediario(payload));
 };
 
 const obtenerMaxSecuencial = async () => {
