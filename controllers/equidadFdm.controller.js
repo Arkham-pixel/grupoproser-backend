@@ -11,6 +11,7 @@ import {
   getEquidadFdmExcelImportSession,
 } from '../services/equidadFdmExcelSharePointService.js';
 import { enqueueEquidadFdmExcelOutboundFromCaseUpdate } from '../services/equidadFdmExcelOutboundService.js';
+import { normalizarMunicipioFdm } from '../utils/fdmExcelParse.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -129,7 +130,7 @@ const buildFdmPayload = (data = {}, base = {}) => ({
   celular: toStringOrNull(data.celular, base.celular ?? null),
   correo: toStringOrNull(data.correo, base.correo ?? null),
   direccionAfectada: toStringOrNull(data.direccionAfectada, base.direccionAfectada ?? null),
-  municipio: toStringOrNull(data.municipio, base.municipio ?? null),
+  municipio: normalizarMunicipioFdm(toStringOrNull(data.municipio, base.municipio ?? null)),
   departamento: toStringOrNull(data.departamento, base.departamento ?? null),
   oficinaRadicadora: toStringOrNull(data.oficinaRadicadora, base.oficinaRadicadora ?? null),
   fechaRegistro: parseDateFlexible(data.fechaRegistro, base.fechaRegistro ?? null),

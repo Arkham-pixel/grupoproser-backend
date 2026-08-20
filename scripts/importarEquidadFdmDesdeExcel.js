@@ -38,12 +38,14 @@ function parseArgs() {
   const dryRun = args.includes('--dry-run');
   const replace = args.includes('--replace');
   const fileIdx = args.indexOf('--file');
-  const file = fileIdx >= 0 && args[fileIdx + 1] ? path.resolve(process.cwd(), args[fileIdx + 1]) : null;
-  return { dryRun, replace, file };
+  const sheetIdx = args.indexOf('--sheet');
+  const file = fileIdx >= 0 && args[fileIdx + 1] ? path.resolve(args[fileIdx + 1]) : null;
+  const sheet = sheetIdx >= 0 && args[sheetIdx + 1] ? String(args[sheetIdx + 1]) : '';
+  return { dryRun, replace, file, sheet };
 }
 
 async function main() {
-  const { dryRun, replace, file } = parseArgs();
+  const { dryRun, replace, file, sheet } = parseArgs();
 
   if (replace) {
     console.error('❌ --replace está deshabilitado. La importación es incremental y no borra casos existentes.');
@@ -55,8 +57,12 @@ async function main() {
   }
 
   console.log('📂 Archivo:', file);
-  const { casos, hoja } = parsearCasosFdmDesdeArchivo(file, path.basename(file));
+  if (sheet) console.log('📄 Hoja solicitada:', sheet);
+  const { casos, hoja, encabezados } = parsearCasosFdmDesdeArchivo(file, path.basename(file), {
+    preferredSheet: sheet,
+  });
   console.log('📄 Hoja usada:', hoja);
+  console.log('📑 Encabezados mapeados:', encabezados.join(', '));
 
   const porEstado = casos.reduce((acc, d) => {
     acc[d.estado] = (acc[d.estado] || 0) + 1;

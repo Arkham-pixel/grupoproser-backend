@@ -61,6 +61,7 @@ const HEADER_MAP = {
   CONTENIDO: 'valorContenido',
   'VALOR CONTENIDO': 'valorContenido',
   'VALORES QUE SE PUEDE INDEMNIZAR': 'valoresIndemnizables',
+  VALORESQUESEPUEDEINDEMNIZAR: 'valoresIndemnizables',
   'VALORES INDEMNIZABLES': 'valoresIndemnizables',
   'SUBSIDIO EMPRESARIAL': 'subsidioEmpresarial',
   COBERTURA: 'cobertura',
@@ -300,6 +301,27 @@ export const inferirEventoFdm = ({ cobertura, archivoNombre, hoja, fechaRegistro
   return null;
 };
 
+/** Unifica municipios equivalentes (Santiago de Cali = Cali). */
+export const normalizarMunicipioFdm = (valor) => {
+  const texto = limpiarTextoMayusculas(valor);
+  if (!texto) return null;
+  const clave = texto
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (
+    clave === 'SANTIAGO DE CALI' ||
+    clave === 'CALI VALLE' ||
+    clave === 'CALI VALLE DEL CAUCA' ||
+    /^SANTIAGO DE CALI\b/.test(clave)
+  ) {
+    return 'CALI';
+  }
+  return texto;
+};
+
 const FLAGS_SUBSIDIO = new Set(['SI', 'NO', 'APLICA', 'NO APLICA']);
 
 const partirSubsidioEmpresarial = (value) => {
@@ -412,11 +434,39 @@ const mapRow = (row, indice, meta) => {
     }
   }
 
+  if (doc.municipio) doc.municipio = normalizarMunicipioFdm(doc.municipio);
+
   // No forzar PENDIENTE aquí: en updates el Excel vacío pisaba ARNALD.
   return doc;
 };
 
-const elegirHojaCasos = (wb) => {
+const elegirHojaCasos = (wb, preferredSheet = '') => {
+  const wanted = String(preferredSheet || '').trim().toLowerCase();
+  if (wanted) {
+    const exact = wb.SheetNames.find((n) => String(n).toLowerCase() === wanted);
+    if (exact) return exact;
+    const partial = wb.SheetNames.find((n) => String(n).toLowerCase().includes(wanted));
+    if (partial) return partial;
+    throw new Error(
+      `No se encontró la hoja «${preferredSheet}». Hojas: ${wb.SheetNames.join(', ')}`
+    );
+  }
+  // Preferir hoja FDM / Avisados-FDM antes que Autos/Vida.
+  const preferFdm = wb.SheetNames.find((name) => /avisados[-_\s]?fdm|fdm/i.test(name));
+  if (preferFdm) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[preferFdm], {
+      header: 1,
+      defval: null,
+      range: 0,
+    });
+    const headerIdx = rows.findIndex(
+      (r) =>
+        Array.isArray(r) &&
+        r.some((c) => esEncabezadoNombre(c)) &&
+        r.some((c) => esEncabezadoCedula(c))
+    );
+    if (headerIdx >= 0) return preferFdm;
+  }
   const conEncabezados = wb.SheetNames.find((name) => {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: null, range: 0 });
     const headerIdx = rows.findIndex(
@@ -430,11 +480,10 @@ const elegirHojaCasos = (wb) => {
   return conEncabezados || wb.SheetNames[0];
 };
 
-export const parsearCasosFdmDesdeArchivo = (filePath, archivoNombre = '') => {
-  const wb = XLSX.readFile(filePath, { cellDates: true });
+const parsearCasosDesdeWorkbook = (wb, { archivoNombre = '', preferredSheet = '' } = {}) => {
   if (!wb.SheetNames.length) throw new Error('El Excel no tiene hojas.');
 
-  const hoja = elegirHojaCasos(wb);
+  const hoja = elegirHojaCasos(wb, preferredSheet);
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[hoja], {
     header: 1,
     defval: null,
@@ -449,38 +498,7 @@ export const parsearCasosFdmDesdeArchivo = (filePath, archivoNombre = '') => {
   }
 
   const indice = mapearEncabezados(rows[headerIdx]);
-  const meta = { archivoNombre: archivoNombre || filePath, hoja };
-  const casos = [];
-  for (const row of rows.slice(headerIdx + 1)) {
-    if (!Array.isArray(row)) continue;
-    const doc = mapRow(row, indice, meta);
-    if (doc) casos.push(doc);
-  }
-
-  return { casos, hoja, encabezados: Object.keys(indice) };
-};
-
-/** Parsea un buffer .xlsx (p. ej. descargado de SharePoint). */
-export const parsearCasosFdmDesdeBuffer = (buffer, archivoNombre = '') => {
-  const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
-  if (!wb.SheetNames.length) throw new Error('El Excel no tiene hojas.');
-
-  const hoja = elegirHojaCasos(wb);
-  const rows = XLSX.utils.sheet_to_json(wb.Sheets[hoja], {
-    header: 1,
-    defval: null,
-    raw: true,
-  });
-
-  const headerIdx = rows.findIndex(
-    (r) => Array.isArray(r) && r.some((c) => esEncabezadoNombre(c))
-  );
-  if (headerIdx < 0) {
-    throw new Error('No se encontró la fila de encabezados (columna NOMBRE / NOMBRE CLIENTE).');
-  }
-
-  const indice = mapearEncabezados(rows[headerIdx]);
-  const meta = { archivoNombre: archivoNombre || 'sharepoint.xlsx', hoja };
+  const meta = { archivoNombre, hoja };
   const casos = [];
   for (const row of rows.slice(headerIdx + 1)) {
     if (!Array.isArray(row)) continue;
@@ -496,4 +514,29 @@ export const parsearCasosFdmDesdeBuffer = (buffer, archivoNombre = '') => {
     headerCells: rows[headerIdx],
     workbook: wb,
   };
+};
+
+export const parsearCasosFdmDesdeArchivo = (
+  filePath,
+  archivoNombre = '',
+  { preferredSheet = '' } = {}
+) => {
+  const wb = XLSX.readFile(filePath, { cellDates: true });
+  return parsearCasosDesdeWorkbook(wb, {
+    archivoNombre: archivoNombre || filePath,
+    preferredSheet,
+  });
+};
+
+/** Parsea un buffer .xlsx (p. ej. descargado de SharePoint). */
+export const parsearCasosFdmDesdeBuffer = (
+  buffer,
+  archivoNombre = '',
+  { preferredSheet = '' } = {}
+) => {
+  const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+  return parsearCasosDesdeWorkbook(wb, {
+    archivoNombre: archivoNombre || 'sharepoint.xlsx',
+    preferredSheet,
+  });
 };
