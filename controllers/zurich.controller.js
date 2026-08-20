@@ -317,6 +317,9 @@ const buildZurichPayload = (data = {}, base = {}) => {
   identificacion: toStringOrNull(data.identificacion, base.identificacion ?? null),
   tipoIdentificacion: toStringOrNull(data.tipoIdentificacion, base.tipoIdentificacion ?? null),
   asegurado: toStringOrNull(data.asegurado, base.asegurado ?? null),
+  intermediario: toStringOrNull(data.intermediario, base.intermediario ?? null),
+  correoIntermediario: toStringOrNull(data.correoIntermediario, base.correoIntermediario ?? null),
+  telefonoIntermediario: toStringOrNull(data.telefonoIntermediario, base.telefonoIntermediario ?? null),
   contactoIntermediario: toStringOrNull(
     data.contactoIntermediario,
     base.contactoIntermediario ?? null
@@ -519,6 +522,9 @@ const mergeImportacionZurich = (incomingPayload = {}, existente = {}) => {
     'identificacion',
     'tipoIdentificacion',
     'asegurado',
+    'intermediario',
+    'correoIntermediario',
+    'telefonoIntermediario',
     'contactoIntermediario',
     'contactoAsegurado',
     'observaciones',

@@ -42,7 +42,10 @@ const ZurichCasoSchema = new mongoose.Schema(
     tipoIdentificacion: String,
     /** Nombre del asegurado (columna ASEGURADO / NOMBRE del Excel) */
     asegurado: String,
-    /** Contacto del intermediario (listado cliente) */
+    intermediario: String,
+    correoIntermediario: String,
+    telefonoIntermediario: String,
+    /** Contacto del intermediario (listado cliente, legado) */
     contactoIntermediario: String,
     /** Contacto del asegurado (listado cliente) */
     contactoAsegurado: String,

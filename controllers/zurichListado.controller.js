@@ -1,11 +1,89 @@
 import ZurichListadoCaso from '../models/ZurichListadoCaso.js';
+import InspectorCatastrofico from '../models/InspectorCatastrofico.js';
+import AjustadorCatastrofico from '../models/AjustadorCatastrofico.js';
+import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatastrofico.js';
 
 const esVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null';
 
+const esPlaceholder = (valor) => {
+  if (esVacio(valor)) return true;
+  const t = String(valor)
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, ' ');
+  return !t || /^(N\/?A|NA|NULL|-|0|POR CONFIRMAR|SIN DATO)$/.test(t);
+};
+
 const toStr = (valor, fallback = null) => {
   if (esVacio(valor)) return fallback ?? null;
   return String(valor).replace(/\t/g, ' ').replace(/\s+/g, ' ').trim() || fallback || null;
+};
+
+/** Incoming útil completa huecos; no pisa un dato ya guardado. */
+const completarCampo = (incoming, existing) => {
+  const a = toStr(incoming, null);
+  const b = toStr(existing, null);
+  if (b && !esPlaceholder(b)) return b;
+  if (a && !esPlaceholder(a)) return a;
+  return b || a || null;
+};
+
+const partirContactoIntermediario = (texto) => {
+  const out = { intermediario: null, correoIntermediario: null, telefonoIntermediario: null };
+  const partes = String(texto || '')
+    .split('|')
+    .map((p) => p.replace(/\t/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  for (const parte of partes) {
+    if (parte.includes('@')) {
+      if (!out.correoIntermediario) out.correoIntermediario = parte;
+    } else if ((parte.replace(/\D/g, '').length >= 7)) {
+      if (!out.telefonoIntermediario) out.telefonoIntermediario = parte;
+    } else if (!out.intermediario) {
+      out.intermediario = parte;
+    }
+  }
+  return out;
+};
+
+const armarContactoIntermediario = (payload = {}) => {
+  const partido = partirContactoIntermediario(payload.contactoIntermediario);
+  if (!payload.intermediario) payload.intermediario = partido.intermediario;
+  if (!payload.correoIntermediario) payload.correoIntermediario = partido.correoIntermediario;
+  if (!payload.telefonoIntermediario) payload.telefonoIntermediario = partido.telefonoIntermediario;
+  const partes = [
+    payload.intermediario,
+    payload.correoIntermediario,
+    payload.telefonoIntermediario,
+  ].filter(Boolean);
+  if (partes.length) payload.contactoIntermediario = partes.join(' | ');
+  return payload;
+};
+
+const parseFecha = (valor, fallback = null) => {
+  if (valor === undefined) return fallback ?? null;
+  if (esPlaceholder(valor) || esVacio(valor)) return fallback ?? null;
+  if (valor instanceof Date && !Number.isNaN(valor.getTime())) return valor;
+  const texto = String(valor).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(texto)) {
+    const d = new Date(`${texto.slice(0, 10)}T12:00:00.000Z`);
+    return Number.isNaN(d.getTime()) ? fallback ?? null : d;
+  }
+  const n = Number(valor);
+  if (Number.isFinite(n) && n > 20000) {
+    const utc = Date.UTC(1899, 11, 30) + Math.round(n * 86400000);
+    return new Date(utc);
+  }
+  const d = new Date(texto);
+  return Number.isNaN(d.getTime()) ? fallback ?? null : d;
+};
+
+const completarFecha = (incoming, existing) => {
+  if (existing instanceof Date && !Number.isNaN(existing.getTime())) return existing;
+  return parseFecha(incoming, existing ?? null);
 };
 
 const normClave = (valor) =>
@@ -23,27 +101,36 @@ const completarIdentificacion = (payload = {}) => {
   return payload;
 };
 
-const buildPayload = (data = {}, base = {}) =>
-  completarIdentificacion({
+const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
+  const pick = pisar ? toStr : completarCampo;
+  const pickFecha = pisar ? parseFecha : completarFecha;
+  const payload = completarIdentificacion({
     consecutivo: base.consecutivo ?? null,
-    zc: toStr(data.zc, base.zc ?? null),
-    siniestro: toStr(data.siniestro, base.siniestro ?? null),
-    identificacion: toStr(data.identificacion, base.identificacion ?? null),
-    tipoIdentificacion: toStr(data.tipoIdentificacion, base.tipoIdentificacion ?? null),
-    numeroPoliza: toStr(data.numeroPoliza, base.numeroPoliza ?? null),
-    tipoPoliza: toStr(data.tipoPoliza, base.tipoPoliza ?? null),
-    causa: toStr(data.causa, base.causa ?? null),
-    asegurado: toStr(data.asegurado, base.asegurado ?? null),
-    contactoIntermediario: toStr(data.contactoIntermediario, base.contactoIntermediario ?? null),
-    contactoAsegurado: toStr(data.contactoAsegurado, base.contactoAsegurado ?? null),
-    observaciones: toStr(data.observaciones, base.observaciones ?? null),
-    ciudad: toStr(data.ciudad, base.ciudad ?? null),
-    departamento: toStr(data.departamento, base.departamento ?? null),
-    ajustadorLider: toStr(data.ajustadorLider, base.ajustadorLider ?? null),
-    ajustador: toStr(data.ajustador, base.ajustador ?? null),
-    inspector: toStr(data.inspector, base.inspector ?? null),
-    estado: toStr(data.estado, base.estado ?? 'PENDIENTE') || 'PENDIENTE',
+    zc: pick(data.zc, base.zc ?? null),
+    siniestro: pick(data.siniestro, base.siniestro ?? null),
+    identificacion: pick(data.identificacion, base.identificacion ?? null),
+    tipoIdentificacion: pick(data.tipoIdentificacion, base.tipoIdentificacion ?? null),
+    numeroPoliza: pick(data.numeroPoliza, base.numeroPoliza ?? null),
+    tipoPoliza: pick(data.tipoPoliza, base.tipoPoliza ?? null),
+    causa: pick(data.causa, base.causa ?? null),
+    asegurado: pick(data.asegurado, base.asegurado ?? null),
+    intermediario: pick(data.intermediario, base.intermediario ?? null),
+    correoIntermediario: pick(data.correoIntermediario, base.correoIntermediario ?? null),
+    telefonoIntermediario: pick(data.telefonoIntermediario, base.telefonoIntermediario ?? null),
+    contactoIntermediario: pick(data.contactoIntermediario, base.contactoIntermediario ?? null),
+    contactoAsegurado: pick(data.contactoAsegurado, base.contactoAsegurado ?? null),
+    observaciones: pick(data.observaciones, base.observaciones ?? null),
+    ciudad: pick(data.ciudad, base.ciudad ?? null),
+    departamento: pick(data.departamento, base.departamento ?? null),
+    ajustadorLider: pick(data.ajustadorLider, base.ajustadorLider ?? null),
+    ajustador: pick(data.ajustador, base.ajustador ?? null),
+    inspector: pick(data.inspector, base.inspector ?? null),
+    fechaAsignacion: pickFecha(data.fechaAsignacion, base.fechaAsignacion ?? null),
+    fechaVisita: pickFecha(data.fechaVisita, base.fechaVisita ?? null),
+    estado: pick(data.estado, base.estado ?? 'PENDIENTE') || 'PENDIENTE',
   });
+  return armarContactoIntermediario(payload);
+};
 
 const obtenerMaxSecuencial = async () => {
   const patron = /^ZURICH-LST-(\d{4})-(\d{2})-(\d+)$/i;
@@ -73,7 +160,7 @@ const generarConsecutivo = async () => {
 
 export const crearCasoListadoZurich = async (req, res) => {
   try {
-    const payload = buildPayload(req.body);
+    const payload = buildPayload(req.body, {}, { pisar: true });
     if (!payload.zc && !payload.siniestro) {
       return res.status(400).json({
         success: false,
@@ -144,7 +231,7 @@ export const actualizarCasoListadoZurich = async (req, res) => {
     if (!actual) {
       return res.status(404).json({ success: false, error: 'Caso del listado no encontrado' });
     }
-    const payload = buildPayload(req.body, actual.toObject());
+    const payload = buildPayload(req.body, actual.toObject(), { pisar: true });
     if (!payload.consecutivo) payload.consecutivo = actual.consecutivo || (await generarConsecutivo());
     const actualizado = await ZurichListadoCaso.findByIdAndUpdate(
       actual._id,
@@ -201,6 +288,10 @@ export const importarCasosListadoZurich = async (req, res) => {
     }
 
     const existentes = await ZurichListadoCaso.find().lean();
+    const [inspectores, ajustadores] = await Promise.all([
+      InspectorCatastrofico.find({}).lean(),
+      AjustadorCatastrofico.find({}).lean(),
+    ]);
     const indice = new Map();
     for (const doc of existentes) {
       const zc = normClave(doc.zc);
@@ -223,7 +314,18 @@ export const importarCasosListadoZurich = async (req, res) => {
     for (let i = 0; i < filas.length; i += 1) {
       const filaNum = i + 1;
       try {
-        const payload = buildPayload({ ...filas[i], estado: filas[i]?.estado || 'PENDIENTE' });
+        const asignacion = resolverAsignacionCatastrofico({
+          inspectorExcel: filas[i]?.inspector,
+          ajustadorExcel: filas[i]?.ajustador,
+          inspectores,
+          ajustadores,
+        });
+        const payload = buildPayload({
+          ...filas[i],
+          inspector: asignacion.inspector,
+          ajustador: asignacion.ajustador,
+          estado: filas[i]?.estado || 'PENDIENTE',
+        });
         if (!payload.zc && !payload.siniestro && !payload.asegurado) {
           resumen.omitidos += 1;
           resumen.errores.push({ fila: filaNum, motivo: 'Falta ZC, STRO o asegurado' });

@@ -16,6 +16,11 @@ const ZurichListadoCasoSchema = new mongoose.Schema(
     tipoPoliza: String,
     causa: String,
     asegurado: String,
+    /** Nombre del intermediario (columna INTERMEDIARIO) */
+    intermediario: String,
+    correoIntermediario: String,
+    telefonoIntermediario: String,
+    /** Texto legado: nombre | correo | teléfono */
     contactoIntermediario: String,
     contactoAsegurado: String,
     observaciones: String,
@@ -24,6 +29,8 @@ const ZurichListadoCasoSchema = new mongoose.Schema(
     ajustadorLider: String,
     ajustador: String,
     inspector: String,
+    fechaAsignacion: Date,
+    fechaVisita: Date,
     estado: { type: String, required: true, default: 'PENDIENTE' },
   },
   {
