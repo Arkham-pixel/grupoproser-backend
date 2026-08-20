@@ -37,6 +37,7 @@ export const STORAGE_CATEGORIES = Object.freeze({
   SEGUROS_ALFA: 'seguros-alfa',
   SEGUROS_SURA: 'sura',
   ZURICH: 'zurich',
+  ZURICH_LISTADO: 'zurich-listado',
   EQUIDAD_FDM: 'equidad-fdm',
   GENERAL: 'general',
 });
@@ -96,6 +97,9 @@ export function buildStoredPublicPath({ driver, category, filename, s3Key }) {
   }
   if (category === STORAGE_CATEGORIES.ZURICH) {
     return `/uploads/zurich/${filename}`;
+  }
+  if (category === STORAGE_CATEGORIES.ZURICH_LISTADO) {
+    return `/uploads/zurich-listado/${filename}`;
   }
   if (category === STORAGE_CATEGORIES.EQUIDAD_FDM) {
     return `/uploads/equidad-fdm/${filename}`;
@@ -417,6 +421,7 @@ export function getLocalMulterDestination(category, subfolder) {
     [STORAGE_CATEGORIES.SEGUROS_ALFA]: path.join(UPLOADS_ROOT, 'seguros-alfa'),
     [STORAGE_CATEGORIES.SEGUROS_SURA]: path.join(UPLOADS_ROOT, 'sura'),
     [STORAGE_CATEGORIES.ZURICH]: path.join(UPLOADS_ROOT, 'zurich'),
+    [STORAGE_CATEGORIES.ZURICH_LISTADO]: path.join(UPLOADS_ROOT, 'zurich-listado'),
     [STORAGE_CATEGORIES.EQUIDAD_FDM]: path.join(UPLOADS_ROOT, 'equidad-fdm'),
   };
   return map[category] || UPLOADS_ROOT;
