@@ -4,6 +4,7 @@ import AjustadorCatastrofico from '../models/AjustadorCatastrofico.js';
 import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatastrofico.js';
 import { preservarPresupuestoNsrSiVacio } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoPrevisora, homologarEstadoPrevisora } from '../utils/estadosPrevisora.js';
+import { crearControladoresArchivosListado } from '../utils/archivosCasoListado.js';
 
 const esVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null';
@@ -226,10 +227,10 @@ const generarConsecutivo = async () => {
 export const crearCasoListadoPrevisora = async (req, res) => {
   try {
     const payload = buildPayload(req.body, {}, { pisar: true });
-    if (!payload.zc && !payload.siniestro) {
+    if (!payload.siniestro) {
       return res.status(400).json({
         success: false,
-        error: 'Indique ZC o STRO (siniestro)',
+        error: 'Indique el siniestro',
       });
     }
     payload.consecutivo = await generarConsecutivo();
@@ -333,7 +334,7 @@ export const eliminarCasoListadoPrevisora = async (req, res) => {
 };
 
 /**
- * Importación del listado cliente. Empareja SOLO por ZC.
+ * Importación del listado cliente. Empareja por siniestro.
  * No toca gsk3cAppprevisoraCasos (inspección CAT).
  */
 export const importarCasosListadoPrevisora = async (req, res) => {
@@ -359,8 +360,8 @@ export const importarCasosListadoPrevisora = async (req, res) => {
     ]);
     const indice = new Map();
     for (const doc of existentes) {
-      const zc = normClave(doc.zc);
-      if (zc && !indice.has(zc)) indice.set(zc, doc);
+      const siniestro = normClave(doc.siniestro);
+      if (siniestro && !indice.has(siniestro)) indice.set(siniestro, doc);
     }
 
     const ahora = new Date();
@@ -391,12 +392,12 @@ export const importarCasosListadoPrevisora = async (req, res) => {
           ajustador: asignacion.ajustador,
           estado: homologarEstadoPrevisora(filas[i]?.estado),
         });
-        if (!payload.zc && !payload.siniestro && !payload.asegurado) {
+        if (!payload.siniestro && !payload.asegurado) {
           resumen.omitidos += 1;
-          resumen.errores.push({ fila: filaNum, motivo: 'Falta ZC, STRO o asegurado' });
+          resumen.errores.push({ fila: filaNum, motivo: 'Falta siniestro o asegurado' });
           continue;
         }
-        const clave = normClave(payload.zc);
+        const clave = normClave(payload.siniestro);
         const existente = clave ? indice.get(clave) : null;
         if (existente) {
           const merge = buildPayload(payload, existente);
@@ -436,3 +437,13 @@ export const importarCasosListadoPrevisora = async (req, res) => {
     });
   }
 };
+
+const archivosListadoPrevisora = crearControladoresArchivosListado({
+  Model: PrevisoraListadoCaso,
+  nombreModulo: 'Previsora',
+  rutaLocalPrefix: '/uploads/previsora/',
+});
+
+export const subirArchivoListadoPrevisora = archivosListadoPrevisora.subir;
+export const eliminarArchivoListadoPrevisora = archivosListadoPrevisora.eliminar;
+

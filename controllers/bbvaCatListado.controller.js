@@ -4,6 +4,7 @@ import AjustadorCatastrofico from '../models/AjustadorCatastrofico.js';
 import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatastrofico.js';
 import { preservarPresupuestoNsrSiVacio } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoBbvaCat, homologarEstadoBbvaCat } from '../utils/estadosBbvaCat.js';
+import { crearControladoresArchivosListado } from '../utils/archivosCasoListado.js';
 
 const esVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null';
@@ -436,3 +437,13 @@ export const importarCasosListadoBbvaCat = async (req, res) => {
     });
   }
 };
+
+const archivosListadoBbvaCat = crearControladoresArchivosListado({
+  Model: BbvaCatListadoCaso,
+  nombreModulo: 'BBVA CAT',
+  rutaLocalPrefix: '/uploads/bbva-cat/',
+});
+
+export const subirArchivoListadoBbvaCat = archivosListadoBbvaCat.subir;
+export const eliminarArchivoListadoBbvaCat = archivosListadoBbvaCat.eliminar;
+

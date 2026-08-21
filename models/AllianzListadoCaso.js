@@ -1,5 +1,25 @@
 import mongoose from 'mongoose';
 
+const ArchivoAllianzListadoSchema = new mongoose.Schema(
+  {
+    nombreOriginal: { type: String, required: true },
+    nombreArchivo: String,
+    ruta: { type: String, required: true },
+    tamaño: Number,
+    tipoMime: String,
+    etiqueta: { type: String, default: 'GENERAL' },
+    descripcion: { type: String, default: '' },
+    orden: { type: Number, default: 0 },
+    subidoPor: {
+      id: String,
+      login: String,
+      nombre: String,
+    },
+    fechaSubida: { type: Date, default: Date.now },
+  },
+  { _id: true }
+);
+
 /**
  * Casos del listado cliente Allianz (ZC / STRO).
  * Colección independiente de gsk3cAppallianzCasos (inspección CAT).
@@ -38,6 +58,7 @@ const AllianzListadoCasoSchema = new mongoose.Schema(
     estado: { type: String, required: true, default: 'PENDIENTE' },
     liquidador: { type: mongoose.Schema.Types.Mixed, default: null },
     informeUnico: { type: mongoose.Schema.Types.Mixed, default: null },
+    archivos: { type: [ArchivoAllianzListadoSchema], default: [] },
   },
   {
     collection: 'gsk3cAppallianzListadoCasos',

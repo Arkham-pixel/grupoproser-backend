@@ -236,8 +236,9 @@ export async function enqueueAlfaClaimDocumentAfterUpload({
         key: s3Key,
       },
       sharepoint: {
-        enabled: true,
-        syncStatus: pendingDestination ? 'pending' : 'pending',
+        // Revisión manual: no sube a SharePoint hasta que el usuario pulse «Subir»
+        enabled: false,
+        syncStatus: 'disabled',
         attempts: 0,
       },
       destinationStatus,
@@ -290,7 +291,7 @@ export async function enqueueAlfaClaimDocumentAfterUpload({
           ? 'ALFA_SHAREPOINT_ENQUEUED_PAUSED'
           : pendingDestination
             ? 'ALFA_SHAREPOINT_ENQUEUED_PENDING_DESTINATION'
-            : 'ALFA_SHAREPOINT_ENQUEUED',
+            : 'ALFA_SHAREPOINT_ENQUEUED_AWAITING_REVIEW',
         claimId: String(caso._id),
         documentId: String(doc._id),
         claimNumber,
@@ -302,6 +303,7 @@ export async function enqueueAlfaClaimDocumentAfterUpload({
         s3Key,
         syncPaused,
         alfaEnabled: cfg.alfaEnabled,
+        sharepointEnabled: false,
       })
     );
 
@@ -311,7 +313,7 @@ export async function enqueueAlfaClaimDocumentAfterUpload({
         ? 'ENQUEUED_PAUSED'
         : pendingDestination
           ? 'PENDING_DESTINATION'
-          : 'ENQUEUED',
+          : 'AWAITING_REVIEW',
       document: doc,
     };
   } catch (error) {
@@ -418,12 +420,13 @@ export async function enqueueAlfaClaimDocumentAfterReplace({
       : undefined;
     claim.alfaIdentificacion = identificacion || claim.alfaIdentificacion;
     claim.sharepoint = claim.sharepoint || {};
-    claim.sharepoint.enabled = claim.sharepoint.enabled !== false;
-    claim.sharepoint.syncStatus = 'pending';
+    // Tras sobrescribir: vuelve a revisión; no re-sube solo a SharePoint
+    claim.sharepoint.enabled = false;
+    claim.sharepoint.syncStatus = 'disabled';
     claim.sharepoint.attempts = 0;
-    claim.sharepoint.nextRetryAt = new Date();
+    claim.sharepoint.nextRetryAt = undefined;
     claim.sharepoint.lastError = undefined;
-    // Forzar re-subida con conflict=replace sobre el mismo nombre estable
+    // Nueva versión: limpia metadatos SP para forzar replace al pulsar «Subir»
     claim.sharepoint.itemId = undefined;
     claim.sharepoint.path = undefined;
     claim.sharepoint.webUrl = undefined;
@@ -454,9 +457,7 @@ export async function enqueueAlfaClaimDocumentAfterReplace({
 
     console.log(
       JSON.stringify({
-        event: cfg.alfaEnabled
-          ? 'ALFA_SHAREPOINT_REENQUEUED_REPLACE'
-          : 'ALFA_SHAREPOINT_REENQUEUED_REPLACE_PAUSED',
+        event: 'ALFA_SHAREPOINT_REPLACED_AWAITING_REVIEW',
         claimId: String(caso._id),
         documentId: String(claim._id),
         documentType: mapped.documentType,
@@ -466,7 +467,7 @@ export async function enqueueAlfaClaimDocumentAfterReplace({
       })
     );
 
-    return { ok: true, result: 'REPLACED_REENQUEUED', document: claim };
+    return { ok: true, result: 'REPLACED_AWAITING_REVIEW', document: claim };
   } catch (error) {
     logEnqueueFailed({
       claimId: caso?._id,
