@@ -1186,13 +1186,13 @@ export const enviarEmailAlertasBbvaCat = async (datosAlertas) => {
   }
 };
 
-/** Alertas Allias: reutiliza el layout de Alfa con panel Allias. */
-export const enviarEmailAlertasAllias = async (datosAlertas) => {
+/** Alertas Allianz: reutiliza el layout de Alfa con panel Allianz. */
+export const enviarEmailAlertasAllianz = async (datosAlertas) => {
   const adaptado = {
     ...datosAlertas,
   };
   try {
-    console.log('📧 Iniciando envío de email de alertas Allias...');
+    console.log('📧 Iniciando envío de email de alertas Allianz...');
     if (!adaptado.emailResponsable) {
       return {
         success: false,
@@ -1201,13 +1201,13 @@ export const enviarEmailAlertasAllias = async (datosAlertas) => {
     }
     return await enviarEmailAlertasAlfa({
       ...adaptado,
-      modulo: 'Allias',
-      aseguradora: adaptado.aseguradora || 'Allias',
-      enlacePanelOverride: `${resolveFrontendUrl()}/allias/reporte`,
+      modulo: 'Allianz',
+      aseguradora: adaptado.aseguradora || 'Allianz',
+      enlacePanelOverride: `${resolveFrontendUrl()}/allianz/reporte`,
     });
   } catch (error) {
-    console.error('❌ Error enviando email de alertas Allias:', error);
-    throw new Error(`Error enviando email de alertas Allias: ${error.message}`);
+    console.error('❌ Error enviando email de alertas Allianz:', error);
+    throw new Error(`Error enviando email de alertas Allianz: ${error.message}`);
   }
 };
 

@@ -1,12 +1,12 @@
 import mongoose from 'mongoose';
 
 /**
- * Casos del listado cliente Allias (ZC / STRO).
- * Colección independiente de gsk3cAppalliasCasos (inspección CAT).
+ * Casos del listado cliente Allianz (ZC / STRO).
+ * Colección independiente de gsk3cAppallianzCasos (inspección CAT).
  */
-const AlliasListadoCasoSchema = new mongoose.Schema(
+const AllianzListadoCasoSchema = new mongoose.Schema(
   {
-    /** Formato ALLIAS-LST-YYYY-MM-N */
+    /** Formato ALLIANZ-LST-YYYY-MM-N */
     consecutivo: String,
     zc: { type: String, index: true },
     siniestro: String,
@@ -40,17 +40,17 @@ const AlliasListadoCasoSchema = new mongoose.Schema(
     informeUnico: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   {
-    collection: 'gsk3cAppalliasListadoCasos',
+    collection: 'gsk3cAppallianzListadoCasos',
     timestamps: true,
   }
 );
 
-AlliasListadoCasoSchema.index({ zc: 1 }, { unique: false, sparse: true });
+AllianzListadoCasoSchema.index({ zc: 1 }, { unique: false, sparse: true });
 
-const AlliasListadoCaso = mongoose.model(
-  'AlliasListadoCaso',
-  AlliasListadoCasoSchema,
-  'gsk3cAppalliasListadoCasos'
+const AllianzListadoCaso = mongoose.model(
+  'AllianzListadoCaso',
+  AllianzListadoCasoSchema,
+  'gsk3cAppallianzListadoCasos'
 );
 
-export default AlliasListadoCaso;
+export default AllianzListadoCaso;

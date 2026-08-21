@@ -83,6 +83,24 @@ mongoose
   .then(() => {
     console.log("✅ Conectado a MongoDB");
     console.log("Usando MONGO_URI:", MONGO_URI);
+    (async () => {
+      try {
+        const db = mongoose.connection.db;
+        const existentes = new Set((await db.listCollections().toArray()).map((c) => c.name));
+        const pares = [
+          ['gsk3cAppalliasCasos', 'gsk3cAppallianzCasos'],
+          ['gsk3cAppalliasListadoCasos', 'gsk3cAppallianzListadoCasos'],
+        ];
+        for (const [origen, destino] of pares) {
+          if (existentes.has(origen) && !existentes.has(destino)) {
+            await db.collection(origen).rename(destino);
+            console.log(`📦 Colección ${origen} → ${destino}`);
+          }
+        }
+      } catch (error) {
+        console.warn('No se pudieron renombrar colecciones Allias → Allianz:', error.message);
+      }
+    })();
     
     // Iniciar los servicios de cron después de conectar a MongoDB
     try {

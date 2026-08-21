@@ -39,7 +39,7 @@ export const STORAGE_CATEGORIES = Object.freeze({
   ZURICH: 'zurich',
   ZURICH_LISTADO: 'zurich-listado',
   BBVA_CAT: 'bbva-cat',
-  ALLIAS: 'allias',
+  ALLIANZ: 'allianz',
   PREVISORA: 'previsora',
   EQUIDAD_FDM: 'equidad-fdm',
   GENERAL: 'general',
@@ -107,8 +107,8 @@ export function buildStoredPublicPath({ driver, category, filename, s3Key }) {
   if (category === STORAGE_CATEGORIES.BBVA_CAT) {
     return `/uploads/bbva-cat/${filename}`;
   }
-  if (category === STORAGE_CATEGORIES.ALLIAS) {
-    return `/uploads/allias/${filename}`;
+  if (category === STORAGE_CATEGORIES.ALLIANZ) {
+    return `/uploads/allianz/${filename}`;
   }
   if (category === STORAGE_CATEGORIES.PREVISORA) {
     return `/uploads/previsora/${filename}`;
@@ -435,7 +435,7 @@ export function getLocalMulterDestination(category, subfolder) {
     [STORAGE_CATEGORIES.ZURICH]: path.join(UPLOADS_ROOT, 'zurich'),
     [STORAGE_CATEGORIES.ZURICH_LISTADO]: path.join(UPLOADS_ROOT, 'zurich-listado'),
     [STORAGE_CATEGORIES.BBVA_CAT]: path.join(UPLOADS_ROOT, 'bbva-cat'),
-    [STORAGE_CATEGORIES.ALLIAS]: path.join(UPLOADS_ROOT, 'allias'),
+    [STORAGE_CATEGORIES.ALLIANZ]: path.join(UPLOADS_ROOT, 'allianz'),
     [STORAGE_CATEGORIES.PREVISORA]: path.join(UPLOADS_ROOT, 'previsora'),
     [STORAGE_CATEGORIES.EQUIDAD_FDM]: path.join(UPLOADS_ROOT, 'equidad-fdm'),
   };

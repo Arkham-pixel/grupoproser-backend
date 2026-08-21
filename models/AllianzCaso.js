@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-const ArchivoAlliasSchema = new mongoose.Schema(
+const ArchivoAllianzSchema = new mongoose.Schema(
   {
     nombreOriginal: { type: String, required: true },
     nombreArchivo: String,
@@ -24,12 +24,12 @@ const ArchivoAlliasSchema = new mongoose.Schema(
 );
 
 /**
- * Casos Allias (módulo catastrófico estilo Alfa).
+ * Casos Allianz (módulo catastrófico estilo Alfa).
  * Puede alimentarse desde Excel o sincronizarse desde Express (SiniestroExpress).
  */
-const AlliasCasoSchema = new mongoose.Schema(
+const AllianzCasoSchema = new mongoose.Schema(
   {
-    /** Formato ALLIAS-YYYY-MM-N (asignado al crear; no editable) */
+    /** Formato ALLIANZ-YYYY-MM-N (asignado al crear; no editable) */
     consecutivo: String,
     /** Vínculo opcional al caso Express origen */
     expressCasoId: { type: mongoose.Schema.Types.ObjectId, default: null },
@@ -71,7 +71,7 @@ const AlliasCasoSchema = new mongoose.Schema(
     correo: String,
     /** Celular del asegurado o de quien lo asiste (cierre del siniestro) */
     celular: String,
-    /** Canal de radicación (Allias, presencial, etc.) */
+    /** Canal de radicación (Allianz, presencial, etc.) */
     canalRadicacion: String,
     ciudad: String,
     departamento: String,
@@ -94,7 +94,7 @@ const AlliasCasoSchema = new mongoose.Schema(
     fechaAceptacionLiquidacion: Date,
     fechaEnvioAseguradora: Date,
     estado: { type: String, required: true },
-    /** Campos operativos CAT Allias (hoja CAT_ALLIAS / exposición) */
+    /** Campos operativos CAT Allianz (hoja CAT_ALLIANZ / exposición) */
     riskId: { type: String, default: null },
     distanciaEpicentroKm: { type: Number, default: null },
     tipoNegocioHomologado: { type: String, default: null },
@@ -107,7 +107,7 @@ const AlliasCasoSchema = new mongoose.Schema(
     gradoAfectacion: { type: String, default: null },
     lucroCesante: { type: String, default: null },
     /**
-     * Severidad CAT Allias (Manual CAT Ajustadores): 1–6 para reporte de exposición.
+     * Severidad CAT Allianz (Manual CAT Ajustadores): 1–6 para reporte de exposición.
      * Valor derivado (máximo nivel con APLICA=SI). Distinta de la escala NSR-10 (1–4).
      */
     severidadCat: { type: Number, min: 1, max: 6, default: null },
@@ -150,24 +150,24 @@ const AlliasCasoSchema = new mongoose.Schema(
      * Se recalcula al guardar el caso.
      */
     checklistCatCompleto: { type: Boolean, default: false, index: true },
-    /** Estado del liquidador Allias */
+    /** Estado del liquidador Allianz */
     liquidador: { type: mongoose.Schema.Types.Mixed, default: null },
     /** Borrador del informe único embebido (legado / respaldo) */
     informeUnico: { type: mongoose.Schema.Types.Mixed, default: null },
     /** Id del historial formType=catastrofico (informe Complex) */
     historialCatastroficoId: { type: String, default: null },
-    archivos: { type: [ArchivoAlliasSchema], default: [] },
+    archivos: { type: [ArchivoAllianzSchema], default: [] },
   },
   {
-    collection: 'gsk3cAppalliasCasos',
+    collection: 'gsk3cAppallianzCasos',
     timestamps: true,
   }
 );
 
-const AlliasCaso = mongoose.model(
-  'AlliasCaso',
-  AlliasCasoSchema,
-  'gsk3cAppalliasCasos'
+const AllianzCaso = mongoose.model(
+  'AllianzCaso',
+  AllianzCasoSchema,
+  'gsk3cAppallianzCasos'
 );
 
-export default AlliasCaso;
+export default AllianzCaso;

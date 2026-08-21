@@ -1,4 +1,4 @@
-import AlliasListadoCaso from '../models/AlliasListadoCaso.js';
+import AllianzListadoCaso from '../models/AllianzListadoCaso.js';
 import InspectorCatastrofico from '../models/InspectorCatastrofico.js';
 import AjustadorCatastrofico from '../models/AjustadorCatastrofico.js';
 import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatastrofico.js';
@@ -163,8 +163,8 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
 };
 
 const obtenerMaxSecuencial = async () => {
-  const patron = /^ALLIAS-LST-(\d{4})-(\d{2})-(\d+)$/i;
-  const registros = await AlliasListadoCaso.find({
+  const patron = /^(ALLIANZ|ALLIAS)-LST-(\d{4})-(\d{2})-(\d+)$/i;
+  const registros = await AllianzListadoCaso.find({
     consecutivo: { $exists: true, $nin: [null, ''] },
   })
     .select('consecutivo')
@@ -172,8 +172,8 @@ const obtenerMaxSecuencial = async () => {
   let max = 0;
   for (const reg of registros) {
     const match = String(reg.consecutivo || '').trim().match(patron);
-    if (match?.[3]) {
-      const n = parseInt(match[3], 10);
+    if (match?.[4]) {
+      const n = parseInt(match[4], 10);
       if (!Number.isNaN(n) && n > max) max = n;
     }
   }
@@ -185,10 +185,10 @@ const generarConsecutivo = async () => {
   const año = ahora.getFullYear();
   const mes = String(ahora.getMonth() + 1).padStart(2, '0');
   const max = await obtenerMaxSecuencial();
-  return `ALLIAS-LST-${año}-${mes}-${max + 1}`;
+  return `ALLIANZ-LST-${año}-${mes}-${max + 1}`;
 };
 
-export const crearCasoListadoAllias = async (req, res) => {
+export const crearCasoListadoAllianz = async (req, res) => {
   try {
     const payload = buildPayload(req.body, {}, { pisar: true });
     if (!payload.zc && !payload.siniestro) {
@@ -198,25 +198,25 @@ export const crearCasoListadoAllias = async (req, res) => {
       });
     }
     payload.consecutivo = await generarConsecutivo();
-    const documento = await AlliasListadoCaso.create(payload);
+    const documento = await AllianzListadoCaso.create(payload);
     res.status(201).json({ success: true, data: documento });
   } catch (error) {
-    console.error('❌ Error al crear caso listado Allias:', error);
+    console.error('❌ Error al crear caso listado Allianz:', error);
     res.status(500).json({
       success: false,
-      error: 'Error al guardar el caso del listado Allias',
+      error: 'Error al guardar el caso del listado Allianz',
       detalle: error.message,
     });
   }
 };
 
-export const listarCasosListadoAllias = async (req, res) => {
+export const listarCasosListadoAllianz = async (req, res) => {
   try {
     const { limit = 25, page = 1 } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
     const [total, documentos] = await Promise.all([
-      AlliasListadoCaso.countDocuments({}),
-      AlliasListadoCaso.find({})
+      AllianzListadoCaso.countDocuments({}),
+      AllianzListadoCaso.find({})
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number(limit)),
@@ -229,69 +229,69 @@ export const listarCasosListadoAllias = async (req, res) => {
       data: documentos,
     });
   } catch (error) {
-    console.error('❌ Error al listar listado Allias:', error);
+    console.error('❌ Error al listar listado Allianz:', error);
     res.status(500).json({
       success: false,
-      error: 'Error al obtener los casos del listado Allias',
+      error: 'Error al obtener los casos del listado Allianz',
       detalle: error.message,
     });
   }
 };
 
-export const obtenerCasoListadoAllias = async (req, res) => {
+export const obtenerCasoListadoAllianz = async (req, res) => {
   try {
-    const documento = await AlliasListadoCaso.findById(req.params.id);
+    const documento = await AllianzListadoCaso.findById(req.params.id);
     if (!documento) {
       return res.status(404).json({ success: false, error: 'Caso del listado no encontrado' });
     }
     res.json({ success: true, data: documento });
   } catch (error) {
-    console.error('❌ Error al obtener listado Allias:', error);
+    console.error('❌ Error al obtener listado Allianz:', error);
     res.status(500).json({
       success: false,
-      error: 'Error al obtener el caso del listado Allias',
+      error: 'Error al obtener el caso del listado Allianz',
       detalle: error.message,
     });
   }
 };
 
-export const actualizarCasoListadoAllias = async (req, res) => {
+export const actualizarCasoListadoAllianz = async (req, res) => {
   try {
-    const actual = await AlliasListadoCaso.findById(req.params.id);
+    const actual = await AllianzListadoCaso.findById(req.params.id);
     if (!actual) {
       return res.status(404).json({ success: false, error: 'Caso del listado no encontrado' });
     }
     const payload = buildPayload(req.body, actual.toObject(), { pisar: true });
     if (!payload.consecutivo) payload.consecutivo = actual.consecutivo || (await generarConsecutivo());
-    const actualizado = await AlliasListadoCaso.findByIdAndUpdate(
+    const actualizado = await AllianzListadoCaso.findByIdAndUpdate(
       actual._id,
       { $set: payload },
       { new: true, runValidators: false }
     );
     res.json({ success: true, data: actualizado });
   } catch (error) {
-    console.error('❌ Error al actualizar listado Allias:', error);
+    console.error('❌ Error al actualizar listado Allianz:', error);
     res.status(500).json({
       success: false,
-      error: 'Error al actualizar el caso del listado Allias',
+      error: 'Error al actualizar el caso del listado Allianz',
       detalle: error.message,
     });
   }
 };
 
-export const eliminarCasoListadoAllias = async (req, res) => {
+export const eliminarCasoListadoAllianz = async (req, res) => {
   try {
-    const registro = await AlliasListadoCaso.findById(req.params.id);
+    const registro = await AllianzListadoCaso.findById(req.params.id);
     if (!registro) {
       return res.status(404).json({ success: false, error: 'Caso del listado no encontrado' });
     }
-    await AlliasListadoCaso.deleteOne({ _id: registro._id });
+    await AllianzListadoCaso.deleteOne({ _id: registro._id });
     res.json({ success: true, message: 'Caso del listado eliminado correctamente' });
   } catch (error) {
-    console.error('❌ Error al eliminar listado Allias:', error);
+    console.error('❌ Error al eliminar listado Allianz:', error);
     res.status(500).json({
       success: false,
-      error: 'Error al eliminar el caso del listado Allias',
+      error: 'Error al eliminar el caso del listado Allianz',
       detalle: error.message,
     });
   }
@@ -299,9 +299,9 @@ export const eliminarCasoListadoAllias = async (req, res) => {
 
 /**
  * Importación del listado cliente. Empareja SOLO por ZC.
- * No toca gsk3cAppalliasCasos (inspección CAT).
+ * No toca gsk3cAppallianzCasos (inspección CAT).
  */
-export const importarCasosListadoAllias = async (req, res) => {
+export const importarCasosListadoAllianz = async (req, res) => {
   try {
     const filas = Array.isArray(req.body?.casos) ? req.body.casos : null;
     if (!filas || filas.length === 0) {
@@ -317,7 +317,7 @@ export const importarCasosListadoAllias = async (req, res) => {
       });
     }
 
-    const existentes = await AlliasListadoCaso.find().lean();
+    const existentes = await AllianzListadoCaso.find().lean();
     const [inspectores, ajustadores] = await Promise.all([
       InspectorCatastrofico.find({}).lean(),
       AjustadorCatastrofico.find({}).lean(),
@@ -367,17 +367,17 @@ export const importarCasosListadoAllias = async (req, res) => {
           const merge = buildPayload(payload, existente);
           if (!merge.consecutivo) {
             secuencial += 1;
-            merge.consecutivo = `ALLIAS-LST-${año}-${mes}-${secuencial}`;
+            merge.consecutivo = `ALLIANZ-LST-${año}-${mes}-${secuencial}`;
           }
-          const actualizado = await AlliasListadoCaso.findByIdAndUpdate(existente._id, merge, {
+          const actualizado = await AllianzListadoCaso.findByIdAndUpdate(existente._id, merge, {
             new: true,
           }).lean();
           resumen.actualizados += 1;
           if (clave) indice.set(clave, actualizado);
         } else {
           secuencial += 1;
-          payload.consecutivo = `ALLIAS-LST-${año}-${mes}-${secuencial}`;
-          const creado = await AlliasListadoCaso.create(payload);
+          payload.consecutivo = `ALLIANZ-LST-${año}-${mes}-${secuencial}`;
+          const creado = await AllianzListadoCaso.create(payload);
           const lean = creado.toObject();
           resumen.creados += 1;
           if (clave) indice.set(clave, lean);
@@ -393,10 +393,10 @@ export const importarCasosListadoAllias = async (req, res) => {
 
     res.json({ success: true, data: resumen });
   } catch (error) {
-    console.error('❌ Error al importar listado Allias:', error);
+    console.error('❌ Error al importar listado Allianz:', error);
     res.status(500).json({
       success: false,
-      error: 'Error al importar el listado Allias',
+      error: 'Error al importar el listado Allianz',
       detalle: error.message,
     });
   }

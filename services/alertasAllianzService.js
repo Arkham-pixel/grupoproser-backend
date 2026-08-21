@@ -1,19 +1,19 @@
-﻿import AlliasCaso from '../models/AlliasCaso.js';
+﻿import AllianzCaso from '../models/AllianzCaso.js';
 import Responsable from '../models/Responsable.js';
 import { DIAS_ENTRE_RECORDATORIOS_EMAIL } from './alertasService.js';
-import { enviarEmailAlertasAllias } from './emailService.js';
+import { enviarEmailAlertasAllianz } from './emailService.js';
 import { withRecipientLocale } from '../utils/resolveUserLocale.js';
 import {
   getResponsableResolverIndex,
   resolverResponsableConIndice,
 } from './responsableResolverService.js';
 
-export const DIAS_RECORDATORIO_INACTIVIDAD_ALLIAS = 30;
+export const DIAS_RECORDATORIO_INACTIVIDAD_ALLIANZ = 30;
 
 /** Estados que cierran el caso para alertas (sin recordatorio). */
-const ESTADOS_CERRADOS_ALLIAS = ['CERRADO'];
+const ESTADOS_CERRADOS_ALLIANZ = ['CERRADO'];
 
-function normalizarEstadoAllias(valor) {
+function normalizarEstadoAllianz(valor) {
   return String(valor ?? '')
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
@@ -22,12 +22,12 @@ function normalizarEstadoAllias(valor) {
     .replace(/\s+/g, ' ');
 }
 
-function esEstadoAlliasCerrado(valorEstado) {
-  const estado = normalizarEstadoAllias(valorEstado);
-  return ESTADOS_CERRADOS_ALLIAS.includes(estado);
+function esEstadoAllianzCerrado(valorEstado) {
+  const estado = normalizarEstadoAllianz(valorEstado);
+  return ESTADOS_CERRADOS_ALLIANZ.includes(estado);
 }
 
-function parseFechaAllias(valor) {
+function parseFechaAllianz(valor) {
   if (!valor) return null;
   const d = new Date(valor);
   return Number.isNaN(d.getTime()) ? null : d;
@@ -42,46 +42,46 @@ function diasCalendarioEntreFechas(desde, hasta = new Date()) {
 }
 
 /** Base de inactividad: fechaUltimoDocumento → updatedAt → createdAt. */
-export function fechaBaseInactividadAllias(caso) {
+export function fechaBaseInactividadAllianz(caso) {
   return (
-    parseFechaAllias(caso?.fechaUltimoDocumento) ||
-    parseFechaAllias(caso?.updatedAt) ||
-    parseFechaAllias(caso?.createdAt)
+    parseFechaAllianz(caso?.fechaUltimoDocumento) ||
+    parseFechaAllianz(caso?.updatedAt) ||
+    parseFechaAllianz(caso?.createdAt)
   );
 }
 
-export function evaluarAlertaInactividadAllias(caso, ahora = new Date()) {
-  if (!caso || esEstadoAlliasCerrado(caso.estado)) return null;
+export function evaluarAlertaInactividadAllianz(caso, ahora = new Date()) {
+  if (!caso || esEstadoAllianzCerrado(caso.estado)) return null;
 
-  const base = fechaBaseInactividadAllias(caso);
+  const base = fechaBaseInactividadAllianz(caso);
   if (!base) return null;
 
   const dias = diasCalendarioEntreFechas(base, ahora);
-  if (dias == null || dias < DIAS_RECORDATORIO_INACTIVIDAD_ALLIAS) return null;
+  if (dias == null || dias < DIAS_RECORDATORIO_INACTIVIDAD_ALLIANZ) return null;
 
-  const retraso = dias - DIAS_RECORDATORIO_INACTIVIDAD_ALLIAS;
-  const origen = parseFechaAllias(caso.fechaUltimoDocumento)
+  const retraso = dias - DIAS_RECORDATORIO_INACTIVIDAD_ALLIANZ;
+  const origen = parseFechaAllianz(caso.fechaUltimoDocumento)
     ? 'último documento'
     : 'última actualización del caso';
 
   return {
-    etapaId: 'recordatorioInactividadAllias',
+    etapaId: 'recordatorioInactividadAllianz',
     nombre: 'Recordatorio inactividad / documentos',
     fase: 0,
-    prioridad: dias >= DIAS_RECORDATORIO_INACTIVIDAD_ALLIAS * 2 ? 'ALTA' : 'MEDIA',
+    prioridad: dias >= DIAS_RECORDATORIO_INACTIVIDAD_ALLIANZ * 2 ? 'ALTA' : 'MEDIA',
     mensaje: `Han pasado ${dias} días desde el ${origen} sin movimiento. Revisar documentación y estado del caso.`,
     transcurrido: dias,
-    limite: DIAS_RECORDATORIO_INACTIVIDAD_ALLIAS,
+    limite: DIAS_RECORDATORIO_INACTIVIDAD_ALLIANZ,
     retraso: Math.max(0, retraso),
-    horasLimite: DIAS_RECORDATORIO_INACTIVIDAD_ALLIAS * 24,
+    horasLimite: DIAS_RECORDATORIO_INACTIVIDAD_ALLIANZ * 24,
     horasTranscurridas: dias * 24,
-    etiquetaLimite: `${DIAS_RECORDATORIO_INACTIVIDAD_ALLIAS} días calendario`,
-    tipo: 'RECORDATORIO_INACTIVIDAD_Allias',
+    etiquetaLimite: `${DIAS_RECORDATORIO_INACTIVIDAD_ALLIANZ} días calendario`,
+    tipo: 'RECORDATORIO_INACTIVIDAD_Allianz',
     accion: 'Revisar el caso, subir documentos pendientes y actualizar el estado',
   };
 }
 
-function mapearArchivosCasoAllias(caso) {
+function mapearArchivosCasoAllianz(caso) {
   return (caso?.archivos || [])
     .filter((a) => a?.ruta)
     .map((a) => ({
@@ -94,9 +94,9 @@ function mapearArchivosCasoAllias(caso) {
     }));
 }
 
-export function generarAlertasCasoAllias(caso, ahora = new Date()) {
-  if (!caso || esEstadoAlliasCerrado(caso.estado)) return [];
-  const alerta = evaluarAlertaInactividadAllias(caso, ahora);
+export function generarAlertasCasoAllianz(caso, ahora = new Date()) {
+  if (!caso || esEstadoAllianzCerrado(caso.estado)) return [];
+  const alerta = evaluarAlertaInactividadAllianz(caso, ahora);
   if (!alerta) return [];
   return [
     {
@@ -104,21 +104,21 @@ export function generarAlertasCasoAllias(caso, ahora = new Date()) {
       casoId: caso._id,
       consecutivo: caso.consecutivo,
       numeroSiniestro: caso.siniestro,
-      aseguradora: 'Allias',
+      aseguradora: 'Allianz',
       asegurado: caso.tomador,
       responsable: caso.ajustador,
       estado: caso.estado,
-      modulo: 'Allias',
+      modulo: 'Allianz',
     },
   ];
 }
 
-function casoAlliasAFormatoEmail(caso) {
+function casoAllianzAFormatoEmail(caso) {
   return {
     numeroAjuste: caso.consecutivo || caso.numeroSiniestro || String(caso.casoId || ''),
     consecutivo: caso.consecutivo,
     numeroSiniestro: caso.numeroSiniestro || caso.siniestro,
-    aseguradora: caso.aseguradora || 'Allias',
+    aseguradora: caso.aseguradora || 'Allianz',
     asegurado: caso.asegurado || caso.tomador,
     estado: caso.estado,
     totalAlertas: caso.totalAlertas,
@@ -130,9 +130,9 @@ function casoAlliasAFormatoEmail(caso) {
   };
 }
 
-export async function obtenerTodasAlertasAllias() {
-  const casos = await AlliasCaso.find({
-    estado: { $nin: ESTADOS_CERRADOS_ALLIAS },
+export async function obtenerTodasAlertasAllianz() {
+  const casos = await AllianzCaso.find({
+    estado: { $nin: ESTADOS_CERRADOS_ALLIANZ },
   })
     .lean()
     .exec();
@@ -144,7 +144,7 @@ export async function obtenerTodasAlertasAllias() {
   const ahora = new Date();
 
   for (const caso of casos) {
-    const alertas = generarAlertasCasoAllias(caso, ahora);
+    const alertas = generarAlertasCasoAllianz(caso, ahora);
     if (!alertas.length) continue;
     totalAlertas += alertas.length;
     for (const a of alertas) {
@@ -152,7 +152,7 @@ export async function obtenerTodasAlertasAllias() {
       else media += 1;
     }
 
-    const base = fechaBaseInactividadAllias(caso);
+    const base = fechaBaseInactividadAllianz(caso);
     const dias = base ? diasCalendarioEntreFechas(base, ahora) : null;
 
     porCaso.push({
@@ -160,7 +160,7 @@ export async function obtenerTodasAlertasAllias() {
       consecutivo: caso.consecutivo,
       numeroSiniestro: caso.siniestro,
       siniestro: caso.siniestro,
-      aseguradora: 'Allias',
+      aseguradora: 'Allianz',
       asegurado: caso.tomador,
       tomador: caso.tomador,
       responsable: caso.ajustador,
@@ -168,15 +168,15 @@ export async function obtenerTodasAlertasAllias() {
       estado: caso.estado,
       totalAlertas: alertas.length,
       alertas,
-      archivos: mapearArchivosCasoAllias(caso),
+      archivos: mapearArchivosCasoAllianz(caso),
       inactividad:
         dias != null
           ? {
-              actividad: parseFechaAllias(caso.fechaUltimoDocumento)
+              actividad: parseFechaAllianz(caso.fechaUltimoDocumento)
                 ? 'Último documento'
                 : 'Última actualización',
               dias,
-              estado: dias >= DIAS_RECORDATORIO_INACTIVIDAD_ALLIAS * 2 ? 'CRÍTICO' : 'ALTO',
+              estado: dias >= DIAS_RECORDATORIO_INACTIVIDAD_ALLIANZ * 2 ? 'CRÍTICO' : 'ALTO',
             }
           : null,
     });
@@ -197,8 +197,8 @@ export async function obtenerTodasAlertasAllias() {
   };
 }
 
-export async function obtenerAlertasAlliasPorAjustadores() {
-  const todas = await obtenerTodasAlertasAllias();
+export async function obtenerAlertasAllianzPorAjustadores() {
+  const todas = await obtenerTodasAlertasAllianz();
   const index = await getResponsableResolverIndex();
   const porCodigo = new Map();
 
@@ -220,7 +220,7 @@ export async function obtenerAlertasAlliasPorAjustadores() {
       });
     }
     const bucket = porCodigo.get(codigo);
-    bucket.casos.push(casoAlliasAFormatoEmail(caso));
+    bucket.casos.push(casoAllianzAFormatoEmail(caso));
     bucket.totalAlertas += caso.totalAlertas || 0;
     bucket.casosCriticos += (caso.alertas || []).filter((a) => a.prioridad === 'ALTA').length;
     for (const archivo of caso.archivos || []) {
@@ -245,8 +245,8 @@ export async function obtenerAlertasAlliasPorAjustadores() {
   };
 }
 
-export async function obtenerAlertasAjustadorAllias(codigoAjustador) {
-  const agrupadas = await obtenerAlertasAlliasPorAjustadores();
+export async function obtenerAlertasAjustadorAllianz(codigoAjustador) {
+  const agrupadas = await obtenerAlertasAllianzPorAjustadores();
   const codigo = String(codigoAjustador || '').trim();
   const found = agrupadas.ajustadores.find(
     (r) => String(r.codigoResponsable) === codigo || String(r.codigoAjustador) === codigo
@@ -278,22 +278,22 @@ export async function obtenerAlertasAjustadorAllias(codigoAjustador) {
   };
 }
 
-export function debeEnviarRecordatorioEmailAllias(responsable, ahora = new Date()) {
-  const ultima = responsable?.fchaUltimoRecordatorioAlertasAllias;
+export function debeEnviarRecordatorioEmailAllianz(responsable, ahora = new Date()) {
+  const ultima = responsable?.fchaUltimoRecordatorioAlertasAllianz;
   if (!ultima) return true;
   const dias = diasCalendarioEntreFechas(ultima, ahora);
   if (dias == null) return true;
   return dias >= DIAS_ENTRE_RECORDATORIOS_EMAIL;
 }
 
-export async function enviarAlertasAlliasAjustador(codigoAjustador, opciones = {}) {
+export async function enviarAlertasAllianzAjustador(codigoAjustador, opciones = {}) {
   const forzar = opciones.forzar === true;
   const codigo = String(codigoAjustador || '').trim();
-  console.log('📧 Enviando alertas Allias a:', codigo, forzar ? '(forzado)' : '');
+  console.log('📧 Enviando alertas Allianz a:', codigo, forzar ? '(forzado)' : '');
 
-  const alertas = await obtenerAlertasAjustadorAllias(codigo);
+  const alertas = await obtenerAlertasAjustadorAllianz(codigo);
   if (!alertas.casosConAlertas) {
-    return { success: true, message: 'No hay alertas Allias para enviar', omitido: false };
+    return { success: true, message: 'No hay alertas Allianz para enviar', omitido: false };
   }
 
   const responsable = await Responsable.findOne({ codiRespnsble: codigo });
@@ -301,32 +301,32 @@ export async function enviarAlertasAlliasAjustador(codigoAjustador, opciones = {
     return { success: false, message: 'Email del responsable no encontrado', omitido: false };
   }
 
-  if (!forzar && !debeEnviarRecordatorioEmailAllias(responsable)) {
-    const diasDesde = diasCalendarioEntreFechas(responsable.fchaUltimoRecordatorioAlertasAllias);
+  if (!forzar && !debeEnviarRecordatorioEmailAllianz(responsable)) {
+    const diasDesde = diasCalendarioEntreFechas(responsable.fchaUltimoRecordatorioAlertasAllianz);
     return {
       success: true,
       omitido: true,
-      message: `Recordatorio Allias omitido: se reenvía cada ${DIAS_ENTRE_RECORDATORIOS_EMAIL} días`,
+      message: `Recordatorio Allianz omitido: se reenvía cada ${DIAS_ENTRE_RECORDATORIOS_EMAIL} días`,
       diasDesdeUltimo: diasDesde,
     };
   }
 
   const datosEmail = {
-    modulo: 'Allias',
-    numeroCaso: `ALERTAS-ALLIAS-${codigo}`,
+    modulo: 'Allianz',
+    numeroCaso: `ALERTAS-ALLIANZ-${codigo}`,
     nombreResponsable: responsable.nmbrRespnsble || codigo,
     emailResponsable: responsable.email,
-    aseguradora: 'Allias',
-    asegurado: 'Ajustador Allias',
+    aseguradora: 'Allianz',
+    asegurado: 'Ajustador Allianz',
     fechaAsignacion: new Date().toLocaleDateString('es-CO'),
-    quienAsigna: 'Sistema Allias',
+    quienAsigna: 'Sistema Allianz',
     emailQuienAsigna: 'sistema@proserpuertos.com.co',
-    observaciones: `Tienes ${alertas.casosConAlertas} casos Allias con alertas pendientes`,
+    observaciones: `Tienes ${alertas.casosConAlertas} casos Allianz con alertas pendientes`,
     alertas,
     archivosConRuta: alertas.archivosConRuta || [],
   };
 
-  const resultado = await enviarEmailAlertasAllias(
+  const resultado = await enviarEmailAlertasAllianz(
     await withRecipientLocale(datosEmail, {
       email: responsable.email,
       login: codigo,
@@ -336,21 +336,21 @@ export async function enviarAlertasAlliasAjustador(codigoAjustador, opciones = {
   if (resultado?.success !== false) {
     await Responsable.updateOne(
       { _id: responsable._id },
-      { $set: { fchaUltimoRecordatorioAlertasAllias: new Date() } }
+      { $set: { fchaUltimoRecordatorioAlertasAllianz: new Date() } }
     );
   }
 
   return { success: true, omitido: false, resultado };
 }
 
-export async function enviarAlertasTodosAllias(opciones = {}) {
-  console.log('📧 Enviando alertas Allias a todos los ajustadores...');
-  const agrupadas = await obtenerAlertasAlliasPorAjustadores();
+export async function enviarAlertasTodosAllianz(opciones = {}) {
+  console.log('📧 Enviando alertas Allianz a todos los ajustadores...');
+  const agrupadas = await obtenerAlertasAllianzPorAjustadores();
   const resultados = [];
 
   for (const item of agrupadas.ajustadores) {
     try {
-      const resultado = await enviarAlertasAlliasAjustador(item.codigoResponsable, opciones);
+      const resultado = await enviarAlertasAllianzAjustador(item.codigoResponsable, opciones);
       resultados.push({
         ajustador: item.codigoResponsable,
         success: resultado.success,
@@ -358,7 +358,7 @@ export async function enviarAlertasTodosAllias(opciones = {}) {
         message: resultado.message,
       });
     } catch (error) {
-      console.error(`❌ Error enviando alertas Allias a ${item.codigoResponsable}:`, error);
+      console.error(`❌ Error enviando alertas Allianz a ${item.codigoResponsable}:`, error);
       resultados.push({
         ajustador: item.codigoResponsable,
         success: false,
@@ -370,7 +370,7 @@ export async function enviarAlertasTodosAllias(opciones = {}) {
 
   return {
     success: true,
-    modulo: 'Allias',
+    modulo: 'Allianz',
     totalEnviados: resultados.filter((r) => r.success && !r.omitido).length,
     totalOmitidos: resultados.filter((r) => r.omitido).length,
     totalErrores: resultados.filter((r) => !r.success).length,

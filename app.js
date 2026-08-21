@@ -49,8 +49,8 @@ import zurichRoutes from './routes/zurich.routes.js';
 import zurichListadoRoutes from './routes/zurichListado.routes.js';
 import bbvaCatRoutes from './routes/bbvaCat.routes.js';
 import bbvaCatListadoRoutes from './routes/bbvaCatListado.routes.js';
-import alliasRoutes from './routes/allias.routes.js';
-import alliasListadoRoutes from './routes/alliasListado.routes.js';
+import allianzRoutes from './routes/allianz.routes.js';
+import allianzListadoRoutes from './routes/allianzListado.routes.js';
 import previsoraRoutes from './routes/previsora.routes.js';
 import previsoraListadoRoutes from './routes/previsoraListado.routes.js';
 import propiedadesRoutes from './routes/propiedades.routes.js';
@@ -178,10 +178,10 @@ if (!fs.existsSync(bbvaCatUploadsDir)) {
   console.log("📁 Carpeta 'uploads/bbva-cat/' creada... ✅");
 }
 
-const alliasUploadsDir = path.join(uploadsDir, "allias");
-if (!fs.existsSync(alliasUploadsDir)) {
-  fs.mkdirSync(alliasUploadsDir, { recursive: true });
-  console.log("📁 Carpeta 'uploads/allias/' creada... ✅");
+const allianzUploadsDir = path.join(uploadsDir, "allianz");
+if (!fs.existsSync(allianzUploadsDir)) {
+  fs.mkdirSync(allianzUploadsDir, { recursive: true });
+  console.log("📁 Carpeta 'uploads/allianz/' creada... ✅");
 }
 
 const previsoraUploadsDir = path.join(uploadsDir, "previsora");
@@ -276,8 +276,10 @@ app.use('/api/zurich-listado', zurichListadoRoutes);
 app.use('/api/zurich', zurichRoutes);
 app.use('/api/bbva-cat-listado', bbvaCatListadoRoutes);
 app.use('/api/bbva-cat', bbvaCatRoutes);
-app.use('/api/allias-listado', alliasListadoRoutes);
-app.use('/api/allias', alliasRoutes);
+app.use('/api/allianz-listado', allianzListadoRoutes);
+app.use('/api/allianz', allianzRoutes);
+app.use('/api/allias-listado', allianzListadoRoutes);
+app.use('/api/allias', allianzRoutes);
 app.use('/api/previsora-listado', previsoraListadoRoutes);
 app.use('/api/previsora', previsoraRoutes);
 app.use('/api/propiedades', propiedadesRoutes);
