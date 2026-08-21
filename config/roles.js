@@ -85,7 +85,7 @@ export const CONTRATISTAS_MODULO = {
   contractor_solo_equidad: {
     apis: APIS_SOLO_EQUIDAD,
     soloLecturaApi: true,
-    mensaje: 'Su rol Equidad solo permite consultar la bandeja Equidad FDM.',
+    mensaje: 'Su rol Equidad solo permite Home y la bandeja Fundación de la Mujer (Equidad FDM).',
   },
 };
 
