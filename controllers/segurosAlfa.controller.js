@@ -8,6 +8,7 @@ import {
 } from '../services/alertasAlfaService.js';
 import {
   enqueueAlfaClaimDocumentAfterUpload,
+  enqueueAlfaClaimDocumentAfterReplace,
   onAlfaCasePolicyMaybeReady,
 } from '../services/alfaClaimDocumentEnqueueService.js';
 import {
@@ -675,7 +676,31 @@ const buildArchivoFromUpload = (req, etiqueta) => {
   };
 };
 
-/** POST /api/seguros-alfa/:id/archivos */
+const archivoExt = (name = '') => {
+  const m = String(name).toLowerCase().match(/\.([a-z0-9]+)$/);
+  return m ? m[1] : '';
+};
+
+/** Busca el archivo del mismo slot (etiqueta + extensión) más reciente. */
+const findArchivoSameSlot = (caso, etiqueta, originalName) => {
+  const et = String(etiqueta || 'GENERAL').toUpperCase();
+  const ext = archivoExt(originalName);
+  const list = Array.isArray(caso.archivos) ? [...caso.archivos] : [];
+  const matches = list.filter((a) => {
+    if (String(a.etiqueta || 'GENERAL').toUpperCase() !== et) return false;
+    if (!ext) return true;
+    return archivoExt(a.nombreOriginal || a.nombreArchivo) === ext;
+  });
+  if (!matches.length) return null;
+  matches.sort(
+    (a, b) => new Date(b.fechaSubida || 0).getTime() - new Date(a.fechaSubida || 0).getTime()
+  );
+  return matches[0];
+};
+
+/** POST /api/seguros-alfa/:id/archivos
+ * Body opcional: replaceSameSlot=true → sobrescribe liquidador/informe (misma etiqueta+ext).
+ */
 export const subirArchivoAlfa = async (req, res) => {
   try {
     if (!req.file) {
@@ -688,22 +713,85 @@ export const subirArchivoAlfa = async (req, res) => {
     }
 
     const etiqueta = toStringOrNull(req.body?.etiqueta) || 'GENERAL';
-    const archivo = buildArchivoFromUpload(req, etiqueta);
+    const replaceSameSlot =
+      req.body?.replaceSameSlot === true ||
+      req.body?.replaceSameSlot === 'true' ||
+      req.body?.replaceSameSlot === '1';
+
+    const nuevoMeta = buildArchivoFromUpload(req, etiqueta);
     caso.archivos = caso.archivos || [];
-    caso.archivos.push(archivo);
-    caso.fechaUltimoDocumento = new Date();
-    await caso.save();
 
-    const creado = caso.archivos[caso.archivos.length - 1];
+    let creado;
+    let replaced = false;
+    let previousRuta = null;
 
-    // Réplica SharePoint async: nunca debe tumbar el upload ni la respuesta 201
-    try {
-      await enqueueAlfaClaimDocumentAfterUpload({
+    if (replaceSameSlot) {
+      const existente = findArchivoSameSlot(
         caso,
-        archivo: creado,
-        req,
         etiqueta,
-      });
+        nuevoMeta.nombreOriginal || req.file.originalname
+      );
+      if (existente) {
+        previousRuta = existente.ruta;
+        const oldId = existente._id;
+        existente.nombreOriginal = nuevoMeta.nombreOriginal;
+        existente.nombreArchivo = nuevoMeta.nombreArchivo;
+        existente.ruta = nuevoMeta.ruta;
+        existente.tamaño = nuevoMeta.tamaño;
+        existente.tipoMime = nuevoMeta.tipoMime;
+        existente.etiqueta = etiqueta;
+        existente.subidoPor = nuevoMeta.subidoPor;
+        existente.fechaSubida = new Date();
+        // Quitar otras copias del mismo slot (dejan de ensuciar archivero)
+        const ext = archivoExt(nuevoMeta.nombreOriginal);
+        caso.archivos = caso.archivos.filter((a) => {
+          if (String(a._id) === String(oldId)) return true;
+          if (String(a.etiqueta || 'GENERAL').toUpperCase() !== etiqueta.toUpperCase()) {
+            return true;
+          }
+          if (ext && archivoExt(a.nombreOriginal || a.nombreArchivo) !== ext) return true;
+          // borrar S3 de duplicados en background
+          if (a.ruta) {
+            deleteStoredFile(a.ruta).catch(() => {});
+          }
+          return false;
+        });
+        caso.fechaUltimoDocumento = new Date();
+        await caso.save();
+        creado = caso.archivos.id(oldId) || existente;
+        replaced = true;
+        if (previousRuta && previousRuta !== nuevoMeta.ruta) {
+          deleteStoredFile(previousRuta).catch((err) => {
+            console.warn('⚠️ No se pudo borrar S3 previo al replace:', err?.message || err);
+          });
+        }
+      }
+    }
+
+    if (!replaced) {
+      caso.archivos.push(nuevoMeta);
+      caso.fechaUltimoDocumento = new Date();
+      await caso.save();
+      creado = caso.archivos[caso.archivos.length - 1];
+    }
+
+    try {
+      if (replaced) {
+        await enqueueAlfaClaimDocumentAfterReplace({
+          caso,
+          archivo: creado,
+          previousRuta,
+          req,
+          etiqueta,
+        });
+      } else {
+        await enqueueAlfaClaimDocumentAfterUpload({
+          caso,
+          archivo: creado,
+          req,
+          etiqueta,
+        });
+      }
     } catch (enqErr) {
       console.warn(
         '⚠️ Encolado SharePoint Alfa omitido tras upload:',
@@ -711,7 +799,12 @@ export const subirArchivoAlfa = async (req, res) => {
       );
     }
 
-    res.status(201).json({ success: true, data: creado, casoId: caso._id });
+    res.status(replaced ? 200 : 201).json({
+      success: true,
+      data: creado,
+      casoId: caso._id,
+      replaced,
+    });
   } catch (error) {
     console.error('❌ Error subiendo archivo Seguros Alfa:', error);
     res.status(500).json({

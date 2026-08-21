@@ -215,10 +215,7 @@ export async function enqueueAlfaClaimDocumentAfterUpload({
 
     const originalName =
       archivo?.nombreOriginal || req?.file?.originalname || 'documento';
-    const storedName =
-      archivo?.nombreArchivo ||
-      req?.fileStorage?.filename ||
-      sanitizeStoredFileName(originalName);
+    const storedName = sanitizeStoredFileName(originalName);
 
     const setOnInsert = {
       sourceModule: 'alfa',
@@ -323,6 +320,159 @@ export async function enqueueAlfaClaimDocumentAfterUpload({
       s3Key: req?.fileStorage?.s3Key,
       userId: req?.usuario?.id || req?.user?.id,
       errorCode: error?.code || 'ENQUEUE_ERROR',
+      message: error?.message,
+    });
+    return { ok: false, result: 'ENQUEUE_FAILED', error };
+  }
+}
+
+function fileExt(name = '') {
+  const m = String(name).toLowerCase().match(/\.([a-z0-9]+)$/);
+  return m ? m[1] : '';
+}
+
+/**
+ * Tras reemplazar un archivo generado (liquidador/informe): actualiza el
+ * ClaimDocument existente y lo reencola a SharePoint (conflict=replace).
+ * Si no hay Claim previo, cae a enqueue normal.
+ */
+export async function enqueueAlfaClaimDocumentAfterReplace({
+  caso,
+  archivo,
+  previousRuta,
+  req,
+  etiqueta,
+} = {}) {
+  try {
+    const mapped = mapAlfaDocumentType(etiqueta || archivo?.etiqueta);
+    const newS3Key =
+      req?.fileStorage?.s3Key ||
+      parseS3KeyFromStoredPath(archivo?.ruta || req?.fileStorage?.publicPath);
+    const oldS3Key = parseS3KeyFromStoredPath(previousRuta);
+
+    if (!caso?._id || !newS3Key) {
+      return enqueueAlfaClaimDocumentAfterUpload({ caso, archivo, req, etiqueta });
+    }
+
+    const ext = fileExt(archivo?.nombreOriginal || req?.file?.originalname);
+    let claim = null;
+
+    if (oldS3Key) {
+      claim = await ClaimDocument.findOne({
+        sourceModule: 'alfa',
+        claimId: caso._id,
+        status: 'active',
+        'storage.key': oldS3Key,
+      });
+    }
+
+    if (!claim) {
+      const q = {
+        sourceModule: 'alfa',
+        claimId: caso._id,
+        status: 'active',
+        documentType: mapped.documentType,
+      };
+      const candidates = await ClaimDocument.find(q).sort({ updatedAt: -1 }).limit(20);
+      claim =
+        candidates.find((c) => !ext || fileExt(c.originalName) === ext) ||
+        candidates[0] ||
+        null;
+    }
+
+    if (!claim) {
+      return enqueueAlfaClaimDocumentAfterUpload({ caso, archivo, req, etiqueta });
+    }
+
+    const cfg = getSharePointSyncConfig();
+    const resolved = resolveAlfaClaimNumber(caso);
+    const bucket = getBucketName();
+    const identificacion = normId(caso.identificacion);
+    const pathBuild = buildAlfaSiniestrosDocumentPath({
+      identificacion,
+      documentType: mapped.documentType,
+    });
+    const pendingDestination = !pathBuild.ok;
+
+    const originalName =
+      archivo?.nombreOriginal || req?.file?.originalname || claim.originalName;
+    // Nombre estable en SharePoint (sobrescribe); el key S3 puede cambiar
+    const storedName = sanitizeStoredFileName(originalName);
+
+    claim.claimNumber = resolved?.claimNumber || claim.claimNumber;
+    claim.claimNumberSource = resolved?.claimNumberSource || claim.claimNumberSource;
+    claim.documentType = mapped.documentType;
+    claim.originalName = originalName;
+    claim.storedName = storedName;
+    claim.mimeType = archivo?.tipoMime || req?.file?.mimetype || claim.mimeType;
+    claim.size = archivo?.tamaño ?? req?.fileStorage?.size ?? req?.file?.size ?? claim.size;
+    claim.storage = {
+      provider: 's3',
+      bucket: bucket || claim.storage?.bucket,
+      key: newS3Key,
+    };
+    claim.integrationKey = buildAlfaIntegrationKey(caso._id, newS3Key);
+    claim.destinationStatus = pendingDestination ? 'pending_destination' : 'ready';
+    claim.destinationReason = pendingDestination
+      ? pathBuild.reason || 'MISSING_IDENTIFICATION'
+      : undefined;
+    claim.alfaIdentificacion = identificacion || claim.alfaIdentificacion;
+    claim.sharepoint = claim.sharepoint || {};
+    claim.sharepoint.enabled = claim.sharepoint.enabled !== false;
+    claim.sharepoint.syncStatus = 'pending';
+    claim.sharepoint.attempts = 0;
+    claim.sharepoint.nextRetryAt = new Date();
+    claim.sharepoint.lastError = undefined;
+    // Forzar re-subida con conflict=replace sobre el mismo nombre estable
+    claim.sharepoint.itemId = undefined;
+    claim.sharepoint.path = undefined;
+    claim.sharepoint.webUrl = undefined;
+    claim.sharepoint.syncedAt = undefined;
+    claim.markModified('sharepoint');
+    claim.markModified('storage');
+    await claim.save();
+
+    // Archivar ClaimDocuments duplicados del mismo tipo+ext (copias viejas)
+    if (ext) {
+      const dupes = await ClaimDocument.find({
+        sourceModule: 'alfa',
+        claimId: caso._id,
+        status: 'active',
+        documentType: mapped.documentType,
+        _id: { $ne: claim._id },
+      });
+      for (const d of dupes) {
+        if (fileExt(d.originalName) !== ext) continue;
+        d.status = 'archived';
+        d.sharepoint = d.sharepoint || {};
+        d.sharepoint.enabled = false;
+        d.sharepoint.syncStatus = 'disabled';
+        d.markModified('sharepoint');
+        await d.save();
+      }
+    }
+
+    console.log(
+      JSON.stringify({
+        event: cfg.alfaEnabled
+          ? 'ALFA_SHAREPOINT_REENQUEUED_REPLACE'
+          : 'ALFA_SHAREPOINT_REENQUEUED_REPLACE_PAUSED',
+        claimId: String(caso._id),
+        documentId: String(claim._id),
+        documentType: mapped.documentType,
+        oldS3Key: oldS3Key || null,
+        newS3Key,
+        originalName,
+      })
+    );
+
+    return { ok: true, result: 'REPLACED_REENQUEUED', document: claim };
+  } catch (error) {
+    logEnqueueFailed({
+      claimId: caso?._id,
+      s3Key: req?.fileStorage?.s3Key,
+      userId: req?.usuario?.id || req?.user?.id,
+      errorCode: error?.code || 'REPLACE_ENQUEUE_ERROR',
       message: error?.message,
     });
     return { ok: false, result: 'ENQUEUE_FAILED', error };
