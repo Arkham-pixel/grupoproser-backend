@@ -114,8 +114,8 @@ const normClave = (valor) =>
 
 const completarIdentificacion = (payload = {}) => {
   if (payload.identificacion) return payload;
-  if (payload.zc) payload.identificacion = String(payload.zc);
-  else if (payload.siniestro) payload.identificacion = String(payload.siniestro);
+  if (payload.siniestro) payload.identificacion = String(payload.siniestro);
+  else if (payload.noCaso) payload.identificacion = String(payload.noCaso);
   return payload;
 };
 
@@ -131,6 +131,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
   const payload = completarIdentificacion({
     consecutivo: base.consecutivo ?? null,
     zc: pick(data.zc, base.zc ?? null),
+    noCaso: pick(data.noCaso, base.noCaso ?? null),
     siniestro: pick(data.siniestro, base.siniestro ?? null),
     identificacion: pick(data.identificacion, base.identificacion ?? null),
     tipoIdentificacion: pick(data.tipoIdentificacion, base.tipoIdentificacion ?? null),
@@ -227,10 +228,10 @@ const generarConsecutivo = async () => {
 export const crearCasoListadoPrevisora = async (req, res) => {
   try {
     const payload = buildPayload(req.body, {}, { pisar: true });
-    if (!payload.siniestro) {
+    if (!payload.siniestro && !payload.noCaso) {
       return res.status(400).json({
         success: false,
-        error: 'Indique el siniestro',
+        error: 'Indique el siniestro o el No. caso',
       });
     }
     payload.consecutivo = await generarConsecutivo();
@@ -359,10 +360,14 @@ export const importarCasosListadoPrevisora = async (req, res) => {
       AjustadorCatastrofico.find({}).lean(),
     ]);
     const indice = new Map();
-    for (const doc of existentes) {
+    const registrarIndice = (doc) => {
+      if (!doc) return;
       const siniestro = normClave(doc.siniestro);
-      if (siniestro && !indice.has(siniestro)) indice.set(siniestro, doc);
-    }
+      const noCaso = normClave(doc.noCaso);
+      if (siniestro) indice.set(`S:${siniestro}`, doc);
+      if (noCaso) indice.set(`C:${noCaso}`, doc);
+    };
+    for (const doc of existentes) registrarIndice(doc);
 
     const ahora = new Date();
     const año = ahora.getFullYear();
@@ -392,13 +397,17 @@ export const importarCasosListadoPrevisora = async (req, res) => {
           ajustador: asignacion.ajustador,
           estado: homologarEstadoPrevisora(filas[i]?.estado),
         });
-        if (!payload.siniestro && !payload.asegurado) {
+        if (!payload.siniestro && !payload.noCaso && !payload.asegurado) {
           resumen.omitidos += 1;
-          resumen.errores.push({ fila: filaNum, motivo: 'Falta siniestro o asegurado' });
+          resumen.errores.push({ fila: filaNum, motivo: 'Falta siniestro, No. caso o asegurado' });
           continue;
         }
-        const clave = normClave(payload.siniestro);
-        const existente = clave ? indice.get(clave) : null;
+        const claveSiniestro = normClave(payload.siniestro);
+        const claveCaso = normClave(payload.noCaso);
+        const existente =
+          (claveSiniestro && indice.get(`S:${claveSiniestro}`)) ||
+          (claveCaso && indice.get(`C:${claveCaso}`)) ||
+          null;
         if (existente) {
           const merge = buildPayload(payload, existente);
           if (!merge.consecutivo) {
@@ -409,14 +418,14 @@ export const importarCasosListadoPrevisora = async (req, res) => {
             new: true,
           }).lean();
           resumen.actualizados += 1;
-          if (clave) indice.set(clave, actualizado);
+          registrarIndice(actualizado);
         } else {
           secuencial += 1;
           payload.consecutivo = `PREVISORA-LST-${año}-${mes}-${secuencial}`;
           const creado = await PrevisoraListadoCaso.create(payload);
           const lean = creado.toObject();
           resumen.creados += 1;
-          if (clave) indice.set(clave, lean);
+          registrarIndice(lean);
         }
       } catch (errFila) {
         resumen.omitidos += 1;

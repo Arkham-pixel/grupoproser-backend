@@ -566,6 +566,7 @@ export const actualizarCasoSura = async (req, res) => {
     const { data: bodyFiltrado } = aplicarRestriccionRolCaso(req, req.body || {}, base, {
       modulo: 'sura',
       login: identidad?.login,
+      cedula: identidad?.cedula,
     });
     const payload = buildSuraPayload(bodyFiltrado, base);
     if (!payload.consecutivo) {

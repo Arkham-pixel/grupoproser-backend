@@ -1,6 +1,7 @@
 // middleware/verificarAdminSoporte.js
 import jwt from "jsonwebtoken";
 import { JWT_SECRET } from "../config/secrets.js";
+import { esLoginConPermisoLiderSura } from "../utils/permisosCasoPorRol.js";
 
 export function verificarAdminSoporte(req, res, next) {
   console.log('🔐 === VERIFICANDO ADMIN/SOPORTE ===');
@@ -67,6 +68,41 @@ export function verificarAdminSoporte(req, res, next) {
   } catch (error) {
     console.error('❌ Error verificando token:', error.message);
     return res.status(403).json({ success: false, message: "Token inválido o expirado", error: error.message });
+  }
+}
+
+/** Admin/soporte, o Mario Pinilla (72288319) solo para rutas SURA. */
+export function verificarAdminSoporteOLiderSura(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, message: 'Token no proporcionado' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    req.usuario = decoded;
+
+    const rol = String(decoded.rol || decoded.role || decoded.tipoUsuario || '')
+      .trim()
+      .toLowerCase();
+    const esAdmin = rol === 'admin' || rol === 'administrador';
+    const esSoporte = rol === 'soporte' || rol === 'support';
+    if (esAdmin || esSoporte || esLoginConPermisoLiderSura(decoded.login, 'sura')) {
+      return next();
+    }
+
+    return res.status(403).json({
+      success: false,
+      message: 'Acceso denegado. Se requieren permisos de administrador, soporte o líder SURA.',
+    });
+  } catch (error) {
+    return res.status(403).json({
+      success: false,
+      message: 'Token inválido o expirado',
+      error: error.message,
+    });
   }
 }
 

@@ -6,6 +6,7 @@ import {
   puedeEditarTodoElCaso,
   filtrarPayloadCasoPorRol,
   esLoginConPermisoLiderSura,
+  esIdentidadConPermisoLiderSura,
 } from '../utils/permisosCasoPorRol.js';
 
 const assert = (c, m) => {
@@ -41,7 +42,15 @@ assert(
 assert(coincidenPersonas('José Pérez', 'Jose Perez'), 'acentos');
 
 // Mario Pinilla (72288319): poderes de líder SOLO en SURA
-assert(esLoginConPermisoLiderSura('72288319', 'sura'), 'mario es lider sura');
+assert(esLoginConPermisoLiderSura('72.288.319', 'sura'), 'mario login con puntos');
+assert(
+  esIdentidadConPermisoLiderSura({ login: '', cedula: '72288319', modulo: 'sura' }),
+  'mario por cedula'
+);
+assert(
+  esLoginConPermisoLiderSura('72288319', 'sura'),
+  'mario es lider sura'
+);
 assert(!esLoginConPermisoLiderSura('72288319', 'alfa'), 'mario no es lider alfa');
 assert(!esLoginConPermisoLiderSura('72288319', ''), 'mario sin modulo no');
 assert(

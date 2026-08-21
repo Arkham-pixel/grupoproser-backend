@@ -29,6 +29,8 @@ const PrevisoraListadoCasoSchema = new mongoose.Schema(
     /** Formato PREVISORA-LST-YYYY-MM-N */
     consecutivo: String,
     zc: { type: String, index: true },
+    /** Número de caso Previsora (columna No_Caso del reporte). */
+    noCaso: { type: String, index: true },
     siniestro: String,
     identificacion: { type: String, required: true },
     tipoIdentificacion: String,
@@ -80,6 +82,7 @@ const PrevisoraListadoCasoSchema = new mongoose.Schema(
 );
 
 PrevisoraListadoCasoSchema.index({ zc: 1 }, { unique: false, sparse: true });
+PrevisoraListadoCasoSchema.index({ noCaso: 1 }, { unique: false, sparse: true });
 
 const PrevisoraListadoCaso = mongoose.model(
   'PrevisoraListadoCaso',

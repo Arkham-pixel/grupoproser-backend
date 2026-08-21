@@ -38,7 +38,7 @@ import { createMulterUpload, attachPersistedFileMiddleware } from '../storage/mu
 import { STORAGE_CATEGORIES, getPublicPathForSingle } from '../services/fileStorageService.js';
 import { verificarToken } from '../middleware/auth.js';
 import { poblarUsuarioOpcional } from '../middleware/usuarioOpcional.js';
-import { verificarAdminSoporte } from '../middleware/verificarAdminSoporte.js';
+import { verificarAdminSoporteOLiderSura } from '../middleware/verificarAdminSoporte.js';
 
 const router = express.Router();
 
@@ -95,26 +95,26 @@ router.post('/importar', importarCasosSura);
 router.post(
   '/import/preview',
   verificarToken,
-  verificarAdminSoporte,
+  verificarAdminSoporteOLiderSura,
   excelUpload.single('file'),
   previewImportExcelSura
 );
 router.post(
   '/import/execute',
   verificarToken,
-  verificarAdminSoporte,
+  verificarAdminSoporteOLiderSura,
   executeImportExcelSura
 );
 router.get(
   '/import/:importSessionId/report.xlsx',
   verificarToken,
-  verificarAdminSoporte,
+  verificarAdminSoporteOLiderSura,
   reportImportExcelSura
 );
 router.get(
   '/import/:importSessionId',
   verificarToken,
-  verificarAdminSoporte,
+  verificarAdminSoporteOLiderSura,
   statusImportExcelSura
 );
 
@@ -131,7 +131,7 @@ router.get(
 router.post(
   '/control-seguimiento/check',
   verificarToken,
-  verificarAdminSoporte,
+  verificarAdminSoporteOLiderSura,
   postControlSeguimientoSuraCheck
 );
 router.post(
@@ -145,7 +145,7 @@ router.get('/:id/polizas-importadas', listarPolizasImportadasSura);
 router.post(
   '/:id/archivos/:archivoId/sharepoint/retry',
   verificarToken,
-  verificarAdminSoporte,
+  verificarAdminSoporteOLiderSura,
   reintentarSyncSharePointSura
 );
 

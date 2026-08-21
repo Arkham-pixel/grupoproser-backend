@@ -21,21 +21,34 @@ export const SURA_LOGINS_PERMISO_LIDER = Object.freeze(['72288319']);
 
 const COLLATION_PERSONA = Object.freeze({ locale: 'es', strength: 1 });
 
+function normalizarClaveLoginSura(valor) {
+  const s = String(valor || '').trim();
+  if (!s) return '';
+  const digits = s.replace(/\D/g, '');
+  return digits.length >= 5 ? digits : s.toLowerCase();
+}
+
 export function esLoginConPermisoLiderSura(login, modulo = '') {
   if (String(modulo || '').toLowerCase() !== 'sura') return false;
-  const l = String(login || '').trim();
-  if (!l) return false;
-  return SURA_LOGINS_PERMISO_LIDER.includes(l);
+  const clave = normalizarClaveLoginSura(login);
+  if (!clave) return false;
+  return SURA_LOGINS_PERMISO_LIDER.map(normalizarClaveLoginSura).includes(clave);
+}
+
+/** Login o cédula (Mario puede venir por cualquiera de los dos). */
+export function esIdentidadConPermisoLiderSura(opts = {}) {
+  const modulo = opts.modulo || '';
+  return [opts.login, opts.cedula].some((v) => esLoginConPermisoLiderSura(v, modulo));
 }
 
 /**
  * @param {string} rol
- * @param {{ modulo?: string, login?: string }} [opts]
+ * @param {{ modulo?: string, login?: string, cedula?: string }} [opts]
  */
 export function puedeEditarTodoElCaso(rol, opts = {}) {
   const r = normalizarRol(rol);
   if (['admin', 'soporte', ROL_AJUSTADOR_LIDER].includes(r)) return true;
-  if (esLoginConPermisoLiderSura(opts.login, opts.modulo)) return true;
+  if (esIdentidadConPermisoLiderSura(opts)) return true;
   if (r === ROL_AJUSTADOR_CASO || r === ROL_INSPECTOR) return false;
   return true;
 }
@@ -45,7 +58,7 @@ export function puedeEditarTodoElCaso(rol, opts = {}) {
  * En SURA, Mario (72288319) ve todos.
  */
 export function rolConVistaRestringidaAsignacion(rol, opts = {}) {
-  if (esLoginConPermisoLiderSura(opts.login, opts.modulo)) return false;
+  if (esIdentidadConPermisoLiderSura(opts)) return false;
   const r = normalizarRol(rol);
   return r === ROL_AJUSTADOR_CASO || r === ROL_INSPECTOR;
 }
@@ -76,22 +89,26 @@ function escapeRegex(texto) {
 export async function obtenerIdentidadUsuarioReq(req) {
   const payload = req?.user || req?.usuario || null;
   if (!payload) return null;
-  const rol = normalizarRol(payload.role);
+  let rol = normalizarRol(payload.role || payload.rol);
   let name = String(payload.name || '').trim();
   let login = String(payload.login || '').trim();
+  let cedula = String(payload.cedula || '').trim();
+  const userId = payload.id || payload._id || null;
   // El JWT no trae name; para match con catálogo catastrófico hay que leer SecurUser.
-  if (payload.id) {
+  if (userId) {
     try {
-      const u = await SecurUser.findById(payload.id).select('name login role').lean();
+      const u = await SecurUser.findById(userId).select('name login role cedula').lean();
       if (u) {
         if (u.name) name = String(u.name).trim();
         if (u.login) login = String(u.login).trim();
+        if (u.cedula) cedula = String(u.cedula).trim();
+        if (u.role) rol = normalizarRol(u.role);
       }
     } catch {
       // sin perfil completo
     }
   }
-  return { rol, name, login, id: payload.id || null };
+  return { rol, name, login, cedula, id: userId };
 }
 
 /**
@@ -103,7 +120,13 @@ export async function obtenerIdentidadUsuarioReq(req) {
 export function construirFiltroVistaAsignacion(identidad, opts = {}) {
   if (!identidad) return null;
   const modulo = opts.modulo || identidad.modulo || '';
-  if (!rolConVistaRestringidaAsignacion(identidad.rol, { login: identidad.login, modulo })) {
+  if (
+    !rolConVistaRestringidaAsignacion(identidad.rol, {
+      login: identidad.login,
+      cedula: identidad.cedula,
+      modulo,
+    })
+  ) {
     return null;
   }
   const campo = identidad.rol === ROL_INSPECTOR ? 'inspector' : 'ajustador';
@@ -122,7 +145,13 @@ export function construirFiltroVistaAsignacion(identidad, opts = {}) {
 export function casoVisibleParaIdentidad(caso, identidad, opts = {}) {
   if (!identidad) return true;
   const modulo = opts.modulo || identidad.modulo || '';
-  if (!rolConVistaRestringidaAsignacion(identidad.rol, { login: identidad.login, modulo })) {
+  if (
+    !rolConVistaRestringidaAsignacion(identidad.rol, {
+      login: identidad.login,
+      cedula: identidad.cedula,
+      modulo,
+    })
+  ) {
     return true;
   }
   const campo = identidad.rol === ROL_INSPECTOR ? 'inspector' : 'ajustador';
@@ -177,15 +206,21 @@ export function filtrarPayloadCasoPorRol(rol, payload = {}, base = {}, opts = {}
 
 /** Aplica filtro sobre data cruda antes de buildPayload. */
 export function aplicarRestriccionRolCaso(req, data, base = {}, opts = {}) {
-  const rol = req?.user?.role || req?.usuario?.role || null;
+  const rol = req?.user?.role || req?.usuario?.role || req?.user?.rol || req?.usuario?.rol || null;
   const login =
     opts.login ||
     req?.user?.login ||
     req?.usuario?.login ||
     null;
+  const cedula =
+    opts.cedula ||
+    req?.user?.cedula ||
+    req?.usuario?.cedula ||
+    null;
   const { payload, soloEstado } = filtrarPayloadCasoPorRol(rol, data, base, {
     modulo: opts.modulo,
     login,
+    cedula,
   });
   return { data: payload, soloEstado, rol };
 }
