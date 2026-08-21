@@ -135,20 +135,42 @@ export async function syncClaimDocument(documentId, { now = new Date() } = {}) {
     return { result: 'SKIPPED', document: before };
   }
 
-  // Sin cédula: no crear carpeta; esperar identificación
+  // Sin cédula numérica válida: no crear carpeta. Si ya hay id usable
+  // (p.ej. docs legacy marcados pending_destination), reintentar resolve abajo.
   if (
     before.sourceModule === 'alfa' &&
     before.destinationStatus === 'pending_destination'
   ) {
-    logSync('skip', {
-      documentId,
-      claimNumber: before.claimNumber,
-      sourceModule: before.sourceModule,
-      result: 'PENDING_DESTINATION',
-      errorCode: before.destinationReason || 'MISSING_IDENTIFICATION',
-      durationMs: Date.now() - started,
+    let identificacion = before.alfaIdentificacion;
+    if (before.claimId) {
+      try {
+        const caso = await SegurosAlfaCaso.findById(before.claimId)
+          .select('identificacion')
+          .lean();
+        if (caso?.identificacion) identificacion = caso.identificacion;
+      } catch {
+        // seguir con snapshot
+      }
+    }
+    const probe = buildAlfaSiniestrosDocumentPath({
+      identificacion,
+      documentType: before.documentType,
     });
-    return { result: 'PENDING_DESTINATION', document: before };
+    if (!probe.ok) {
+      logSync('skip', {
+        documentId,
+        claimNumber: before.claimNumber,
+        sourceModule: before.sourceModule,
+        result: 'PENDING_DESTINATION',
+        errorCode: before.destinationReason || probe.reason || 'MISSING_IDENTIFICATION',
+        durationMs: Date.now() - started,
+      });
+      return { result: 'PENDING_DESTINATION', document: before };
+    }
+    // Hay path válido: liberar y continuar sync
+    before.destinationStatus = 'ready';
+    before.destinationReason = undefined;
+    before.alfaIdentificacion = probe.identificacion || identificacion;
   }
 
   // itemId presente pero estado inconsistente: validar en Graph antes de re-subir

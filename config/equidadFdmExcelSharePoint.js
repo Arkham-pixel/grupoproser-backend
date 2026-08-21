@@ -76,6 +76,9 @@ export const FDM_EXCEL_OUTBOUND_FIELDS = Object.freeze([
   'celular',
   'correo',
   'observaciones',
+  'municipio',
+  'departamento',
+  'oficinaRadicadora',
   'valorEdificio',
   'valorContenido',
   'valoresIndemnizables',
@@ -113,6 +116,8 @@ export const FDM_EXCEL_APPEND_FIELDS = Object.freeze([
 export const FDM_EXCEL_PROTECTED_FROM_INBOUND = Object.freeze([
   'estado',
   'liquidador',
+  'municipio',
+  'departamento',
   'perdidaContenidos',
   'perdidaEdificio',
   'totalPerdida',

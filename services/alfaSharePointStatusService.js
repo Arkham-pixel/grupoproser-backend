@@ -118,6 +118,7 @@ export async function buildAlfaSharePointDocumentsStatus(caso) {
     failed: 0,
     disabled: 0,
     none: 0,
+    pending_destination: 0,
   };
   for (const d of documents) {
     const st = d.sync?.status || 'none';
@@ -216,6 +217,116 @@ export async function markAlfaClaimDocumentForRetry({ caso, archivoId }) {
     syncStatus: claim.sharepoint.syncStatus,
     nextRetryAt: claim.sharepoint.nextRetryAt,
     attempts: claim.sharepoint.attempts,
+  };
+}
+
+/**
+ * Activa o pausa la copia a SharePoint de un archivo del archivero.
+ * enabled=false → no sube (solo ARNALD). enabled=true → vuelve a la cola.
+ * No borra archivos ya en SharePoint.
+ */
+export async function setAlfaClaimDocumentSharePointEnabled({
+  caso,
+  archivoId,
+  enabled,
+} = {}) {
+  if (typeof enabled !== 'boolean') {
+    const err = new Error('enabled debe ser boolean');
+    err.code = 'INVALID_BODY';
+    err.status = 400;
+    throw err;
+  }
+
+  const archivo = caso.archivos?.id?.(archivoId);
+  if (!archivo) {
+    const err = new Error('Archivo no encontrado');
+    err.code = 'ARCHIVO_NOT_FOUND';
+    err.status = 404;
+    throw err;
+  }
+
+  const s3Key = parseS3KeyFromStoredPath(archivo.ruta);
+  if (!s3Key) {
+    const err = new Error('El archivo no tiene key S3 resoluble');
+    err.code = 'MISSING_S3_KEY';
+    err.status = 400;
+    throw err;
+  }
+
+  const integrationKey = buildAlfaIntegrationKey(caso._id, s3Key);
+  const claim = await ClaimDocument.findOne({
+    $or: [
+      { integrationKey },
+      {
+        sourceModule: 'alfa',
+        claimId: caso._id,
+        status: 'active',
+        'storage.key': s3Key,
+      },
+    ],
+  });
+
+  if (!claim) {
+    const err = new Error('No hay ClaimDocument para este archivo (legacy / no encolado)');
+    err.code = 'CLAIM_DOCUMENT_NOT_FOUND';
+    err.status = 404;
+    throw err;
+  }
+
+  if (claim.sourceModule !== 'alfa') {
+    const err = new Error('Documento no pertenece al módulo Alfa');
+    err.code = 'INVALID_MODULE';
+    err.status = 400;
+    throw err;
+  }
+
+  if (claim.status !== 'active') {
+    const err = new Error('Documento no está activo');
+    err.code = 'NOT_ACTIVE';
+    err.status = 400;
+    throw err;
+  }
+
+  if (claim.sharepoint?.syncStatus === 'syncing') {
+    const err = new Error('La sincronización ya está en curso; espere a que termine');
+    err.code = 'ALREADY_SYNCING';
+    err.status = 409;
+    throw err;
+  }
+
+  claim.sharepoint = claim.sharepoint || {};
+
+  if (!enabled) {
+    claim.sharepoint.enabled = false;
+    if (claim.sharepoint.syncStatus !== 'synced') {
+      claim.sharepoint.syncStatus = 'disabled';
+      claim.sharepoint.nextRetryAt = undefined;
+      claim.sharepoint.lastError = undefined;
+    }
+  } else {
+    claim.sharepoint.enabled = true;
+    if (!(claim.sharepoint.syncStatus === 'synced' && claim.sharepoint.itemId)) {
+      claim.sharepoint.syncStatus = 'pending';
+      claim.sharepoint.nextRetryAt = new Date();
+      claim.sharepoint.lastError = undefined;
+    }
+  }
+
+  claim.markModified('sharepoint');
+  await claim.save();
+
+  return {
+    claimDocumentId: String(claim._id),
+    archivoId: String(archivo._id),
+    nombre: archivo.nombreOriginal || archivo.nombreArchivo || 'documento',
+    enabled: Boolean(claim.sharepoint.enabled),
+    syncStatus:
+      claim.sharepoint.enabled === false && claim.sharepoint.syncStatus !== 'synced'
+        ? 'disabled'
+        : claim.destinationStatus === 'pending_destination'
+          ? 'pending_destination'
+          : claim.sharepoint.syncStatus,
+    webUrl: claim.sharepoint.webUrl || null,
   };
 }
 

@@ -303,14 +303,22 @@ export const inferirEventoFdm = ({ cobertura, archivoNombre, hoja, fechaRegistro
 
 /** Unifica municipios equivalentes (Santiago de Cali = Cali). */
 export const normalizarMunicipioFdm = (valor) => {
+  if (valor == null || valor === '' || valor === 0 || valor === '0') return null;
   const texto = limpiarTextoMayusculas(valor);
-  if (!texto) return null;
+  if (!texto || texto === '0') return null;
   const clave = texto
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
     .replace(/[^A-Z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  if (
+    !clave ||
+    clave === '0' ||
+    /^(N\/?A|NA|NULL|UNDEFINED|SIN CIUDAD|SIN MUNICIPIO)$/i.test(clave)
+  ) {
+    return null;
+  }
   if (
     clave === 'SANTIAGO DE CALI' ||
     clave === 'CALI VALLE' ||

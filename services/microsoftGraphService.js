@@ -7,17 +7,56 @@
  */
 
 import { ConfidentialClientApplication } from '@azure/msal-node';
-import { getSharePointConfig, isSharePointConfigured } from '../config/sharepoint.js';
+import {
+  getSharePointConfig,
+  isSharePointConfigured,
+  validateSharePointCredentialShapes,
+} from '../config/sharepoint.js';
 
 const TOKEN_SKEW_MS = 5 * 60 * 1000;
+const TOKEN_MAX_ATTEMPTS = 3;
+const GRAPH_MAX_ATTEMPTS = 3;
 
 let msalApp = null;
 let cachedToken = null;
 let cachedExpiresAt = 0;
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function resetTokenCache() {
   cachedToken = null;
   cachedExpiresAt = 0;
+}
+
+function isTransientGraphStatus(status) {
+  return status === 429 || status === 503 || status === 502 || status === 504;
+}
+
+function isAuthFailureMessage(message = '') {
+  const m = String(message);
+  return (
+    /AADSTS700016/i.test(m) ||
+    /AADSTS7000215/i.test(m) ||
+    /AADSTS7000222/i.test(m) ||
+    /unauthorized_client/i.test(m) ||
+    /invalid_client/i.test(m)
+  );
+}
+
+function humanizeSharePointAuthError(message = '') {
+  const m = String(message);
+  if (/AADSTS700016/i.test(m) || /was not found in the directory/i.test(m)) {
+    return 'SharePoint: la app Microsoft (MS_CLIENT_ID) no existe en el tenant. Revise el Client ID completo (36 caracteres) en Coolify y reinicie el backend.';
+  }
+  if (/AADSTS7000215/i.test(m) || /Invalid client secret/i.test(m)) {
+    return 'SharePoint: MS_CLIENT_SECRET inválido o vencido. Genere un secret nuevo en Entra ID y actualice Coolify.';
+  }
+  if (/AADSTS7000222/i.test(m)) {
+    return 'SharePoint: el client secret expiró. Renueve MS_CLIENT_SECRET en Entra ID / Coolify.';
+  }
+  return m || 'No se pudo autenticar con Microsoft Graph / SharePoint';
 }
 
 function getMsalApp() {
@@ -25,6 +64,13 @@ function getMsalApp() {
   if (!config.tenantId || !config.clientId || !config.clientSecret) {
     throw new SharePointConfigError(
       'Faltan MS_TENANT_ID, MS_CLIENT_ID o MS_CLIENT_SECRET'
+    );
+  }
+  const shapes = validateSharePointCredentialShapes(config);
+  if (!shapes.ok) {
+    const detail = shapes.issues.map((i) => `${i.field}: ${i.message}`).join('; ');
+    throw new SharePointConfigError(
+      `Credenciales SharePoint inválidas (${detail})`
     );
   }
 
@@ -57,10 +103,11 @@ export class SharePointConfigError extends Error {
 
 export class SharePointAuthError extends Error {
   constructor(message, cause) {
-    super(message);
+    super(humanizeSharePointAuthError(message));
     this.name = 'SharePointAuthError';
     this.code = 'SHAREPOINT_AUTH';
     this.cause = cause;
+    this.rawMessage = message;
   }
 }
 
@@ -75,7 +122,7 @@ export class SharePointGraphError extends Error {
 }
 
 /**
- * Obtiene access token (client credentials) con caché y renovación anticipada.
+ * Obtiene access token (client credentials) con caché, reintentos y renovación anticipada.
  */
 export async function getAccessToken() {
   const now = Date.now();
@@ -84,35 +131,50 @@ export async function getAccessToken() {
   }
 
   const config = getSharePointConfig();
-  try {
-    const result = await getMsalApp().acquireTokenByClientCredential({
-      scopes: [config.graphScope],
-    });
+  let lastError;
 
-    if (!result?.accessToken) {
-      throw new SharePointAuthError('MSAL no devolvió accessToken');
+  for (let attempt = 1; attempt <= TOKEN_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const result = await getMsalApp().acquireTokenByClientCredential({
+        scopes: [config.graphScope],
+      });
+
+      if (!result?.accessToken) {
+        throw new SharePointAuthError('MSAL no devolvió accessToken');
+      }
+
+      cachedToken = result.accessToken;
+      cachedExpiresAt = result.expiresOn
+        ? new Date(result.expiresOn).getTime()
+        : now + 55 * 60 * 1000;
+
+      return cachedToken;
+    } catch (error) {
+      resetTokenCache();
+      lastError = error;
+      const msg = error?.message || String(error);
+      const fatalAuth = isAuthFailureMessage(msg) || error instanceof SharePointConfigError;
+      if (fatalAuth && attempt < TOKEN_MAX_ATTEMPTS) {
+        resetMicrosoftGraphClient();
+      }
+      if (attempt >= TOKEN_MAX_ATTEMPTS || (fatalAuth && /INVALID_GUID|MISSING|TOO_SHORT/i.test(msg))) {
+        break;
+      }
+      await sleep(400 * attempt);
     }
-
-    cachedToken = result.accessToken;
-    cachedExpiresAt = result.expiresOn
-      ? new Date(result.expiresOn).getTime()
-      : now + 55 * 60 * 1000;
-
-    return cachedToken;
-  } catch (error) {
-    resetTokenCache();
-    if (error instanceof SharePointAuthError || error instanceof SharePointConfigError) {
-      throw error;
-    }
-    throw new SharePointAuthError(
-      error?.message || 'No se pudo obtener token de Microsoft Graph',
-      error
-    );
   }
+
+  if (lastError instanceof SharePointAuthError || lastError instanceof SharePointConfigError) {
+    throw lastError;
+  }
+  throw new SharePointAuthError(
+    lastError?.message || 'No se pudo obtener token de Microsoft Graph',
+    lastError
+  );
 }
 
 /**
- * Request genérico a Microsoft Graph.
+ * Request genérico a Microsoft Graph (reintentos en red / 429 / 5xx; 401 renueva token).
  * @param {string} pathOrUrl - Ruta relativa a /v1.0 o URL absoluta
  * @param {{ method?: string, body?: unknown, headers?: Record<string,string> }} [options]
  */
@@ -123,70 +185,97 @@ export async function graphRequest(pathOrUrl, options = {}) {
     ? pathOrUrl
     : `${config.graphBaseUrl}${pathOrUrl.startsWith('/') ? '' : '/'}${pathOrUrl}`;
 
-  const token = await getAccessToken();
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: 'application/json',
-    ...(options.headers || {}),
-  };
+  let lastError;
 
-  let body;
-  if (options.body !== undefined && options.body !== null) {
-    if (Buffer.isBuffer(options.body) || typeof options.body === 'string') {
-      body = options.body;
-    } else {
-      headers['Content-Type'] = headers['Content-Type'] || 'application/json';
-      body = JSON.stringify(options.body);
+  for (let attempt = 1; attempt <= GRAPH_MAX_ATTEMPTS; attempt += 1) {
+    const token = await getAccessToken();
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+      ...(options.headers || {}),
+    };
+
+    let body;
+    if (options.body !== undefined && options.body !== null) {
+      if (Buffer.isBuffer(options.body) || typeof options.body === 'string') {
+        body = options.body;
+      } else {
+        headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+        body = JSON.stringify(options.body);
+      }
     }
-  }
 
-  let response;
-  try {
-    response = await fetch(url, { method, headers, body });
-  } catch (error) {
-    throw new SharePointGraphError(
-      `Error de red hacia Microsoft Graph: ${error.message}`,
-      { code: 'SHAREPOINT_NETWORK' }
-    );
-  }
-
-  if (response.status === 204) {
-    return null;
-  }
-
-  const text = await response.text();
-  let parsed = null;
-  if (text) {
+    let response;
     try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = text;
-    }
-  }
-
-  if (!response.ok) {
-    const graphMessage =
-      parsed?.error?.message ||
-      (typeof parsed === 'string' ? parsed : null) ||
-      response.statusText;
-    const graphCode = parsed?.error?.code;
-
-    if (response.status === 401 || response.status === 403) {
-      resetTokenCache();
-      throw new SharePointAuthError(
-        `Graph ${response.status}: ${graphMessage}`,
-        { status: response.status, code: graphCode, body: parsed }
+      response = await fetch(url, { method, headers, body });
+    } catch (error) {
+      lastError = new SharePointGraphError(
+        `Error de red hacia Microsoft Graph: ${error.message}`,
+        { code: 'SHAREPOINT_NETWORK' }
       );
+      if (attempt < GRAPH_MAX_ATTEMPTS) {
+        await sleep(500 * attempt);
+        continue;
+      }
+      throw lastError;
     }
 
-    throw new SharePointGraphError(graphMessage || 'Error Microsoft Graph', {
-      status: response.status,
-      code: graphCode || 'SHAREPOINT_GRAPH',
-      body: parsed,
-    });
+    if (response.status === 204) {
+      return null;
+    }
+
+    const text = await response.text();
+    let parsed = null;
+    if (text) {
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = text;
+      }
+    }
+
+    if (!response.ok) {
+      const graphMessage =
+        parsed?.error?.message ||
+        (typeof parsed === 'string' ? parsed : null) ||
+        response.statusText;
+      const graphCode = parsed?.error?.code;
+
+      if (response.status === 401 || response.status === 403) {
+        resetTokenCache();
+        resetMicrosoftGraphClient();
+        lastError = new SharePointAuthError(
+          `Graph ${response.status}: ${graphMessage}`,
+          { status: response.status, code: graphCode, body: parsed }
+        );
+        if (attempt < GRAPH_MAX_ATTEMPTS) {
+          await sleep(300 * attempt);
+          continue;
+        }
+        throw lastError;
+      }
+
+      if (isTransientGraphStatus(response.status) && attempt < GRAPH_MAX_ATTEMPTS) {
+        const retryAfter = Number(response.headers.get('retry-after'));
+        await sleep(
+          Number.isFinite(retryAfter) && retryAfter > 0
+            ? retryAfter * 1000
+            : 600 * attempt
+        );
+        continue;
+      }
+
+      throw new SharePointGraphError(graphMessage || 'Error Microsoft Graph', {
+        status: response.status,
+        code: graphCode || 'SHAREPOINT_GRAPH',
+        body: parsed,
+      });
+    }
+
+    return parsed;
   }
 
-  return parsed;
+  throw lastError || new SharePointGraphError('Error Microsoft Graph tras reintentos');
 }
 
 /**

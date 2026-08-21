@@ -1,4 +1,9 @@
 import EquidadFdmCaso from '../models/EquidadFdmCaso.js';
+import {
+  decidirAltaDesdeExcelTerremoto,
+  esMunicipioVacioOBasura,
+} from '../utils/fdmExcelSyncGuards.js';
+import { normalizarMunicipioFdm } from '../utils/fdmExcelParse.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -26,9 +31,11 @@ const mergeCampoFdm = (incoming, existing) => {
   return existing ?? null;
 };
 
-/** Estado / liquidación viven en ARNALD; el Excel vacío no debe devolverlos a PENDIENTE. */
+/** Estado / liquidación / ciudad viven en ARNALD; el Excel vacío o malo no debe pisarlos. */
 const CAMPOS_PROTEGIDOS_IMPORT_FDM = new Set([
   'estado',
+  'municipio',
+  'departamento',
   'perdidaContenidos',
   'perdidaEdificio',
   'totalPerdida',
@@ -481,6 +488,10 @@ export const ejecutarImportacionFdm = async (filas = []) => {
         continue;
       }
       if (!payloadBase.evento) payloadBase.evento = eventoClaveFdm(payloadBase);
+      // Normalizar basura de ciudad ("0") antes de merge/alta.
+      if (esMunicipioVacioOBasura(payloadBase.municipio)) payloadBase.municipio = null;
+      else payloadBase.municipio = normalizarMunicipioFdm(payloadBase.municipio);
+      if (esMunicipioVacioOBasura(payloadBase.departamento)) payloadBase.departamento = null;
 
       const existente = localizarExistenteFdm(payloadBase, indice, existentes);
 
@@ -509,6 +520,37 @@ export const ejecutarImportacionFdm = async (filas = []) => {
         if (idx >= 0) existentes[idx] = actualizado;
         indexarClavesFdm(indice, actualizado);
       } else {
+        const decision = decidirAltaDesdeExcelTerremoto(payloadBase, existentes);
+        if (decision.action === 'REJECT') {
+          resumen.omitidos += 1;
+          resumen.errores.push({
+            fila: filaNum,
+            motivo: decision.reason || 'Alta rechazada (duplicado / Lorica)',
+          });
+          continue;
+        }
+        if (decision.action === 'MATCH' && decision.caso?._id) {
+          for (const campo of CAMPOS_PROTEGIDOS_IMPORT_FDM) {
+            delete payloadBase[campo];
+          }
+          const merge = mergeImportacionFdm(payloadBase, decision.caso);
+          for (const campo of CAMPOS_PROTEGIDOS_IMPORT_FDM) {
+            if (!esPlaceholderFdm(decision.caso[campo])) {
+              merge[campo] = decision.caso[campo];
+            }
+          }
+          if (decision.caso.liquidador) merge.liquidador = decision.caso.liquidador;
+          const actualizado = await EquidadFdmCaso.findByIdAndUpdate(
+            decision.caso._id,
+            merge,
+            { new: true }
+          ).lean();
+          resumen.actualizados += 1;
+          const idx = existentes.findIndex((d) => String(d._id) === String(actualizado._id));
+          if (idx >= 0) existentes[idx] = actualizado;
+          indexarClavesFdm(indice, actualizado);
+          continue;
+        }
         if (!payloadBase.estado) payloadBase.estado = 'PENDIENTE';
         secuencial += 1;
         payloadBase.consecutivo = `FDM-${año}-${mes}-${secuencial}`;

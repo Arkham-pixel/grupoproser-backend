@@ -1161,6 +1161,81 @@ export const enviarEmailAlertasZurich = async (datosAlertas) => {
   }
 };
 
+/** Alertas BBVA CAT: reutiliza el layout de Alfa con panel BBVA CAT. */
+export const enviarEmailAlertasBbvaCat = async (datosAlertas) => {
+  const adaptado = {
+    ...datosAlertas,
+  };
+  try {
+    console.log('📧 Iniciando envío de email de alertas BBVA CAT...');
+    if (!adaptado.emailResponsable) {
+      return {
+        success: false,
+        message: 'No hay email válido para notificar alertas',
+      };
+    }
+    return await enviarEmailAlertasAlfa({
+      ...adaptado,
+      modulo: 'BBVA CAT',
+      aseguradora: adaptado.aseguradora || 'BBVA CAT',
+      enlacePanelOverride: `${resolveFrontendUrl()}/bbva-cat/reporte`,
+    });
+  } catch (error) {
+    console.error('❌ Error enviando email de alertas BBVA CAT:', error);
+    throw new Error(`Error enviando email de alertas BBVA CAT: ${error.message}`);
+  }
+};
+
+/** Alertas Allias: reutiliza el layout de Alfa con panel Allias. */
+export const enviarEmailAlertasAllias = async (datosAlertas) => {
+  const adaptado = {
+    ...datosAlertas,
+  };
+  try {
+    console.log('📧 Iniciando envío de email de alertas Allias...');
+    if (!adaptado.emailResponsable) {
+      return {
+        success: false,
+        message: 'No hay email válido para notificar alertas',
+      };
+    }
+    return await enviarEmailAlertasAlfa({
+      ...adaptado,
+      modulo: 'Allias',
+      aseguradora: adaptado.aseguradora || 'Allias',
+      enlacePanelOverride: `${resolveFrontendUrl()}/allias/reporte`,
+    });
+  } catch (error) {
+    console.error('❌ Error enviando email de alertas Allias:', error);
+    throw new Error(`Error enviando email de alertas Allias: ${error.message}`);
+  }
+};
+
+/** Alertas Previsora: reutiliza el layout de Alfa con panel Previsora. */
+export const enviarEmailAlertasPrevisora = async (datosAlertas) => {
+  const adaptado = {
+    ...datosAlertas,
+  };
+  try {
+    console.log('📧 Iniciando envío de email de alertas Previsora...');
+    if (!adaptado.emailResponsable) {
+      return {
+        success: false,
+        message: 'No hay email válido para notificar alertas',
+      };
+    }
+    return await enviarEmailAlertasAlfa({
+      ...adaptado,
+      modulo: 'Previsora',
+      aseguradora: adaptado.aseguradora || 'Previsora',
+      enlacePanelOverride: `${resolveFrontendUrl()}/previsora/reporte`,
+    });
+  } catch (error) {
+    console.error('❌ Error enviando email de alertas Previsora:', error);
+    throw new Error(`Error enviando email de alertas Previsora: ${error.message}`);
+  }
+};
+
 /** Alertas Sura: reutiliza el layout de Alfa con panel Sura. */
 export const enviarEmailAlertasSura = async (datosAlertas) => {
   const adaptado = {

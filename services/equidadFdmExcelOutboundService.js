@@ -18,6 +18,12 @@ import {
 import EquidadFdmExcelOutboundUpdate from '../models/EquidadFdmExcelOutboundUpdate.js';
 import EquidadFdmExcelSharePointSource from '../models/EquidadFdmExcelSharePointSource.js';
 import EquidadFdmCaso from '../models/EquidadFdmCaso.js';
+import {
+  esCasoLoricaOFueraTerremoto,
+  esMunicipioVacioOBasura,
+  soloDigitosFdm,
+} from '../utils/fdmExcelSyncGuards.js';
+import { normalizarMunicipioFdm } from '../utils/fdmExcelParse.js';
 
 const RETRY_MS = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000];
 
@@ -97,6 +103,8 @@ const HEADER_TO_FIELD = {
   'DIRECCION AFECTADA': 'direccionAfectada',
   DIRECCION: 'direccionAfectada',
   MUNICIPIO: 'municipio',
+  CIUDAD: 'municipio',
+  'CIUDAD MUNICIPIO': 'municipio',
   DEPARTAMENTO: 'departamento',
   'OFICINA RADICADORA': 'oficinaRadicadora',
   OFICINA: 'oficinaRadicadora',
@@ -404,12 +412,23 @@ export async function processEquidadFdmExcelOutboundUpdate(doc) {
     for (const field of fieldsToWrite) {
       const col = colByField[field];
       if (col == null) continue;
-      const to =
-        changes[field]?.to !== undefined && changes[field]?.to !== null && changes[field]?.to !== ''
-          ? changes[field].to
+      const change = changes[field];
+      // Si el cambio pide borrar (to null/''), vaciar la celda en Excel.
+      const clearCell =
+        change &&
+        Object.prototype.hasOwnProperty.call(change, 'to') &&
+        (change.to == null || change.to === '');
+      const to = clearCell
+        ? null
+        : change?.to !== undefined && change?.to !== null && change?.to !== ''
+          ? change.to
           : caso[field];
-      if (to == null || to === '') continue;
+      if (!clearCell && (to == null || to === '')) continue;
       const cell = dataRow.getCell(col);
+      if (clearCell) {
+        cell.value = null;
+        continue;
+      }
       const display = cellDisplay(to);
       cell.value = display;
       if (display instanceof Date) {
@@ -514,11 +533,30 @@ export async function runEquidadFdmExcelOutboundCycle({ batchSize } = {}) {
     console.warn('⚠️ Sync filas faltantes Excel FDM:', missErr.message);
   }
 
+  // Si no hay cola pendiente, rellenar ciudades vacías del Excel desde ARNALD (sin Lorica).
+  try {
+    const stillPending = await EquidadFdmExcelOutboundUpdate.countDocuments({
+      status: 'pending',
+    });
+    if (stillPending === 0) {
+      const heal = await healEmptyMunicipiosInExcelFromArnald({ maxRows: 80 });
+      summary.healedMunicipios = heal.filled || 0;
+      if (summary.healedMunicipios) {
+        console.log(
+          `📤 Equidad FDM Excel: se rellenaron ${summary.healedMunicipios} ciudad(es) vacías desde ARNALD`
+        );
+      }
+    }
+  } catch (healErr) {
+    console.warn('⚠️ Heal municipios Excel FDM:', healErr.message);
+  }
+
   return summary;
 }
 
 /**
  * Agrega al Excel de SharePoint los casos ARNALD (terremoto) que aún no tienen fila.
+ * Nunca agrega Lorica ni casos fuera de terremoto.
  */
 export async function syncMissingArnaldCasosToExcel() {
   const cfg = getEquidadFdmExcelSharePointConfig();
@@ -563,6 +601,11 @@ export async function syncMissingArnaldCasosToExcel() {
   const missing = [];
   for (const caso of casos) {
     if (!caso?.nombre) continue;
+    // Lorica / fuera de terremoto: nunca empujar a esta base.
+    if (esCasoLoricaOFueraTerremoto(caso)) continue;
+    const ced = soloDigitosFdm(caso.cedula);
+    // Sin cédula sólida no append automático (evita filas fantasma infinitas).
+    if (!ced || ced.length < 6) continue;
     const existing = findRowForCasoExcelJs(ws, headerIdx, colByField, caso);
     if (existing > 0) continue;
     const rowIdx = nextDataRowNumber(ws, headerIdx);
@@ -599,4 +642,96 @@ export async function syncMissingArnaldCasosToExcel() {
   );
 
   return { appended, missing, eTag: newEtag };
+}
+
+/**
+ * Rellena CIUDAD/MUNICIPIO vacío en Excel con el valor de ARNALD (terremoto).
+ * No inventa ciudades ni toca Lorica. Límite por ciclo para no saturar SharePoint.
+ */
+export async function healEmptyMunicipiosInExcelFromArnald({ maxRows = 80 } = {}) {
+  const resolved = await resolveSourceItem();
+  if (!resolved?.itemId) {
+    return { filled: 0, skipped: true };
+  }
+
+  const casos = await EquidadFdmCaso.find({
+    evento: /TERREMOTO/i,
+    municipio: { $nin: [null, '', '0'] },
+  })
+    .select('cedula nombre municipio departamento')
+    .lean();
+
+  const byCedula = new Map();
+  for (const c of casos) {
+    if (esCasoLoricaOFueraTerremoto(c)) continue;
+    const mun = normalizarMunicipioFdm(c.municipio);
+    if (!mun) continue;
+    const ced = soloDigitosFdm(c.cedula);
+    if (ced && ced.length >= 6 && !byCedula.has(ced)) byCedula.set(ced, c);
+  }
+
+  const downloaded = await downloadDriveItemBuffer({
+    driveId: resolved.driveId,
+    itemId: resolved.itemId,
+  });
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(downloaded?.buffer || downloaded);
+  const ws = wb.worksheets[0];
+  if (!ws) return { filled: 0 };
+
+  const headerIdx = findHeaderRowNumber(ws);
+  if (headerIdx < 0) return { filled: 0 };
+  const colByField = mapHeadersFromWorksheet(ws, headerIdx);
+  if (colByField.municipio == null || colByField.cedula == null) {
+    return { filled: 0, reason: 'NO_MUNICIPIO_COL' };
+  }
+
+  let filled = 0;
+  for (let r = headerIdx + 1; r <= ws.rowCount; r += 1) {
+    if (filled >= maxRows) break;
+    const row = ws.getRow(r);
+    const ced = soloDigitosFdm(headerCellText(row.getCell(colByField.cedula).value));
+    if (!ced || ced.length < 6) continue;
+    const munExcel = headerCellText(row.getCell(colByField.municipio).value);
+    if (!esMunicipioVacioOBasura(munExcel)) continue;
+    const caso = byCedula.get(ced);
+    if (!caso) continue;
+    const mun = normalizarMunicipioFdm(caso.municipio);
+    if (!mun || esMunicipioVacioOBasura(mun)) continue;
+    row.getCell(colByField.municipio).value = mun;
+    if (colByField.departamento != null && caso.departamento) {
+      const depExcel = headerCellText(row.getCell(colByField.departamento).value);
+      if (esMunicipioVacioOBasura(depExcel)) {
+        row.getCell(colByField.departamento).value = caso.departamento;
+      }
+    }
+    filled += 1;
+  }
+
+  if (!filled) return { filled: 0 };
+
+  ensureWorksheetRowsVisible(ws);
+  const outBuf = Buffer.from(await wb.xlsx.writeBuffer());
+  const metaBefore = await getItemMetadata(resolved.itemId);
+  const uploaded = await replaceDriveItemContentBuffer({
+    driveId: resolved.driveId,
+    itemId: resolved.itemId,
+    buffer: outBuf,
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ifMatch: metaBefore.eTag || resolved.eTag,
+  });
+  const newEtag = uploaded?.eTag || uploaded?.id;
+  const cfg = getEquidadFdmExcelSharePointConfig();
+  await EquidadFdmExcelSharePointSource.findOneAndUpdate(
+    { integrationKey: cfg.integrationKey },
+    {
+      $set: {
+        lastArnaldWrittenEtag: newEtag || metaBefore.eTag,
+        eTag: newEtag || metaBefore.eTag,
+        lastSyncAt: new Date(),
+      },
+    }
+  );
+
+  return { filled, eTag: newEtag };
 }

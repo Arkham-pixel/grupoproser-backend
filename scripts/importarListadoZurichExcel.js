@@ -14,6 +14,7 @@ import ZurichListadoCaso from '../models/ZurichListadoCaso.js';
 import InspectorCatastrofico from '../models/InspectorCatastrofico.js';
 import AjustadorCatastrofico from '../models/AjustadorCatastrofico.js';
 import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatastrofico.js';
+import { homologarEstadoZurich } from '../utils/estadosZurich.js';
 
 const excelPath =
   process.argv[2] ||
@@ -125,7 +126,8 @@ const parsearExcel = (filePath) => {
       .filter(Boolean)
       .join(' | ');
     caso.identificacion = caso.zc || caso.siniestro;
-    if (!caso.estado || caso.estado === '0') caso.estado = 'PENDIENTE';
+    if (!caso.estado || caso.estado === '0') caso.estado = '';
+    caso.estado = homologarEstadoZurich(caso.estado);
     casos.push(caso);
   }
   return casos;
@@ -221,7 +223,7 @@ for (const fila of casosExcel) {
       ciudad: completar(incoming.ciudad, existente.ciudad),
       inspector: completar(incoming.inspector, existente.inspector),
       ajustador: completar(incoming.ajustador, existente.ajustador),
-      estado: completar(incoming.estado, existente.estado) || 'PENDIENTE',
+      estado: homologarEstadoZurich(completar(incoming.estado, existente.estado)),
       fechaAsignacion: existente.fechaAsignacion || incoming.fechaAsignacion || null,
       fechaVisita: existente.fechaVisita || incoming.fechaVisita || null,
       consecutivo: existente.consecutivo || `ZURICH-LST-${año}-${mes}-${max + 1}`,
@@ -248,7 +250,7 @@ for (const fila of casosExcel) {
       ciudad: incoming.ciudad || null,
       inspector: incoming.inspector || null,
       ajustador: incoming.ajustador || null,
-      estado: incoming.estado || 'PENDIENTE',
+      estado: homologarEstadoZurich(incoming.estado),
       fechaAsignacion: incoming.fechaAsignacion || null,
       fechaVisita: incoming.fechaVisita || null,
     });

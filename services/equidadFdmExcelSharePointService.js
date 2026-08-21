@@ -3,7 +3,11 @@
  * Cron solo preview; execute siempre manual.
  */
 
-import { getEquidadFdmExcelSharePointConfig, FDM_EXCEL_INBOUND_FIELDS } from '../config/equidadFdmExcelSharePoint.js';
+import { getEquidadFdmExcelSharePointConfig, FDM_EXCEL_INBOUND_FIELDS, FDM_EXCEL_PROTECTED_FROM_INBOUND } from '../config/equidadFdmExcelSharePoint.js';
+import {
+  decidirAltaDesdeExcelTerremoto,
+  esMunicipioVacioOBasura,
+} from '../utils/fdmExcelSyncGuards.js';
 import {
   listFolder,
   getItemMetadata,
@@ -216,8 +220,24 @@ function diffInbound(fila, caso) {
   const changes = {};
   for (const field of FDM_EXCEL_INBOUND_FIELDS) {
     if (!(field in fila) || fila[field] == null || fila[field] === '') continue;
+    // Basura de ciudad ("0", SIN INFO, etc.) nunca entra a ARNALD.
+    if (
+      (field === 'municipio' || field === 'departamento') &&
+      esMunicipioVacioOBasura(fila[field])
+    ) {
+      continue;
+    }
     // No importar direcciones/basura a la columna Ajustador.
     if (field === 'ajustador' && pareceDireccionAjustador(fila[field])) continue;
+    // Ciudad / depto: si ARNALD ya tiene valor, el Excel (a menudo vacío o malo) no pisa.
+    if (
+      FDM_EXCEL_PROTECTED_FROM_INBOUND.includes(field) &&
+      caso?.[field] != null &&
+      String(caso[field]).trim() !== '' &&
+      !esMunicipioVacioOBasura(caso[field])
+    ) {
+      continue;
+    }
     if (!valuesEqual(fila[field], caso?.[field])) {
       changes[field] = { from: caso?.[field] ?? null, to: fila[field] };
     }
@@ -281,6 +301,47 @@ export async function previewEquidadFdmExcelImport({
     }
 
     if (match.action === 'CREATE') {
+      const decision = decidirAltaDesdeExcelTerremoto(fila, existentes);
+      if (decision.action === 'REJECT') {
+        totals.rejected += 1;
+        rows.push({
+          excelRow: i + 2,
+          action: 'REJECTED',
+          reason: decision.reason,
+          nombre: fila.nombre,
+          cedula: fila.cedula,
+          casoExistente: decision.caso?.consecutivo || null,
+          payload: fila,
+        });
+        continue;
+      }
+      if (decision.action === 'MATCH' && decision.caso) {
+        const changes = diffInbound(fila, decision.caso);
+        if (Object.keys(changes).length === 0) {
+          totals.unchanged += 1;
+          rows.push({
+            excelRow: i + 2,
+            action: 'UNCHANGED',
+            casoId: String(decision.caso._id),
+            consecutivo: decision.caso.consecutivo,
+            nombre: fila.nombre,
+            cedula: fila.cedula,
+          });
+        } else {
+          totals.updated += 1;
+          rows.push({
+            excelRow: i + 2,
+            action: 'UPDATE',
+            casoId: String(decision.caso._id),
+            consecutivo: decision.caso.consecutivo,
+            nombre: fila.nombre,
+            cedula: fila.cedula,
+            changes,
+            payload: fila,
+          });
+        }
+        continue;
+      }
       totals.created += 1;
       rows.push({
         excelRow: i + 2,

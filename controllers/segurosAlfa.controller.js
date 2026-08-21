@@ -13,6 +13,7 @@ import {
 import {
   buildAlfaSharePointDocumentsStatus,
   markAlfaClaimDocumentForRetry,
+  setAlfaClaimDocumentSharePointEnabled,
 } from '../services/alfaSharePointStatusService.js';
 import { listImportedAlfaPoliciesForCase } from '../services/alfaPolicyImportService.js';
 import {
@@ -41,6 +42,10 @@ import {
   openAlfaCondicionDownloadStream,
 } from '../services/alfaCondicionesService.js';
 import { aplicarRestriccionRolCaso, obtenerIdentidadUsuarioReq, construirFiltroVistaAsignacion, casoVisibleParaIdentidad, collationVistaAsignacion, combinarFiltrosMongo } from '../utils/permisosCasoPorRol.js';
+import {
+  resolverLiquidadorParaUpdate,
+  resolverInformeUnicoParaUpdate,
+} from '../utils/protegerPresupuestoNsr10.js';
 import * as XLSX from 'xlsx';
 
 const esValorVacio = (valor) =>
@@ -230,18 +235,9 @@ const buildAlfaPayload = (data = {}, base = {}) => ({
     base.fechaEnvioAseguradora ?? null
   ),
   estado: toStringOrNull(data.estado, base.estado ?? null),
-  liquidador:
-    data.liquidador !== undefined
-      ? data.liquidador && typeof data.liquidador === 'object'
-        ? data.liquidador
-        : null
-      : base.liquidador ?? null,
-  informeUnico:
-    data.informeUnico !== undefined
-      ? data.informeUnico && typeof data.informeUnico === 'object'
-        ? data.informeUnico
-        : null
-      : base.informeUnico ?? null,
+  // Servidor: nunca pisar liquidador/informe con contenido por cascarón vacío o null
+  liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
+  informeUnico: resolverInformeUnicoParaUpdate(data.informeUnico, base.informeUnico),
 });
 
 /** Une fila Excel con caso existente: solo pisa placeholders / vacíos / errores parseados. */
@@ -1091,6 +1087,53 @@ export const reintentarSyncSharePointAlfa = async (req, res) => {
   }
 };
 
+/**
+ * PATCH /api/seguros-alfa/:id/archivos/:archivoId/sharepoint/enabled
+ * Body: { enabled: true|false }
+ * Permite decidir si el archivo sube a SharePoint o se queda solo en ARNALD.
+ */
+export const setSharePointEnabledAlfa = async (req, res) => {
+  try {
+    const caso = await buscarCasoPorId(req.params.id);
+    if (!caso) {
+      return res.status(404).json({ success: false, error: 'Caso Seguros Alfa no encontrado' });
+    }
+
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        error: 'Body inválido: se requiere enabled (boolean)',
+        code: 'INVALID_BODY',
+      });
+    }
+
+    const result = await setAlfaClaimDocumentSharePointEnabled({
+      caso,
+      archivoId: req.params.archivoId,
+      enabled,
+    });
+
+    return res.json({
+      success: true,
+      message: enabled
+        ? 'Documento marcado para subir a SharePoint.'
+        : 'Documento excluido de SharePoint (solo ARNALD).',
+      data: result,
+    });
+  } catch (error) {
+    const status = error.status || 500;
+    if (status >= 500) {
+      console.error('❌ Error set SharePoint enabled Alfa:', error);
+    }
+    return res.status(status).json({
+      success: false,
+      error: error.message || 'Error al actualizar sincronización SharePoint',
+      code: error.code || 'ENABLED_ERROR',
+    });
+  }
+};
+
 /** GET /api/seguros-alfa/alertas */
 export const getAlertasAlfa = async (_req, res) => {
   try {
@@ -1222,7 +1265,7 @@ export const getBloquesCercaniaAlfa = async (req, res) => {
   }
 };
 
-/** GET /api/seguros-alfa/condiciones — PDFs en raíz SEGUROS ALFA/PÓLIZAS */
+/** GET /api/seguros-alfa/condiciones — PDFs raíz PÓLIZAS + carpeta POLIZAS GENERAL */
 export const getCondicionesAlfa = async (req, res) => {
   try {
     const data = await listAlfaCondicionesDocuments();

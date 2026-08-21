@@ -3,6 +3,8 @@ import InspectorCatastrofico from '../models/InspectorCatastrofico.js';
 import AjustadorCatastrofico from '../models/AjustadorCatastrofico.js';
 import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatastrofico.js';
 import { deleteStoredFile } from '../services/fileStorageService.js';
+import { preservarPresupuestoNsrSiVacio } from '../utils/protegerPresupuestoNsr10.js';
+import { aplicarFechaAccionEstadoZurich, homologarEstadoZurich } from '../utils/estadosZurich.js';
 
 const esVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null';
@@ -152,11 +154,48 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     inspector: pick(data.inspector, base.inspector ?? null),
     fechaAsignacion: pickFecha(data.fechaAsignacion, base.fechaAsignacion ?? null),
     fechaVisita: pickFecha(data.fechaVisita, base.fechaVisita ?? null),
-    estado: pick(data.estado, base.estado ?? 'PENDIENTE') || 'PENDIENTE',
-    liquidador: pickObjeto(data.liquidador, base.liquidador ?? null),
+    estado: homologarEstadoZurich(pick(data.estado, base.estado ?? 'CASO NUEVO') || 'CASO NUEVO'),
+    modalidadAtencion: pick(data.modalidadAtencion, base.modalidadAtencion ?? null),
+    fechaCasoNuevo: pickFecha(data.fechaCasoNuevo, base.fechaCasoNuevo ?? null),
+    fechaCoordinandoInspeccion: pickFecha(
+      data.fechaCoordinandoInspeccion,
+      base.fechaCoordinandoInspeccion ?? null
+    ),
+    fechaAnalisisCaso: pickFecha(data.fechaAnalisisCaso, base.fechaAnalisisCaso ?? null),
+    fechaSolicitudDocumento: pickFecha(
+      data.fechaSolicitudDocumento,
+      base.fechaSolicitudDocumento ?? null
+    ),
+    fechaRecepcionDocumento: pickFecha(
+      data.fechaRecepcionDocumento,
+      base.fechaRecepcionDocumento ?? null
+    ),
+    fechaObjecion: pickFecha(data.fechaObjecion, base.fechaObjecion ?? null),
+    fechaAutorizacionAnalista: pickFecha(
+      data.fechaAutorizacionAnalista,
+      base.fechaAutorizacionAnalista ?? null
+    ),
+    fechaCasoParaPago: pickFecha(data.fechaCasoParaPago, base.fechaCasoParaPago ?? null),
+    documentoFaltante: pick(data.documentoFaltante, base.documentoFaltante ?? null),
+    observacionPendienteDocumento: pick(
+      data.observacionPendienteDocumento,
+      base.observacionPendienteDocumento ?? null
+    ),
+    motivoObjecion: pick(data.motivoObjecion, base.motivoObjecion ?? null),
+    responsableAporteDocumento: pick(
+      data.responsableAporteDocumento,
+      base.responsableAporteDocumento ?? null
+    ),
+    liquidador: preservarPresupuestoNsrSiVacio(
+      pickObjeto(data.liquidador, base.liquidador ?? null),
+      base.liquidador
+    ),
     informeUnico: pickObjeto(data.informeUnico, base.informeUnico ?? null),
   });
-  return armarContactoAsegurado(armarContactoIntermediario(payload));
+  return aplicarFechaAccionEstadoZurich(
+    armarContactoAsegurado(armarContactoIntermediario(payload)),
+    base
+  );
 };
 
 const obtenerMaxSecuencial = async () => {
@@ -358,7 +397,7 @@ export const importarCasosListadoZurich = async (req, res) => {
           ...filas[i],
           inspector: asignacion.inspector,
           ajustador: asignacion.ajustador,
-          estado: filas[i]?.estado || 'PENDIENTE',
+          estado: filas[i]?.estado || 'CASO NUEVO',
         });
         if (!payload.zc && !payload.siniestro && !payload.asegurado) {
           resumen.omitidos += 1;

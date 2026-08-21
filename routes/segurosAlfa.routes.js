@@ -13,6 +13,7 @@ import {
   listarDocumentosSharePointAlfa,
   listarPolizasImportadasAlfa,
   reintentarSyncSharePointAlfa,
+  setSharePointEnabledAlfa,
   previewImportExcelAlfa,
   executeImportExcelAlfa,
   statusImportExcelAlfa,
@@ -128,6 +129,11 @@ router.post(
   verificarToken,
   verificarAdminSoporte,
   reintentarSyncSharePointAlfa
+);
+router.patch(
+  '/:id/archivos/:archivoId/sharepoint/enabled',
+  verificarToken,
+  setSharePointEnabledAlfa
 );
 
 router.post(

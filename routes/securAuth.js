@@ -17,6 +17,7 @@ import { UPLOADS_ROOT, ensureUploadDir } from "../config/uploadsRoot.js";
 import { createMulterUpload, attachPersistedFileMiddleware } from "../storage/multerStorageFactory.js";
 import { STORAGE_CATEGORIES, deleteReplacedStoredFile, getPublicPathForSingle } from "../services/fileStorageService.js";
 import { resolveFrontendUrl } from "../config/platformUrls.js";
+import { registrarLoginAuditoria, registrarLogoutAuditoria } from "../services/arnaldAuditService.js";
 
 const router = express.Router();
 
@@ -456,9 +457,10 @@ router.post("/login", async (req, res) => {
       
       await nuevaSesion.save();
       console.log(`✅ Sesión registrada para usuario: ${usuario.name} (${usuario.login})`);
+      registrarLoginAuditoria(req, usuario);
     } catch (sessionError) {
       console.error('⚠️ Error al registrar sesión (no crítico):', sessionError);
-      // No fallar el login si hay error al registrar la sesión
+      registrarLoginAuditoria(req, usuario);
     }
     
     res.json({
@@ -640,8 +642,10 @@ router.post("/login/2fa", async (req, res) => {
         
         await nuevaSesion.save();
         console.log(`✅ Sesión registrada para usuario: ${usuario.name} (${usuario.login})`);
+        registrarLoginAuditoria(req, usuario);
       } catch (sessionError) {
         console.error('⚠️ Error al registrar sesión (no crítico):', sessionError);
+        registrarLoginAuditoria(req, usuario);
       }
       
       return res.json({
@@ -707,6 +711,7 @@ router.post("/login/2fa", async (req, res) => {
     );
     
     console.log('✅ Login 2FA exitoso para:', correo);
+    registrarLoginAuditoria(req, usuario);
     
     res.json({ 
       token, 
@@ -2546,6 +2551,8 @@ router.post("/logout", async (req, res) => {
       await sesionActiva.save();
       console.log(`✅ Sesión cerrada para usuario ID: ${decoded.id}, duración: ${duracionMinutos}m ${duracionSegundos}s`);
     }
+
+    registrarLogoutAuditoria(req, decoded);
     
     res.json({ message: req.t('sessionClosedSuccess') });
   } catch (error) {

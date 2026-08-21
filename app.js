@@ -10,6 +10,8 @@ import { corsMiddleware } from "./config/corsConfig.js";
 import { helmetMiddleware, loginRateLimitMiddleware } from "./config/httpSecurity.js";
 import { restringirExterno } from "./middleware/restringirExterno.js";
 import { restringirContractorZurich } from "./middleware/restringirContractorZurich.js";
+import { poblarUsuarioOpcional } from "./middleware/usuarioOpcional.js";
+import { registrarAuditoriaPlataforma } from "./middleware/registrarAuditoriaPlataforma.js";
 import { resolveFrontendUrl } from "./config/platformUrls.js";
 import { localeMiddleware } from './middleware/locale.js';
 
@@ -45,6 +47,12 @@ import segurosAlfaRoutes from './routes/segurosAlfa.routes.js';
 import segurosSuraRoutes from './routes/segurosSura.routes.js';
 import zurichRoutes from './routes/zurich.routes.js';
 import zurichListadoRoutes from './routes/zurichListado.routes.js';
+import bbvaCatRoutes from './routes/bbvaCat.routes.js';
+import bbvaCatListadoRoutes from './routes/bbvaCatListado.routes.js';
+import alliasRoutes from './routes/allias.routes.js';
+import alliasListadoRoutes from './routes/alliasListado.routes.js';
+import previsoraRoutes from './routes/previsora.routes.js';
+import previsoraListadoRoutes from './routes/previsoraListado.routes.js';
 import propiedadesRoutes from './routes/propiedades.routes.js';
 import chatgptRoutes from './routes/chatgpt.routes.js';
 import inspeccionPropiedadesRoutes from './routes/inspeccionPropiedades.routes.js';
@@ -54,6 +62,7 @@ import storageRoutes from './routes/storage.routes.js';
 import sgSstRoutes from './routes/sgSst.routes.js';
 import healthRoutes from './routes/health.routes.js';
 import sharepointRoutes from './routes/sharepoint.routes.js';
+import arnaldPlataformaRoutes from './routes/arnaldPlataforma.routes.js';
 import multer from 'multer';
 import { mapS3ErrorMessage, isS3AccessDeniedError } from './services/s3StorageService.js';
 import { UPLOADS_ROOT } from './config/uploadsRoot.js';
@@ -163,6 +172,24 @@ if (!fs.existsSync(zurichUploadsDir)) {
   console.log("📁 Carpeta 'uploads/zurich/' creada... ✅");
 }
 
+const bbvaCatUploadsDir = path.join(uploadsDir, "bbva-cat");
+if (!fs.existsSync(bbvaCatUploadsDir)) {
+  fs.mkdirSync(bbvaCatUploadsDir, { recursive: true });
+  console.log("📁 Carpeta 'uploads/bbva-cat/' creada... ✅");
+}
+
+const alliasUploadsDir = path.join(uploadsDir, "allias");
+if (!fs.existsSync(alliasUploadsDir)) {
+  fs.mkdirSync(alliasUploadsDir, { recursive: true });
+  console.log("📁 Carpeta 'uploads/allias/' creada... ✅");
+}
+
+const previsoraUploadsDir = path.join(uploadsDir, "previsora");
+if (!fs.existsSync(previsoraUploadsDir)) {
+  fs.mkdirSync(previsoraUploadsDir, { recursive: true });
+  console.log("📁 Carpeta 'uploads/previsora/' creada... ✅");
+}
+
 const equidadFdmUploadsDir = path.join(uploadsDir, "equidad-fdm");
 if (!fs.existsSync(equidadFdmUploadsDir)) {
   fs.mkdirSync(equidadFdmUploadsDir, { recursive: true });
@@ -195,7 +222,10 @@ app.get('/reset-password/:token', (req, res) => {
 // Sesiones externas (enlace de subtarea): solo pueden usar APIs del formulario de ajuste
 app.use(restringirExterno);
 app.use(restringirContractorZurich);
+app.use(poblarUsuarioOpcional);
+app.use(registrarAuditoriaPlataforma);
 
+app.use("/api", arnaldPlataformaRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/secur-auth", securAuthRoutes);
 console.log('✅ Ruta /api/secur-auth montada');
@@ -244,6 +274,12 @@ app.use('/api/sura', segurosSuraRoutes);
 // y, si va primero, captura /api/zurich-listado como GET /:id.
 app.use('/api/zurich-listado', zurichListadoRoutes);
 app.use('/api/zurich', zurichRoutes);
+app.use('/api/bbva-cat-listado', bbvaCatListadoRoutes);
+app.use('/api/bbva-cat', bbvaCatRoutes);
+app.use('/api/allias-listado', alliasListadoRoutes);
+app.use('/api/allias', alliasRoutes);
+app.use('/api/previsora-listado', previsoraListadoRoutes);
+app.use('/api/previsora', previsoraRoutes);
 app.use('/api/propiedades', propiedadesRoutes);
 app.use('/api/chatgpt', chatgptRoutes);
 app.use('/api/inspeccion-propiedades', inspeccionPropiedadesRoutes);

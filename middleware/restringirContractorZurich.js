@@ -38,5 +38,13 @@ export function restringirContractorZurich(req, res, next) {
   if (!permitido) {
     return res.status(403).json({ error: config.mensaje });
   }
+  // Rol bandeja Equidad: solo lectura en su API.
+  if (
+    config.soloLecturaApi &&
+    !['GET', 'HEAD', 'OPTIONS'].includes(String(req.method || '').toUpperCase()) &&
+    config.apis.some(coincidePrefijo)
+  ) {
+    return res.status(403).json({ error: config.mensaje });
+  }
   return next();
 }

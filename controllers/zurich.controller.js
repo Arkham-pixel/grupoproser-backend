@@ -8,6 +8,8 @@ import {
 } from '../services/alertasZurichService.js';
 import { ROL_SOLO_ZURICH, normalizarRol } from '../config/roles.js';
 import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
+import { preservarPresupuestoNsrSiVacio } from '../utils/protegerPresupuestoNsr10.js';
+import { aplicarFechaAccionEstadoZurich, homologarEstadoZurich } from '../utils/estadosZurich.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -382,7 +384,40 @@ const buildZurichPayload = (data = {}, base = {}) => {
     data.fechaEnvioAseguradora,
     base.fechaEnvioAseguradora ?? null
   ),
-  estado: toStringOrNull(data.estado, base.estado ?? null),
+  fechaAsignacion: parseDateFlexible(data.fechaAsignacion, base.fechaAsignacion ?? null),
+  fechaVisita: parseDateFlexible(data.fechaVisita, base.fechaVisita ?? null),
+  estado: homologarEstadoZurich(toStringOrNull(data.estado, base.estado ?? 'CASO NUEVO')),
+  modalidadAtencion: toStringOrNull(data.modalidadAtencion, base.modalidadAtencion ?? null),
+  fechaCasoNuevo: parseDateFlexible(data.fechaCasoNuevo, base.fechaCasoNuevo ?? null),
+  fechaCoordinandoInspeccion: parseDateFlexible(
+    data.fechaCoordinandoInspeccion,
+    base.fechaCoordinandoInspeccion ?? null
+  ),
+  fechaAnalisisCaso: parseDateFlexible(data.fechaAnalisisCaso, base.fechaAnalisisCaso ?? null),
+  fechaSolicitudDocumento: parseDateFlexible(
+    data.fechaSolicitudDocumento,
+    base.fechaSolicitudDocumento ?? null
+  ),
+  fechaRecepcionDocumento: parseDateFlexible(
+    data.fechaRecepcionDocumento,
+    base.fechaRecepcionDocumento ?? null
+  ),
+  fechaObjecion: parseDateFlexible(data.fechaObjecion, base.fechaObjecion ?? null),
+  fechaAutorizacionAnalista: parseDateFlexible(
+    data.fechaAutorizacionAnalista,
+    base.fechaAutorizacionAnalista ?? null
+  ),
+  fechaCasoParaPago: parseDateFlexible(data.fechaCasoParaPago, base.fechaCasoParaPago ?? null),
+  documentoFaltante: toStringOrNull(data.documentoFaltante, base.documentoFaltante ?? null),
+  observacionPendienteDocumento: toStringOrNull(
+    data.observacionPendienteDocumento,
+    base.observacionPendienteDocumento ?? null
+  ),
+  motivoObjecion: toStringOrNull(data.motivoObjecion, base.motivoObjecion ?? null),
+  responsableAporteDocumento: toStringOrNull(
+    data.responsableAporteDocumento,
+    base.responsableAporteDocumento ?? null
+  ),
   riskId: toStringOrNull(data.riskId, base.riskId ?? null),
   distanciaEpicentroKm: parseNumberFlexible(
     data.distanciaEpicentroKm,
@@ -460,7 +495,7 @@ const buildZurichPayload = (data = {}, base = {}) => {
   liquidador:
     data.liquidador !== undefined
       ? data.liquidador && typeof data.liquidador === 'object'
-        ? data.liquidador
+        ? preservarPresupuestoNsrSiVacio(data.liquidador, base.liquidador)
         : null
       : base.liquidador ?? null,
   informeUnico:
@@ -475,7 +510,7 @@ const buildZurichPayload = (data = {}, base = {}) => {
   ),
   };
   payload.checklistCatCompleto = esChecklistCatLleno(payload);
-  return payload;
+  return aplicarFechaAccionEstadoZurich(payload, base);
 };
 
 /** Mapea un SiniestroExpress → campos Zurich (estructura Alfa). */
@@ -513,7 +548,7 @@ export const mapExpressAZurich = (express = {}) => ({
   fechaLiquidado: express.fechaDefinicionCaso || null,
   fechaAceptacionLiquidacion: null,
   fechaEnvioAseguradora: express.fechaEnvioAutorizacion || null,
-  estado: express.estadoProceso || 'PENDIENTE',
+  estado: express.estadoProceso || 'CASO NUEVO',
   liquidador: express.liquidador && typeof express.liquidador === 'object' ? express.liquidador : null,
 });
 
@@ -564,7 +599,22 @@ const mergeImportacionZurich = (incomingPayload = {}, existente = {}) => {
     'fechaLiquidado',
     'fechaAceptacionLiquidacion',
     'fechaEnvioAseguradora',
+    'fechaAsignacion',
+    'fechaVisita',
     'estado',
+    'modalidadAtencion',
+    'fechaCasoNuevo',
+    'fechaCoordinandoInspeccion',
+    'fechaAnalisisCaso',
+    'fechaSolicitudDocumento',
+    'fechaRecepcionDocumento',
+    'fechaObjecion',
+    'fechaAutorizacionAnalista',
+    'fechaCasoParaPago',
+    'documentoFaltante',
+    'observacionPendienteDocumento',
+    'motivoObjecion',
+    'responsableAporteDocumento',
     'riskId',
     'distanciaEpicentroKm',
     'tipoNegocioHomologado',
@@ -612,7 +662,7 @@ const mergeImportacionZurich = (incomingPayload = {}, existente = {}) => {
       ...incomingPayload.evidenciaCat,
     });
   }
-  if (!out.estado) out.estado = 'PENDIENTE';
+  if (!out.estado) out.estado = 'CASO NUEVO';
   out.checklistCatCompleto = esChecklistCatLleno(out);
   return out;
 };
@@ -820,7 +870,7 @@ export const importarCasosZurich = async (req, res) => {
         const payloadBase = completarIdentificacionZurich(
           buildZurichPayload({
             ...fila,
-            estado: fila.estado || 'PENDIENTE',
+            estado: fila.estado || 'CASO NUEVO',
           })
         );
 
@@ -842,7 +892,7 @@ export const importarCasosZurich = async (req, res) => {
           continue;
         }
         if (!payloadBase.estado) {
-          payloadBase.estado = 'PENDIENTE';
+          payloadBase.estado = 'CASO NUEVO';
         }
 
         const claves = clavesDe(payloadBase);
@@ -1201,7 +1251,7 @@ export const syncDesdeExpress = async (req, res) => {
         const mapped = mapExpressAZurich(exp);
         const payloadBase = buildZurichPayload({
           ...mapped,
-          estado: mapped.estado || 'PENDIENTE',
+          estado: mapped.estado || 'CASO NUEVO',
         });
 
         if (!payloadBase.identificacion) {

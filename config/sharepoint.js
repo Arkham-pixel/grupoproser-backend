@@ -41,13 +41,66 @@
 function trimEnv(name, fallback = '') {
   const v = process.env[name];
   if (v === undefined || v === null) return fallback;
-  return String(v).trim();
+  // Coolify / paneles a veces pegan comillas o BOM
+  return String(v)
+    .replace(/^\uFEFF/, '')
+    .trim()
+    .replace(/^['"]|['"]$/g, '')
+    .trim();
 }
 
 function envFlag(name, defaultValue = false) {
   const v = process.env[name];
   if (v === undefined || v === '') return defaultValue;
   return v === 'true' || v === '1';
+}
+
+const GUID_RE =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+/**
+ * Valida forma de MS_TENANT_ID / MS_CLIENT_ID (GUID 36 chars).
+ * Un dígito truncado produce AADSTS700016 en producción.
+ */
+export function validateSharePointCredentialShapes(config = getSharePointConfig()) {
+  const issues = [];
+  if (!config.tenantId) {
+    issues.push({ field: 'MS_TENANT_ID', code: 'MISSING', message: 'vacío' });
+  } else if (!GUID_RE.test(config.tenantId)) {
+    issues.push({
+      field: 'MS_TENANT_ID',
+      code: 'INVALID_GUID',
+      message: `formato inválido (len=${config.tenantId.length}, esperado GUID 36)`,
+    });
+  }
+  if (!config.clientId) {
+    issues.push({ field: 'MS_CLIENT_ID', code: 'MISSING', message: 'vacío' });
+  } else if (!GUID_RE.test(config.clientId)) {
+    issues.push({
+      field: 'MS_CLIENT_ID',
+      code: 'INVALID_GUID',
+      message: `formato inválido (len=${config.clientId.length}, termina …${config.clientId.slice(-4)}). Revise truncado en Coolify.`,
+    });
+  }
+  if (!config.clientSecret) {
+    issues.push({ field: 'MS_CLIENT_SECRET', code: 'MISSING', message: 'vacío' });
+  } else if (String(config.clientSecret).length < 10) {
+    issues.push({
+      field: 'MS_CLIENT_SECRET',
+      code: 'TOO_SHORT',
+      message: 'secret demasiado corto',
+    });
+  }
+  return {
+    ok: issues.length === 0,
+    issues,
+    fingerprint: {
+      tenantLen: (config.tenantId || '').length,
+      clientLen: (config.clientId || '').length,
+      clientEnd: (config.clientId || '').slice(-4),
+      secretLen: String(config.clientSecret || '').length,
+    },
+  };
 }
 
 export function getSharePointConfig() {
@@ -77,19 +130,30 @@ export function getSharePointConfig() {
 
 export function isSharePointConfigured() {
   const c = getSharePointConfig();
-  return Boolean(c.tenantId && c.clientId && c.clientSecret && c.hostname && c.sitePath);
+  if (!c.tenantId || !c.clientId || !c.clientSecret || !c.hostname || !c.sitePath) {
+    return false;
+  }
+  return validateSharePointCredentialShapes(c).ok;
 }
 
 export function logSharePointStatusOnBoot() {
-  if (!isSharePointConfigured()) {
+  if (!trimEnv('MS_TENANT_ID') || !trimEnv('MS_CLIENT_ID') || !trimEnv('MS_CLIENT_SECRET')) {
     console.log(
       '📎 SharePoint: no configurado (faltan MS_TENANT_ID / MS_CLIENT_ID / MS_CLIENT_SECRET). Health devolverá connected:false.'
     );
     return;
   }
   const c = getSharePointConfig();
+  const validation = validateSharePointCredentialShapes(c);
+  if (!validation.ok) {
+    console.error('❌ SharePoint: credenciales MS_* con formato inválido (causa típica de AADSTS700016):');
+    for (const issue of validation.issues) {
+      console.error(`   - ${issue.field}: ${issue.message}`);
+    }
+    return;
+  }
   console.log(
-    `📎 SharePoint: credenciales presentes — ${c.hostname}${c.sitePath} (biblioteca: ${c.libraryName})`
+    `📎 SharePoint: credenciales OK — ${c.hostname}${c.sitePath} (biblioteca: ${c.libraryName}) · client…${validation.fingerprint.clientEnd}`
   );
   if (c.siteId) console.log(`   Site ID fijado en env`);
   if (c.driveId) console.log(`   Drive ID fijado en env`);

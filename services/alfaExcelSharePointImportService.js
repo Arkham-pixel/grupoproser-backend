@@ -473,6 +473,42 @@ export async function runAlfaExcelSharePointDetectCycle({ force = false } = {}) 
       source: toPublicSource(source),
     };
   } catch (error) {
+    const keepPendingReview =
+      Boolean(source.lastPreviewImportId) &&
+      (previousStatus === 'updates_available' ||
+        previousStatus === 'requires_review' ||
+        source.hasChanges === true ||
+        source.hasIncidents === true);
+
+    // Fallo temporal de Graph/auth: no borrar un preview pendiente válido
+    if (keepPendingReview) {
+      source.lastError = error.message || String(error);
+      source.lastOutcome = 'ERROR_TRANSIENT';
+      source.lastCheckedAt = new Date();
+      // conservar status / hasChanges / summary del preview previo
+      await source.save();
+      logSp('ALFA_EXCEL_SP_ERROR_TRANSIENT_KEEP_PENDING', {
+        code: error.code || 'SHAREPOINT_EXCEL_DETECT_ERROR',
+        message: source.lastError,
+        keptStatus: source.status,
+        durationMs: Date.now() - started,
+      });
+      return {
+        outcome: 'ERROR_TRANSIENT',
+        status: source.status,
+        hasChanges: source.hasChanges,
+        hasIncidents: source.hasIncidents,
+        summary: source.summary,
+        error: source.lastError,
+        code: error.code || 'SHAREPOINT_EXCEL_DETECT_ERROR',
+        importSessionId: source.lastPreviewImportId
+          ? String(source.lastPreviewImportId)
+          : null,
+        durationMs: Date.now() - started,
+        source: toPublicSource(source),
+      };
+    }
+
     source.status = 'error';
     source.lastOutcome = 'ERROR';
     source.lastError = error.message || String(error);

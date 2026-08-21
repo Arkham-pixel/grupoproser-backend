@@ -29,6 +29,7 @@ import {
   eliminarRegistroEnvioFacturacion,
 } from '../services/facturacionBandejaService.js';
 import { aplicarRestriccionRolCaso, obtenerIdentidadUsuarioReq, construirFiltroVistaAsignacion, casoVisibleParaIdentidad, collationVistaAsignacion, combinarFiltrosMongo } from '../utils/permisosCasoPorRol.js';
+import { preservarPresupuestoNsrSiVacio } from '../utils/protegerPresupuestoNsr10.js';
 import {
   normalizarClaveGerente,
   resolverGerenteDesdeLogin,
@@ -318,7 +319,7 @@ export const buildSuraPayload = (data = {}, base = {}) => {
     liquidador:
       data.liquidador !== undefined
         ? data.liquidador && typeof data.liquidador === 'object'
-          ? data.liquidador
+          ? preservarPresupuestoNsrSiVacio(data.liquidador, base.liquidador)
           : null
         : base.liquidador ?? null,
     informeUnico:

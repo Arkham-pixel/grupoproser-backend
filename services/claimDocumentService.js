@@ -135,6 +135,8 @@ export async function getPendingDocuments({ limit, now = new Date(), sourceModul
     sourceModule: { $in: modules },
     'sharepoint.enabled': true,
     'sharepoint.attempts': { $lt: maxAttempts },
+    // Sin cédula válida: no ocupar el batch; se liberan al tener identificación
+    destinationStatus: { $ne: 'pending_destination' },
     $or: [
       { 'sharepoint.syncStatus': 'pending' },
       {
