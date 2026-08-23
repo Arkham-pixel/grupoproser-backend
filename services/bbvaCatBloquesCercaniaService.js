@@ -5,6 +5,7 @@
 
 import crypto from 'crypto';
 import BbvaCatCaso from '../models/BbvaCatCaso.js';
+import BbvaCatListadoCaso from '../models/BbvaCatListadoCaso.js';
 
 const EARTH_RADIUS_KM = 6371;
 
@@ -314,6 +315,9 @@ export function casoYaInspeccionadoBbvaCat(caso = {}) {
     .toUpperCase();
   return (
     e === 'CASO PARA PAGO' ||
+    e === 'PAGADO' ||
+    e === 'OBJECION' ||
+    e === 'OBJETADO' ||
     e === 'AUTORIZACION ANALISTA' ||
     e === 'LIQUIDADO' ||
     e === 'ENVIADO ASEGURADORA' ||
@@ -547,10 +551,20 @@ export async function aplicarUbicacionesPredioBbvaCat(items = []) {
   return { aplicados: aplicados.length, items: aplicados };
 }
 
+function claveWfBbvaCat(caso = {}) {
+  return String(caso.zc || caso.siniestro || '').trim();
+}
+
+function casoTieneArchivosListado(caso, archivosPorClave) {
+  const k = claveWfBbvaCat(caso);
+  if (!k) return false;
+  return Number(archivosPorClave.get(k) || 0) > 0;
+}
+
 /**
  * Clustering greedy:
- * - Semillas en orden geográfico fijo (lat → lng → consecutivo)
- * - Numeración/listado de bloques de mayor a menor cantidad
+ * - Semillas en orden geográfico fijo (sur→norte / oeste→este)
+ * - Numeración fija del bloque por centro (norte→sur). No se reordena por cantidad.
  */
 export function clusterizarPorRadio(puntos = [], radioKm = 2.5) {
   const radio = Math.max(0.1, Number(radioKm) || 2.5);
@@ -616,11 +630,9 @@ export function clusterizarPorRadio(puntos = [], radioKm = 2.5) {
     });
   }
 
-  // Mayor a menor cantidad (empate: geografía del centro)
+  // Numeración fija por geografía del centro (norte → sur, luego oeste → este).
   bloques.sort((a, b) => {
-    const dCant = (b.cantidad || 0) - (a.cantidad || 0);
-    if (dCant !== 0) return dCant;
-    const dLat = Number(a.centro.lat) - Number(b.centro.lat);
+    const dLat = Number(b.centro.lat) - Number(a.centro.lat);
     if (Math.abs(dLat) > 1e-9) return dLat;
     const dLng = Number(a.centro.lng) - Number(b.centro.lng);
     if (Math.abs(dLng) > 1e-9) return dLng;
@@ -637,10 +649,27 @@ export function clusterizarPorRadio(puntos = [], radioKm = 2.5) {
   return bloques;
 }
 
+async function mapaArchivosPorWfListado() {
+  const filas = await BbvaCatListadoCaso.find({})
+    .select('zc siniestro archivos')
+    .lean();
+  const archivosPorClave = new Map();
+  for (const fila of filas) {
+    const k = claveWfBbvaCat(fila);
+    if (!k) continue;
+    const n = Array.isArray(fila.archivos) ? fila.archivos.length : 0;
+    archivosPorClave.set(k, (archivosPorClave.get(k) || 0) + n);
+  }
+  return archivosPorClave;
+}
+
 export async function obtenerBloquesCercaniaBbvaCat({
   radioKm = 2.5,
   ciudad = '',
   estado = '',
+  depurarArchivos = false,
+  incluirConArchivos = false,
+  soloConArchivos = false,
 } = {}) {
   const filtro = {};
   if (ciudad) {
@@ -651,20 +680,30 @@ export async function obtenerBloquesCercaniaBbvaCat({
   }
 
   const casos = await BbvaCatCaso.find(filtro).sort({ createdAt: -1 }).lean();
+  const archivosPorClave = depurarArchivos ? await mapaArchivosPorWfListado() : new Map();
   const ubicados = [];
   const sinUbicar = [];
   let omitidosInspeccionados = 0;
+  let conArchivoTotal = 0;
 
   for (const c of casos) {
-    // Ya inspeccionados: no salen en el mapa de rutas (planear visitas)
-    if (casoYaInspeccionadoBbvaCat(c)) {
+    // En modo analista se clusteriza todo el portafolio (incluye inspeccionados)
+    // para que el Bloque N no salte de zona al depurar archivos.
+    if (!depurarArchivos && casoYaInspeccionadoBbvaCat(c)) {
       omitidosInspeccionados += 1;
       continue;
     }
+    if (depurarArchivos) {
+      const k = claveWfBbvaCat(c);
+      if (!k || !archivosPorClave.has(k)) continue;
+    }
+    const tieneArchivos = depurarArchivos ? casoTieneArchivosListado(c, archivosPorClave) : false;
+    if (tieneArchivos) conArchivoTotal += 1;
     const base = {
       _id: String(c._id),
       consecutivo: c.consecutivo,
-      siniestro: c.siniestro,
+      zc: c.zc || c.siniestro || '',
+      siniestro: c.siniestro || c.zc || '',
       asegurado: c.asegurado || c.tomador,
       tomador: c.tomador,
       direccionPredio: c.direccionPredio,
@@ -674,6 +713,7 @@ export async function obtenerBloquesCercaniaBbvaCat({
       ajustador: c.ajustador,
       geocodeStatus: c.ubicacionPredio?.geocodeStatus || null,
       locationType: c.ubicacionPredio?.locationType || null,
+      tieneArchivos,
     };
     if (casoTieneCoordsValidas(c)) {
       ubicados.push({
@@ -690,20 +730,49 @@ export async function obtenerBloquesCercaniaBbvaCat({
     }
   }
 
-  const sinDireccionCount = sinUbicar.filter((c) => c.motivoSinUbicar === 'sin_direccion').length;
-  const geocodeFallidoCount = sinUbicar.filter((c) => c.motivoSinUbicar === 'geocode_fallido').length;
-
   const bloques = clusterizarPorRadio(ubicados, radioKm);
+
+  const filtrarVisibles = (lista) => {
+    if (!depurarArchivos) return lista;
+    if (soloConArchivos) return lista.filter((c) => c.tieneArchivos);
+    if (incluirConArchivos) return lista;
+    return lista.filter((c) => !c.tieneArchivos);
+  };
+
+  const bloquesVisibles = bloques
+    .map((b) => {
+      const casosVisibles = filtrarVisibles(b.casos || []);
+      const cantidadConArchivo = (b.casos || []).filter((c) => c.tieneArchivos).length;
+      return {
+        ...b,
+        casos: casosVisibles,
+        cantidad: casosVisibles.length,
+        cantidadTotal: (b.casos || []).length,
+        cantidadConArchivo,
+      };
+    })
+    .filter((b) => !soloConArchivos || Number(b.cantidad) > 0);
+
+  const sinUbicarVisibles = filtrarVisibles(sinUbicar);
+  const sinDireccionCount = sinUbicarVisibles.filter((c) => c.motivoSinUbicar === 'sin_direccion').length;
+  const geocodeFallidoCount = sinUbicarVisibles.filter((c) => c.motivoSinUbicar === 'geocode_fallido').length;
+  const pendientesMapa = bloquesVisibles.reduce((s, b) => s + (b.cantidad || 0), 0) + sinUbicarVisibles.length;
+
   return {
     radioKm: Math.max(0.1, Number(radioKm) || 2.5),
     totalCasos: casos.length,
     omitidosInspeccionados,
-    planificar: casos.length - omitidosInspeccionados,
-    ubicados: ubicados.length,
-    sinUbicarCount: sinUbicar.length,
+    planificar: depurarArchivos ? pendientesMapa : casos.length - omitidosInspeccionados,
+    ubicados: depurarArchivos ? filtrarVisibles(ubicados).length : ubicados.length,
+    sinUbicarCount: sinUbicarVisibles.length,
     sinDireccionCount,
     geocodeFallidoCount,
-    bloques,
-    sinUbicar,
+    bloques: bloquesVisibles,
+    sinUbicar: sinUbicarVisibles,
+    depurarArchivos: Boolean(depurarArchivos),
+    incluirConArchivos: Boolean(incluirConArchivos),
+    soloConArchivos: Boolean(soloConArchivos),
+    conArchivoTotal,
+    pendientes: depurarArchivos ? Math.max(0, casos.length - conArchivoTotal) : undefined,
   };
 }

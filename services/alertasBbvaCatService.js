@@ -11,7 +11,14 @@ import {
 export const DIAS_RECORDATORIO_INACTIVIDAD_BBVA_CAT = 30;
 
 /** Estados que cierran el caso para alertas (sin recordatorio). */
-const ESTADOS_CERRADOS_BBVA_CAT = ['CASO PARA PAGO', 'OBJECION', 'CERRADO'];
+const ESTADOS_CERRADOS_BBVA_CAT = [
+  'CASO PARA PAGO',
+  'PAGADO',
+  'OBJECION',
+  'OBJECIÓN',
+  'OBJETADO',
+  'CERRADO',
+];
 
 function normalizarEstadoBbvaCat(valor) {
   return String(valor ?? '')

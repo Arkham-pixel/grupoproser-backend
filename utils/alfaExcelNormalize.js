@@ -166,6 +166,8 @@ export function isPolicyPlaceholder(value) {
     .replace(/\s+/g, ' ');
   if (!t) return true;
   const compact = t.replace(/\s+/g, '');
+  // "0" / "00" aparecen en consolidados Alfa como póliza vacía
+  if (/^0+$/.test(compact)) return true;
   if (/^POR\s*CONFIRM/.test(t) || compact.startsWith('PORCONFIRMAR')) return true;
   if (
     /^(N\/?A|NA|NULL|UNDEFINED|DESISTE|-|SIN DATO|SIN INFORMACION|PENDIENTE|PENDIENTE DE INFORMACION|SIN POLIZA)$/i.test(

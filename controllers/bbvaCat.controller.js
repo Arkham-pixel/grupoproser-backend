@@ -403,11 +403,13 @@ const buildBbvaCatPayload = (data = {}, base = {}) => {
     base.fechaRecepcionDocumento ?? null
   ),
   fechaObjecion: parseDateFlexible(data.fechaObjecion, base.fechaObjecion ?? null),
+  fechaObjetado: parseDateFlexible(data.fechaObjetado, base.fechaObjetado ?? null),
   fechaAutorizacionAnalista: parseDateFlexible(
     data.fechaAutorizacionAnalista,
     base.fechaAutorizacionAnalista ?? null
   ),
   fechaCasoParaPago: parseDateFlexible(data.fechaCasoParaPago, base.fechaCasoParaPago ?? null),
+  fechaCasoPagado: parseDateFlexible(data.fechaCasoPagado, base.fechaCasoPagado ?? null),
   documentoFaltante: toStringOrNull(data.documentoFaltante, base.documentoFaltante ?? null),
   observacionPendienteDocumento: toStringOrNull(
     data.observacionPendienteDocumento,
@@ -1357,7 +1359,20 @@ export const getBloquesCercaniaBbvaCat = async (req, res) => {
     const radioKm = req.query?.radioKm ?? 2.5;
     const ciudad = req.query?.ciudad || '';
     const estado = req.query?.estado || '';
-    const data = await obtenerBloquesCercaniaBbvaCat({ radioKm, ciudad, estado });
+    const depurarArchivos =
+      req.query?.depurarArchivos === '1' || req.query?.depurarArchivos === 'true';
+    const incluirConArchivos =
+      req.query?.incluirConArchivos === '1' || req.query?.incluirConArchivos === 'true';
+    const soloConArchivos =
+      req.query?.soloConArchivos === '1' || req.query?.soloConArchivos === 'true';
+    const data = await obtenerBloquesCercaniaBbvaCat({
+      radioKm,
+      ciudad,
+      estado,
+      depurarArchivos,
+      incluirConArchivos,
+      soloConArchivos,
+    });
     return res.json({ success: true, data });
   } catch (error) {
     console.error('Error bloques cercanía BBVA CAT:', error);

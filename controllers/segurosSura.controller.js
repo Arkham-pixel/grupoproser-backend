@@ -9,6 +9,7 @@ import {
   obtenerAlertasSuraPorAjustadores,
   enviarAlertasTodosSura,
   enviarAlertasSuraAjustador,
+  notificarModificacionCasoSura,
 } from '../services/alertasSuraService.js';
 import { generarConsecutivoSura } from '../services/suraCasoService.js';
 import {
@@ -30,6 +31,7 @@ import {
 } from '../services/facturacionBandejaService.js';
 import { aplicarRestriccionRolCaso, obtenerIdentidadUsuarioReq, construirFiltroVistaAsignacion, casoVisibleParaIdentidad, collationVistaAsignacion, combinarFiltrosMongo } from '../utils/permisosCasoPorRol.js';
 import { preservarPresupuestoNsrSiVacio } from '../utils/protegerPresupuestoNsr10.js';
+import { normalizarEstadoSura } from '../utils/estadosSura.js';
 import {
   normalizarClaveGerente,
   resolverGerenteDesdeLogin,
@@ -233,9 +235,10 @@ export const buildSuraPayload = (data = {}, base = {}) => {
     base.numDocumento
   );
   const siniestro = primerTexto(data.siniestro, data.nmroSinstro, base.siniestro, base.nmroSinstro);
-  const estado =
+  const estado = normalizarEstadoSura(
     primerTexto(data.descripcionEstado, data.estado, base.descripcionEstado, base.estado) ||
-    'PENDIENTE';
+      'CASO NUEVO'
+  );
 
   const payload = {
     consecutivo: base.consecutivo ?? null,
@@ -421,7 +424,7 @@ const mergeImportacionSura = (incomingPayload = {}, existente = {}) => {
   for (const campo of campos) {
     out[campo] = mergeCampoImport(incomingPayload[campo], existente[campo]);
   }
-  if (!out.estado) out.estado = 'PENDIENTE';
+  if (!out.estado) out.estado = 'CASO NUEVO';
   return out;
 };
 
@@ -454,6 +457,15 @@ export const crearCasoSura = async (req, res) => {
 
     const documento = await SegurosSuraCaso.create(payload);
     res.status(201).json({ success: true, data: documento });
+
+    const identidadAlta = await obtenerIdentidadUsuarioReq(req).catch(() => ({}));
+    notificarModificacionCasoSura({
+      antes: {},
+      despues: documento?.toObject ? documento.toObject() : documento,
+      actor: identidadAlta,
+    }).catch((err) => {
+      console.error('⚠️ No se pudo enviar alerta de caso nuevo SURA:', err?.message || err);
+    });
   } catch (error) {
     console.error('❌ Error al crear caso Seguros Sura:', error);
     res.status(500).json({
@@ -612,6 +624,14 @@ export const actualizarCasoSura = async (req, res) => {
     );
 
     res.json({ success: true, data: actualizado });
+
+    notificarModificacionCasoSura({
+      antes: base,
+      despues: actualizado?.toObject ? actualizado.toObject() : actualizado,
+      actor: identidad,
+    }).catch((err) => {
+      console.error('⚠️ No se pudo enviar alerta de modificación SURA:', err?.message || err);
+    });
   } catch (error) {
     console.error('❌ Error al actualizar caso Seguros Sura:', error);
     res.status(500).json({
@@ -697,7 +717,7 @@ export const importarCasosSura = async (req, res) => {
       try {
         const payloadBase = buildSuraPayload({
           ...fila,
-          estado: fila.estado || 'PENDIENTE',
+          estado: fila.estado || 'CASO NUEVO',
         });
 
         if (!payloadBase.identificacion) {
@@ -709,7 +729,7 @@ export const importarCasosSura = async (req, res) => {
           continue;
         }
         if (!payloadBase.estado) {
-          payloadBase.estado = 'PENDIENTE';
+          payloadBase.estado = 'CASO NUEVO';
         }
 
         const claves = clavesDeduplicacion(payloadBase);

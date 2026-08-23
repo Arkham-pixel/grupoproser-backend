@@ -32,7 +32,11 @@ import {
 import AlfaExcelSharePointSource from '../models/AlfaExcelSharePointSource.js';
 import { getAlfaExcelSharePointImportConfig } from '../config/alfaExcelSharePointImport.js';
 import { enqueueAlfaExcelOutboundFromCaseUpdate } from '../services/alfaExcelOutboundService.js';
-import { generarConsecutivoAlfa } from '../services/alfaCasoService.js';
+import { generarConsecutivoAlfa, buildAlfaListadoPipeline } from '../services/alfaCasoService.js';
+import {
+  homologarEstadoAlfa,
+  estadoGestionDesdeEstadoAlfa,
+} from '../config/alfaExcelStatuses.js';
 import {
   geocodeCasosAlfaPendientes,
   aplicarUbicacionesPredioAlfa,
@@ -236,6 +240,28 @@ const buildAlfaPayload = (data = {}, base = {}) => ({
     base.fechaEnvioAseguradora ?? null
   ),
   estado: toStringOrNull(data.estado, base.estado ?? null),
+  estadoGestion: toStringOrNull(data.estadoGestion, base.estadoGestion ?? null),
+  observacionesGestion:
+    toStringOrNull(data.observacionesGestion, base.observacionesGestion ?? null) || '',
+  noAceptacionOferta:
+    data.noAceptacionOferta != null
+      ? Boolean(data.noAceptacionOferta)
+      : base.noAceptacionOferta != null
+        ? Boolean(base.noAceptacionOferta)
+        : false,
+  zonaAsignada: toStringOrNull(data.zonaAsignada, base.zonaAsignada ?? null) || '',
+  fueraDeZona:
+    data.fueraDeZona != null
+      ? Boolean(data.fueraDeZona)
+      : base.fueraDeZona != null
+        ? Boolean(base.fueraDeZona)
+        : false,
+  casoPadreId: data.casoPadreId ?? base.casoPadreId ?? null,
+  grupoReclamacion: toStringOrNull(data.grupoReclamacion, base.grupoReclamacion ?? null) || '',
+  fechaComunicacionBajoDeducible: parseDateFlexible(
+    data.fechaComunicacionBajoDeducible,
+    base.fechaComunicacionBajoDeducible ?? null
+  ),
   // Servidor: nunca pisar liquidador/informe con contenido por cascarón vacío o null
   liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
   informeUnico: resolverInformeUnicoParaUpdate(data.informeUnico, base.informeUnico),
@@ -287,12 +313,24 @@ const mergeImportacionAlfa = (incomingPayload = {}, existente = {}) => {
     // Solo ARNALD: el Excel nunca los trae; no se deben perder en import.
     fechaLlamada: existente.fechaLlamada ?? null,
     observacionLlamada: existente.observacionLlamada || '',
+    estadoGestion: existente.estadoGestion || null,
+    observacionesGestion: existente.observacionesGestion || '',
+    zonaAsignada: existente.zonaAsignada || '',
+    fueraDeZona: Boolean(existente.fueraDeZona),
+    casoPadreId: existente.casoPadreId ?? null,
+    grupoReclamacion: existente.grupoReclamacion || '',
+    fechaComunicacionBajoDeducible: existente.fechaComunicacionBajoDeducible ?? null,
     ubicacionPredio: existente.ubicacionPredio ?? undefined,
   };
   for (const campo of campos) {
     out[campo] = mergeCampoImport(incomingPayload[campo], existente[campo]);
   }
-  if (!out.estado) out.estado = 'PENDIENTE';
+  if (!out.estado) out.estado = 'Sin contactar';
+  out.estado = homologarEstadoAlfa(out.estado, {
+    fechaInspeccion: out.fechaInspeccion,
+    estadoGestion: out.estadoGestion || existente.estadoGestion,
+  });
+  out.estadoGestion = estadoGestionDesdeEstadoAlfa(out.estado);
   return out;
 };
 
@@ -306,16 +344,82 @@ const validarRequeridos = (payload) => {
     .filter(Boolean);
 };
 
+const GESTION_REQUIERE_OBS = new Set(['sin respuesta', 'solicitud de documentos']);
+
+const validarObservacionesGestion = (payload = {}) => {
+  const eg = String(payload.estado || payload.estadoGestion || '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toLowerCase();
+  const necesita =
+    GESTION_REQUIERE_OBS.has(eg) ||
+    Boolean(payload.fueraDeZona) ||
+    Boolean(payload.noAceptacionOferta);
+  if (!necesita) return null;
+  if (String(payload.observacionesGestion || '').trim()) return null;
+  if (payload.fueraDeZona) return 'observaciones de gestión (obligatorias si el caso está fuera de zona)';
+  if (payload.noAceptacionOferta) {
+    return 'observaciones de gestión (obligatorias si no hay aceptación de oferta)';
+  }
+  return 'observaciones de gestión (obligatorias para Sin respuesta / Solicitud de documentos)';
+};
+
+const ETIQUETAS_EVIDENCIA_BAJO_DEDUCIBLE = new Set([
+  'COMUNICACION',
+  'OBJECION_DEDUCIBLE',
+  'FINIQUITO',
+]);
+
+const casoTieneEvidenciaBajoDeducible = (caso = {}) => {
+  const archivos = Array.isArray(caso.archivos) ? caso.archivos : [];
+  return archivos.some((a) => {
+    const et = String(a?.etiqueta || a?.tag || '')
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '')
+      .toUpperCase();
+    return [...ETIQUETAS_EVIDENCIA_BAJO_DEDUCIBLE].some((x) => et.includes(x));
+  });
+};
+
+const validarCierreBajoDeducible = (payload = {}, base = {}) => {
+  const est = String(payload.estado || '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toUpperCase();
+  if (est !== 'CERRADO') return null;
+  if (!payload.fechaComunicacionBajoDeducible) return null;
+  const archivos = Array.isArray(payload.archivos)
+    ? payload.archivos
+    : Array.isArray(base.archivos)
+      ? base.archivos
+      : [];
+  if (casoTieneEvidenciaBajoDeducible({ archivos })) return null;
+  return 'evidencia de comunicación bajo deducible en archivero (COMUNICACION / OBJECION_DEDUCIBLE)';
+};
+
+const asegurarEstadoUnificado = (payload) => {
+  payload.estado = homologarEstadoAlfa(payload.estado, {
+    fechaInspeccion: payload.fechaInspeccion,
+    estadoGestion: payload.estadoGestion,
+  });
+  payload.estadoGestion = estadoGestionDesdeEstadoAlfa(payload.estado);
+  return payload;
+};
+
 export const crearCasoAlfa = async (req, res) => {
   try {
-    const payload = buildAlfaPayload(req.body);
+    const payload = asegurarEstadoUnificado(buildAlfaPayload(req.body));
     payload.consecutivo = await generarConsecutivoAlfaLocal();
 
     const faltantes = validarRequeridos(payload);
-    if (faltantes.length > 0) {
+    const obsErr = validarObservacionesGestion(payload);
+    if (faltantes.length > 0 || obsErr) {
       return res.status(400).json({
         success: false,
-        error: `Los siguientes campos son obligatorios: ${faltantes.join(', ')}`,
+        error: `Los siguientes campos son obligatorios: ${[...faltantes, obsErr]
+          .filter(Boolean)
+          .join(', ')}`,
       });
     }
 
@@ -331,30 +435,35 @@ export const crearCasoAlfa = async (req, res) => {
   }
 };
 
+const ALFA_LISTADO_LIMIT_MAX = 3000;
+
 export const listarCasosAlfa = async (req, res) => {
   try {
-    const { limit = 25, page = 1 } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
+    const pageNum = Math.max(Number(req.query.page) || 1, 1);
+    const limitNum = Math.min(
+      Math.max(Number(req.query.limit) || 25, 1),
+      ALFA_LISTADO_LIMIT_MAX
+    );
+    const skip = (pageNum - 1) * limitNum;
     const identidad = await obtenerIdentidadUsuarioReq(req);
     const filtroAsignacion = construirFiltroVistaAsignacion(identidad);
     const filtro = combinarFiltrosMongo(filtroAsignacion);
     const collation = filtroAsignacion ? collationVistaAsignacion() : undefined;
     const countQuery = SegurosAlfaCaso.countDocuments(filtro);
-    const findQuery = SegurosAlfaCaso.find(filtro)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit));
+    const listQuery = SegurosAlfaCaso.aggregate(
+      buildAlfaListadoPipeline({ filtro, skip, limit: limitNum })
+    );
     if (collation) {
       countQuery.collation(collation);
-      findQuery.collation(collation);
+      listQuery.collation(collation);
     }
-    const [total, documentos] = await Promise.all([countQuery, findQuery]);
+    const [total, documentos] = await Promise.all([countQuery, listQuery]);
 
     res.json({
       success: true,
       total,
-      page: Number(page),
-      limit: Number(limit),
+      page: pageNum,
+      limit: limitNum,
       data: documentos,
     });
   } catch (error) {
@@ -423,16 +532,20 @@ export const actualizarCasoAlfa = async (req, res) => {
 
     const base = registroActual.toObject();
     const { data: bodyFiltrado } = aplicarRestriccionRolCaso(req, req.body || {}, base);
-    const payload = buildAlfaPayload(bodyFiltrado, base);
+    const payload = asegurarEstadoUnificado(buildAlfaPayload(bodyFiltrado, base));
     if (!payload.consecutivo) {
       payload.consecutivo = base.consecutivo || (await generarConsecutivoAlfa());
     }
 
     const faltantes = validarRequeridos(payload);
-    if (faltantes.length > 0) {
+    const obsErr = validarObservacionesGestion(payload);
+    const cierreErr = validarCierreBajoDeducible(payload, base);
+    if (faltantes.length > 0 || obsErr || cierreErr) {
       return res.status(400).json({
         success: false,
-        error: `Los siguientes campos son obligatorios: ${faltantes.join(', ')}`,
+        error: `Los siguientes campos son obligatorios: ${[...faltantes, obsErr, cierreErr]
+          .filter(Boolean)
+          .join(', ')}`,
       });
     }
 
@@ -1418,6 +1531,96 @@ export const downloadCondicionAlfa = async (req, res) => {
       success: false,
       error: error.message || 'No fue posible descargar el documento',
       code: error.code || 'CONDICIONES_DOWNLOAD_ERROR',
+    });
+  }
+};
+
+/**
+ * POST /api/seguros-alfa/:id/predio-vinculado
+ * Crea un caso hermano (mismo siniestro/póliza/tomador) con nueva dirección / expediente propio.
+ */
+export const crearPredioVinculadoAlfa = async (req, res) => {
+  try {
+    const padre = await buscarCasoPorId(req.params.id);
+    if (!padre) {
+      return res.status(404).json({ success: false, error: 'Caso Seguros Alfa no encontrado' });
+    }
+    const identidad = await obtenerIdentidadUsuarioReq(req);
+    if (!casoVisibleParaIdentidad(padre, identidad)) {
+      return res.status(403).json({
+        success: false,
+        error: 'No tiene permiso para este caso.',
+      });
+    }
+
+    const body = req.body || {};
+    const direccion = String(body.direccionPredio || '').trim();
+    if (!direccion) {
+      return res.status(400).json({
+        success: false,
+        error: 'direccionPredio es obligatoria para el predio vinculado',
+      });
+    }
+
+    const base = padre.toObject ? padre.toObject() : { ...padre };
+    const grupo =
+      String(base.grupoReclamacion || '').trim() ||
+      `GRP-${base.consecutivo || base._id}`;
+
+    if (!base.grupoReclamacion) {
+      await SegurosAlfaCaso.updateOne(
+        { _id: base._id },
+        { $set: { grupoReclamacion: grupo } }
+      );
+    }
+
+    const payload = asegurarEstadoUnificado(
+      buildAlfaPayload(
+        {
+          ...base,
+          direccionPredio: direccion,
+          ciudad: body.ciudad != null ? body.ciudad : base.ciudad,
+          departamento: body.departamento != null ? body.departamento : base.departamento,
+          valorAseguradoInmueble:
+            body.valorAseguradoInmueble != null
+              ? body.valorAseguradoInmueble
+              : base.valorAseguradoInmueble,
+          valorAseguradoContenidos:
+            body.valorAseguradoContenidos != null
+              ? body.valorAseguradoContenidos
+              : base.valorAseguradoContenidos,
+          estado: 'Sin contactar',
+          estadoGestion: 'Sin contactar',
+          observacionesGestion: body.observacionesGestion || '',
+          liquidador: null,
+          informeUnico: null,
+          fechaInspeccion: null,
+          fechaUltimoDocumento: null,
+          fechaLiquidado: null,
+          fechaAceptacionLiquidacion: null,
+          fechaEnvioAseguradora: null,
+          valorLiquidado: null,
+          casoPadreId: base._id,
+          grupoReclamacion: grupo,
+          zonaAsignada: body.zonaAsignada != null ? body.zonaAsignada : base.zonaAsignada,
+          fueraDeZona: Boolean(body.fueraDeZona),
+        },
+        {}
+      )
+    );
+    payload.consecutivo = await generarConsecutivoAlfaLocal();
+    payload.archivos = [];
+    payload.liquidador = null;
+    payload.informeUnico = null;
+
+    const creado = await SegurosAlfaCaso.create(payload);
+    res.status(201).json({ success: true, data: creado, grupoReclamacion: grupo });
+  } catch (error) {
+    console.error('❌ Error creando predio vinculado Alfa:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al crear predio vinculado',
+      detalle: error.message,
     });
   }
 };

@@ -35,13 +35,25 @@ export function contarDetalleCat(liquidador) {
   return items.filter((it) => textoItem(it)).length;
 }
 
+export function contarOtrosAmparosAlfa(liquidador) {
+  const items = liquidador?.otrosAmparos;
+  if (!Array.isArray(items)) return 0;
+  return items.filter((it) => {
+    if (it?.aplica === false) return false;
+    const v = it?.valor;
+    if (v == null || v === '' || v === 0) return false;
+    return String(v).replace(/[^\d]/g, '').length > 0;
+  }).length;
+}
+
 /** Peso de contenido real del liquidador (0 = cascarón vacío). */
 export function scoreContenidoLiquidadorNsr(liquidador) {
   if (!liquidador || typeof liquidador !== 'object') return 0;
   return (
     contarPresupuestoNsr(liquidador) +
     contarContenidosNsr(liquidador) +
-    contarDetalleCat(liquidador)
+    contarDetalleCat(liquidador) +
+    contarOtrosAmparosAlfa(liquidador)
   );
 }
 
@@ -86,6 +98,14 @@ export function preservarPresupuestoNsrSiVacio(nuevo, actual) {
     Array.isArray(actual.detalleLiquidacionCat)
   ) {
     next = { ...next, detalleLiquidacionCat: actual.detalleLiquidacionCat };
+    protegio = true;
+  }
+
+  if (
+    contarOtrosAmparosAlfa(actual) > contarOtrosAmparosAlfa(next) &&
+    Array.isArray(actual.otrosAmparos)
+  ) {
+    next = { ...next, otrosAmparos: actual.otrosAmparos };
     protegio = true;
   }
 

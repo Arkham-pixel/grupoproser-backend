@@ -11,7 +11,7 @@ import {
 export const DIAS_RECORDATORIO_INACTIVIDAD_ALLIANZ = 30;
 
 /** Estados que cierran el caso para alertas (sin recordatorio). */
-const ESTADOS_CERRADOS_ALLIANZ = ['CERRADO'];
+const ESTADOS_CERRADOS_ALLIANZ = ['CASO PARA PAGO', 'OBJECION', 'CERRADO'];
 
 function normalizarEstadoAllianz(valor) {
   return String(valor ?? '')

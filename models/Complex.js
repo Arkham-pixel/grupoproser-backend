@@ -53,6 +53,8 @@ const ComplexSchema = new mongoose.Schema({
   anxoRepoActi: String,
   fchaPresentacionCifras: Date,
   fchaAceptacionCifrasAseguradora: Date,
+  fchaReconsideracion: Date,
+  fchaEnvioFiniquito: Date,
   fchaUltSegui: Date,
   fchaActSegui: Date,
   diasTranscrrdo: Number,

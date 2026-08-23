@@ -1,7 +1,7 @@
 import SgSstCaso from '../models/SgSstCaso.js';
 
 const ROLES_GLOBALES = new Set(['admin', 'administrador', 'soporte']);
-const ROLES_DENEGADOS = new Set(['visualizador', 'puertos', 'externo', 'contractor_zurich', 'contractor_alfa', 'contractor_sura', 'contractor_solo_zurich', 'contractor_solo_bbva', 'contractor_solo_equidad']);
+const ROLES_DENEGADOS = new Set(['visualizador', 'puertos', 'externo', 'contractor_zurich', 'contractor_alfa', 'contractor_sura', 'contractor_solo_zurich', 'contractor_solo_bbva', 'contractor_solo_equidad', 'contractor_solo_previsora']);
 
 function usuarioDesdeReq(req) {
   return req.usuario || req.user || null;

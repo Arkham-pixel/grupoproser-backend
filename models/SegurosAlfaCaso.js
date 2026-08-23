@@ -72,7 +72,29 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
     fechaLiquidado: Date,
     fechaAceptacionLiquidacion: Date,
     fechaEnvioAseguradora: Date,
+    /** Estado único del caso (barra Alfa: gestión + cierre). */
     estado: { type: String, required: true },
+    /**
+     * Espejo para Excel AD (ESTADO GESTION): los 5 del correo.
+     * Se deriva automáticamente desde `estado`.
+     */
+    estadoGestion: {
+      type: String,
+      default: 'Sin contactar',
+    },
+    /** Observaciones de gestión (obligatorias en ciertos estados). */
+    observacionesGestion: { type: String, default: '' },
+    /** Asegurado no aceptó la oferta de liquidación (exige observación). */
+    noAceptacionOferta: { type: Boolean, default: false },
+    /** Zona territorial asignada al proveedor de ajuste. */
+    zonaAsignada: { type: String, default: '' },
+    /** Caso fuera de la zona asignada (requiere aviso / reasignación). */
+    fueraDeZona: { type: Boolean, default: false },
+    /** Multi-predio: id del caso padre / grupo de reclamación. */
+    casoPadreId: { type: mongoose.Schema.Types.ObjectId, ref: 'SegurosAlfaCaso', default: null },
+    grupoReclamacion: { type: String, default: '' },
+    /** Fecha en que se marcó bajo deducible / se envió comunicación. */
+    fechaComunicacionBajoDeducible: Date,
     /**
      * Coordenadas del predio para bloques de cercanía (solo ARNALD).
      * No sincroniza con SharePoint / Excel Control y Seguimiento.

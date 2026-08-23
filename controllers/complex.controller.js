@@ -186,7 +186,7 @@ const convertirFechasEnDatos = (datos) => {
     'fchaAsgncion', 'fchaSinstro', 'fchaInspccion', 'fchaContIni',
     'fchaCoordInspeccion', 'fchaProgInspeccion',
     'fchaSoliDocu', 'fchaInfoPrelm', 'fchaInfoFnal', 'fchaRepoActi',
-    'fchaPresentacionCifras', 'fchaEnvioFiniquito', 'fchaAceptacionCifrasAseguradora',
+    'fchaPresentacionCifras', 'fchaEnvioFiniquito', 'fchaAceptacionCifrasAseguradora', 'fchaReconsideracion',
     'fchaUltSegui', 'fchaActSegui', 'fchaFinqtoIndem', 'fchaFactra', 'fchaUltRevi', 
     'fchaControlHoras', 'fechaControlHoras', 'fecha_control_horas', 'fcha_control_horas', // Incluir todas las variantes
     'fchaEnvioControlHoras', 'fechaEnvioControlHoras', 'fecha_envio_control_horas', 'fcha_envio_control_horas', // Fecha de envío control de horas (Gerencia)
@@ -1220,6 +1220,7 @@ export const obtenerTodos = async (req, res) => {
           fchaRepoActi: siniestroObj.fchaRepoActi || siniestroObj.fcha_repo_acti || null,
           fchaPresentacionCifras: siniestroObj.fchaPresentacionCifras || siniestroObj.fcha_presentacion_cifras || null,
           fchaAceptacionCifrasAseguradora: siniestroObj.fchaAceptacionCifrasAseguradora || siniestroObj.fcha_aceptacion_cifras_aseguradora || null,
+          fchaReconsideracion: siniestroObj.fchaReconsideracion || siniestroObj.fcha_reconsideracion || null,
           fchaEnvioFiniquito: siniestroObj.fchaEnvioFiniquito || siniestroObj.fcha_envio_finiquito || null,
           fchaUltSegui: siniestroObj.fchaUltSegui || siniestroObj.fcha_ult_segui || null,
           fchaActSegui: siniestroObj.fchaActSegui || siniestroObj.fcha_act_segui || null,

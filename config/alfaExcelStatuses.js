@@ -1,36 +1,86 @@
 /**
- * Estados oficiales Seguros Alfa (UI) + variantes vistas en datos/tests.
- * Matriz: solo avances de workflow; nunca retroceso automático desde Excel.
+ * Estados oficiales Seguros Alfa — un solo eje (`estado`).
+ * Une lineamiento correo (gestión) + cierre de liquidación.
+ * `estadoGestion` se deriva para Excel AD (ESTADO GESTION).
  */
 
-export const ALFA_KNOWN_STATUSES = Object.freeze([
-  'PENDIENTE',
-  'EN INSPECCIÓN',
-  'EN INSPECCION', // variante sin tilde (normalizada internamente)
-  'EN TRAMITE', // legacy/tests
-  'DOCUMENTACIÓN',
-  'DOCUMENTACION',
+export const ALFA_ESTADOS_UNIFICADOS = Object.freeze([
+  'Sin contactar',
+  'Contactado y programado',
+  'Inspeccionado',
+  'Sin respuesta',
+  'Solicitud de documentos',
   'LIQUIDADO',
   'ENVIADO ASEGURADORA',
   'CERRADO',
 ]);
 
-/** Orden de workflow (mayor = más avanzado). */
+/** @deprecated Alias del catálogo unificado. */
+export const ALFA_KNOWN_STATUSES = ALFA_ESTADOS_UNIFICADOS;
+
+/** Los 5 del correo (vista Excel AD). */
+export const ALFA_ESTADOS_GESTION = Object.freeze([
+  'Sin contactar',
+  'Contactado y programado',
+  'Inspeccionado',
+  'Sin respuesta',
+  'Solicitud de documentos',
+]);
+
 const STATUS_RANK = Object.freeze({
+  'SIN CONTACTAR': 10,
+  'CONTACTADO Y PROGRAMADO': 20,
+  INSPECCIONADO: 30,
+  'SIN RESPUESTA': 35,
+  'SOLICITUD DE DOCUMENTOS': 40,
+  // legacy
   PENDIENTE: 10,
   'EN TRAMITE': 15,
   'EN INSPECCION': 20,
-  DOCUMENTACION: 30,
-  LIQUIDADO: 40,
-  'ENVIADO ASEGURADORA': 50,
-  CERRADO: 60,
+  DOCUMENTACION: 40,
+  LIQUIDADO: 50,
+  'ENVIADO ASEGURADORA': 60,
+  CERRADO: 70,
 });
 
-/**
- * Transiciones explícitamente permitidas (origen → destinos).
- * Claves y valores ya normalizados (sin tildes, upper).
- */
 export const ALFA_EXCEL_ALLOWED_STATUS_TRANSITIONS = Object.freeze({
+  'SIN CONTACTAR': [
+    'CONTACTADO Y PROGRAMADO',
+    'INSPECCIONADO',
+    'SIN RESPUESTA',
+    'SOLICITUD DE DOCUMENTOS',
+    'LIQUIDADO',
+    'ENVIADO ASEGURADORA',
+    'CERRADO',
+  ],
+  'CONTACTADO Y PROGRAMADO': [
+    'INSPECCIONADO',
+    'SIN RESPUESTA',
+    'SOLICITUD DE DOCUMENTOS',
+    'LIQUIDADO',
+    'ENVIADO ASEGURADORA',
+    'CERRADO',
+  ],
+  INSPECCIONADO: [
+    'SIN RESPUESTA',
+    'SOLICITUD DE DOCUMENTOS',
+    'LIQUIDADO',
+    'ENVIADO ASEGURADORA',
+    'CERRADO',
+  ],
+  'SIN RESPUESTA': [
+    'CONTACTADO Y PROGRAMADO',
+    'INSPECCIONADO',
+    'SOLICITUD DE DOCUMENTOS',
+    'LIQUIDADO',
+    'ENVIADO ASEGURADORA',
+    'CERRADO',
+  ],
+  'SOLICITUD DE DOCUMENTOS': ['LIQUIDADO', 'ENVIADO ASEGURADORA', 'CERRADO', 'INSPECCIONADO'],
+  LIQUIDADO: ['ENVIADO ASEGURADORA', 'CERRADO'],
+  'ENVIADO ASEGURADORA': ['CERRADO'],
+  CERRADO: [],
+  // legacy keys still accepted in Excel diffs
   PENDIENTE: [
     'EN TRAMITE',
     'EN INSPECCION',
@@ -53,9 +103,6 @@ export const ALFA_EXCEL_ALLOWED_STATUS_TRANSITIONS = Object.freeze({
     'CERRADO',
   ],
   DOCUMENTACION: ['LIQUIDADO', 'ENVIADO ASEGURADORA', 'CERRADO'],
-  LIQUIDADO: ['ENVIADO ASEGURADORA', 'CERRADO'],
-  'ENVIADO ASEGURADORA': ['CERRADO'],
-  CERRADO: [],
 });
 
 export function normalizeAlfaStatus(value) {
@@ -70,15 +117,118 @@ export function normalizeAlfaStatus(value) {
 
 function canonicalDisplayStatus(normalized) {
   const map = {
-    PENDIENTE: 'PENDIENTE',
-    'EN TRAMITE': 'EN TRAMITE',
-    'EN INSPECCION': 'EN INSPECCIÓN',
-    DOCUMENTACION: 'DOCUMENTACIÓN',
+    'SIN CONTACTAR': 'Sin contactar',
+    'CONTACTADO Y PROGRAMADO': 'Contactado y programado',
+    INSPECCIONADO: 'Inspeccionado',
+    'SIN RESPUESTA': 'Sin respuesta',
+    'SOLICITUD DE DOCUMENTOS': 'Solicitud de documentos',
+    PENDIENTE: 'Sin contactar',
+    'EN TRAMITE': 'Contactado y programado',
+    'EN INSPECCION': 'Contactado y programado',
+    DOCUMENTACION: 'Solicitud de documentos',
     LIQUIDADO: 'LIQUIDADO',
     'ENVIADO ASEGURADORA': 'ENVIADO ASEGURADORA',
     CERRADO: 'CERRADO',
   };
   return map[normalized] || null;
+}
+
+/** Normaliza texto de gestión para comparar. */
+export function normalizeAlfaEstadoGestion(value) {
+  if (value == null || value === '') return '';
+  return String(value)
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Canoniza estadoGestion (los 5 del correo) o null.
+ */
+export function canonicalEstadoGestion(value) {
+  const n = normalizeAlfaEstadoGestion(value);
+  if (!n) return null;
+  const aliases = {
+    'sin contactar': 'Sin contactar',
+    pendiente: 'Sin contactar',
+    'contactado y programado': 'Contactado y programado',
+    contactado: 'Contactado y programado',
+    programado: 'Contactado y programado',
+    inspeccionado: 'Inspeccionado',
+    'sin respuesta': 'Sin respuesta',
+    'no contesta': 'Sin respuesta',
+    'solicitud de documentos': 'Solicitud de documentos',
+    documentacion: 'Solicitud de documentos',
+    'documentacion pendiente': 'Solicitud de documentos',
+  };
+  if (aliases[n]) return aliases[n];
+  const hit = ALFA_ESTADOS_GESTION.find((e) => normalizeAlfaEstadoGestion(e) === n);
+  return hit || null;
+}
+
+export function isAlfaEstadoDefinido(estado) {
+  const n = normalizeAlfaStatus(estado);
+  return n.includes('LIQUIDADO') || n.includes('ENVIADO') || n === 'CERRADO';
+}
+
+/**
+ * Homologa cualquier valor legacy / dual al catálogo único.
+ */
+export function homologarEstadoAlfa(valor, extras = {}) {
+  const raw = String(valor || '').trim();
+  if (ALFA_ESTADOS_UNIFICADOS.includes(raw)) return raw;
+
+  const eg = canonicalEstadoGestion(extras.estadoGestion);
+  const norm = normalizeAlfaStatus(raw);
+  const fromCanon = canonicalDisplayStatus(norm);
+  if (fromCanon) {
+    if (
+      (norm === 'EN INSPECCION' || norm === 'EN TRAMITE') &&
+      extras.fechaInspeccion
+    ) {
+      return 'Inspeccionado';
+    }
+    // Si el workflow viejo era genérico y ya había gestión más precisa, preferir gestión
+    if (
+      eg &&
+      (fromCanon === 'Sin contactar' ||
+        fromCanon === 'Contactado y programado' ||
+        fromCanon === 'Solicitud de documentos') &&
+      !isAlfaEstadoDefinido(fromCanon)
+    ) {
+      // Preferir gestión si aporta más detalle (p.ej. Sin respuesta)
+      if (eg === 'Sin respuesta' || eg === 'Inspeccionado') return eg;
+      if (fromCanon === 'Sin contactar' && eg) return eg;
+      if (fromCanon === 'Contactado y programado' && eg === 'Inspeccionado') return eg;
+    }
+    return fromCanon;
+  }
+  if (eg) return eg;
+  return 'Sin contactar';
+}
+
+/**
+ * Vista Excel AD: solo los 5 del correo.
+ */
+export function estadoGestionDesdeEstadoAlfa(estado) {
+  const e = homologarEstadoAlfa(estado);
+  if (isAlfaEstadoDefinido(e)) return 'Inspeccionado';
+  if (ALFA_ESTADOS_GESTION.includes(e)) return e;
+  return 'Sin contactar';
+}
+
+/**
+ * Deriva estadoGestion desde el caso (compat backfill).
+ */
+export function deriveEstadoGestionFromCaso(caso = {}) {
+  return estadoGestionDesdeEstadoAlfa(
+    homologarEstadoAlfa(caso.estado, {
+      fechaInspeccion: caso.fechaInspeccion,
+      estadoGestion: caso.estadoGestion,
+    })
+  );
 }
 
 /**
@@ -93,7 +243,6 @@ export function shouldUpdateAlfaStatus({ currentStatus, incomingStatus } = {}) {
   const incomingNorm = normalizeAlfaStatus(incomingRaw);
   const currentNorm = normalizeAlfaStatus(currentStatus);
 
-  // Placeholders (no pisan estado válido)
   if (
     /^(N\/?A|NA|NULL|UNDEFINED|DESISTE|-|SIN DATO|POR CONFIRM|PENDIENTE DE INFORM)/i.test(
       incomingNorm
@@ -135,6 +284,7 @@ export function shouldUpdateAlfaStatus({ currentStatus, incomingStatus } = {}) {
       update: false,
       reason: 'REGRESSION_BLOCKED',
       warning: `Transición bloqueada ${currentStatus} → ${incomingRaw}`,
+      nextStatus: displayIncoming,
     };
   }
 
@@ -142,5 +292,6 @@ export function shouldUpdateAlfaStatus({ currentStatus, incomingStatus } = {}) {
     update: false,
     reason: 'TRANSITION_NOT_ALLOWED',
     warning: `Transición no permitida ${currentStatus} → ${incomingRaw}`,
+    nextStatus: displayIncoming,
   };
 }

@@ -19,7 +19,7 @@ import {
   assertFieldWritableOrThrow,
 } from '../config/alfaExcelOwnershipMap.js';
 import { ALFA_EXCEL_DATE_FIELDS, ALFA_EXCEL_MONEY_FIELDS } from '../config/alfaExcelColumnMap.js';
-import { isAlfaOutboundEmptyValue } from '../utils/alfaExcelNormalize.js';
+import { isAlfaOutboundEmptyValue, normalizeExcelHeader } from '../utils/alfaExcelNormalize.js';
 import {
   matchAlfaCaseForExcelRow,
   parseAlfaExcelBuffer,
@@ -100,6 +100,54 @@ function columnLetterToNumber(letter) {
     n = n * 26 + (s.charCodeAt(i) - 64);
   }
   return n;
+}
+
+function columnNumberToLetter(num) {
+  let n = Number(num);
+  if (!Number.isFinite(n) || n < 1) return '';
+  let s = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+function headerCellText(value) {
+  if (value == null || value === '') return '';
+  if (typeof value === 'object') {
+    if (value.text != null) return String(value.text);
+    if (value.result != null) return String(value.result);
+    if (Array.isArray(value.richText)) return value.richText.map((p) => p.text || '').join('');
+  }
+  return String(value);
+}
+
+/** Resuelve columna outbound por encabezado (prioridad) o letra del ownership. */
+function resolveOutboundColumn(headerRow, entry, preferredLetter) {
+  const aliases = [
+    entry?.header,
+    ...(Array.isArray(entry?.headerAliases) ? entry.headerAliases : []),
+  ]
+    .filter(Boolean)
+    .map((h) => normalizeExcelHeader(h));
+
+  const maxCol = Math.max(40, headerRow.cellCount || 0);
+  for (let c = 1; c <= maxCol; c += 1) {
+    const norm = normalizeExcelHeader(headerCellText(headerRow.getCell(c).value));
+    if (norm && aliases.includes(norm)) {
+      return { column: columnNumberToLetter(c), colNum: c, by: 'header' };
+    }
+  }
+  if (preferredLetter) {
+    return {
+      column: preferredLetter,
+      colNum: columnLetterToNumber(preferredLetter),
+      by: 'letter',
+    };
+  }
+  return null;
 }
 
 function changesMapToObject(changes) {
@@ -398,24 +446,20 @@ export async function patchYellowCellsInWorkbookBuffer({
 
   const allowedCols = new Set();
   for (const upd of cellUpdates) {
-    const colNum = columnLetterToNumber(upd.column);
-    const headerVal = headerRow.getCell(colNum).value;
-    const headerText =
-      headerVal == null
-        ? ''
-        : typeof headerVal === 'object' && headerVal.text != null
-          ? String(headerVal.text)
-          : String(headerVal);
-    if (!headerText.trim()) {
-      const err = new Error(`OUTBOUND_COLUMN_MISSING_HEADER:${upd.column}`);
+    assertFieldWritableOrThrow(upd.field);
+    const entry = getOwnershipEntry(upd.field);
+    const resolved = resolveOutboundColumn(headerRow, entry, upd.column || entry.column);
+    if (!resolved?.colNum) {
+      const err = new Error(`OUTBOUND_COLUMN_MISSING_HEADER:${upd.field}`);
       err.code = 'OUTBOUND_COLUMN_MISSING_HEADER';
       throw err;
     }
-    assertFieldWritableOrThrow(upd.field);
-    const entry = getOwnershipEntry(upd.field);
-    if (entry.column !== upd.column) {
-      const err = new Error(`OUTBOUND_COLUMN_MISMATCH:${upd.field}`);
-      err.code = 'OUTBOUND_COLUMN_MISMATCH';
+    const colNum = resolved.colNum;
+    const headerVal = headerRow.getCell(colNum).value;
+    const headerText = headerCellText(headerVal);
+    if (!headerText.trim()) {
+      const err = new Error(`OUTBOUND_COLUMN_MISSING_HEADER:${resolved.column}`);
+      err.code = 'OUTBOUND_COLUMN_MISSING_HEADER';
       throw err;
     }
 
@@ -562,7 +606,7 @@ async function writeOutboundCells({
     const touchedCols = new Set(cellUpdates.map((u) => u.column));
     const guardCols = [
       ...ALFA_EXCEL_GREEN_COLUMNS,
-      ...['R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB'].filter(
+      ...['T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE'].filter(
         (c) => !touchedCols.has(c)
       ),
     ];

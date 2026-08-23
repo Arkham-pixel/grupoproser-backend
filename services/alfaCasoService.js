@@ -11,6 +11,10 @@ import {
   decideAlfaExcelMerge,
 } from '../utils/alfaExcelNormalize.js';
 import { isArnaldOwnedField } from '../config/alfaExcelOwnershipMap.js';
+import {
+  estadoGestionDesdeEstadoAlfa,
+  homologarEstadoAlfa,
+} from '../config/alfaExcelStatuses.js';
 
 const COUNTER_ID = 'seguros_alfa_consecutivo';
 
@@ -87,7 +91,7 @@ function parseNumberFlexible(value, fallback = null) {
 }
 
 export function buildAlfaCasoPayload(data = {}, base = {}) {
-  return {
+  const out = {
     consecutivo: base.consecutivo ?? null,
     siniestro: toStringOrNull(data.siniestro, base.siniestro ?? null),
     identificacion: toStringOrNull(data.identificacion, base.identificacion ?? null),
@@ -151,7 +155,37 @@ export function buildAlfaCasoPayload(data = {}, base = {}) {
       base.fechaEnvioAseguradora ?? null
     ),
     estado: toStringOrNull(data.estado, base.estado ?? null),
+    estadoGestion: toStringOrNull(data.estadoGestion, base.estadoGestion ?? null),
+    observacionesGestion:
+      toStringOrNull(data.observacionesGestion, base.observacionesGestion ?? null) || '',
+    noAceptacionOferta:
+      data.noAceptacionOferta != null
+        ? Boolean(data.noAceptacionOferta)
+        : base.noAceptacionOferta != null
+          ? Boolean(base.noAceptacionOferta)
+          : false,
+    zonaAsignada: toStringOrNull(data.zonaAsignada, base.zonaAsignada ?? null) || '',
+    fueraDeZona:
+      data.fueraDeZona != null
+        ? Boolean(data.fueraDeZona)
+        : base.fueraDeZona != null
+          ? Boolean(base.fueraDeZona)
+          : false,
+    casoPadreId: data.casoPadreId ?? base.casoPadreId ?? null,
+    grupoReclamacion: toStringOrNull(data.grupoReclamacion, base.grupoReclamacion ?? null) || '',
+    fechaComunicacionBajoDeducible: parseDateFlexible(
+      data.fechaComunicacionBajoDeducible,
+      base.fechaComunicacionBajoDeducible ?? null
+    ),
   };
+
+  // Un solo eje: homologar estado y sincronizar estadoGestion (Excel AD).
+  out.estado = homologarEstadoAlfa(out.estado, {
+    fechaInspeccion: out.fechaInspeccion,
+    estadoGestion: out.estadoGestion || data.estadoGestion || base.estadoGestion,
+  });
+  out.estadoGestion = estadoGestionDesdeEstadoAlfa(out.estado);
+  return out;
 }
 
 export function stripProtectedAlfaFields(obj = {}) {
@@ -221,7 +255,9 @@ export async function createAlfaCasoFromImport(data = {}) {
     err.code = 'MISSING_IDENTIFICACION';
     throw err;
   }
-  if (!payload.estado) payload.estado = 'PENDIENTE';
+  if (!payload.estado) payload.estado = 'Sin contactar';
+  payload.estado = homologarEstadoAlfa(payload.estado, payload);
+  payload.estadoGestion = estadoGestionDesdeEstadoAlfa(payload.estado);
   payload.consecutivo = await generarConsecutivoAlfa();
   delete payload.archivos;
   delete payload.liquidador;
@@ -233,4 +269,102 @@ export async function createAlfaCasoFromImport(data = {}) {
 export async function updateAlfaCasoFields(caseId, patch = {}) {
   const safe = stripProtectedAlfaFields(patch);
   return SegurosAlfaCaso.findByIdAndUpdate(caseId, { $set: safe }, { new: true });
+}
+
+/**
+ * ¿El array de ítems tiene al menos uno con texto (actividad/concepto/descripción)?
+ * Evita mandar el liquidador completo al listado.
+ */
+function alfaArrayTieneItemConTexto(arrayExpr) {
+  return {
+    $gt: [
+      {
+        $size: {
+          $filter: {
+            input: { $cond: [{ $isArray: arrayExpr }, arrayExpr, []] },
+            as: 'it',
+            cond: {
+              $gt: [
+                {
+                  $strLenCP: {
+                    $trim: {
+                      input: {
+                        $concat: [
+                          {
+                            $convert: {
+                              input: '$$it.actividad',
+                              to: 'string',
+                              onError: '',
+                              onNull: '',
+                            },
+                          },
+                          {
+                            $convert: {
+                              input: '$$it.concepto',
+                              to: 'string',
+                              onError: '',
+                              onNull: '',
+                            },
+                          },
+                          {
+                            $convert: {
+                              input: '$$it.descripcion',
+                              to: 'string',
+                              onError: '',
+                              onNull: '',
+                            },
+                          },
+                          {
+                            $convert: {
+                              input: '$$it.componente',
+                              to: 'string',
+                              onError: '',
+                              onNull: '',
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  },
+                },
+                0,
+              ],
+            },
+          },
+        },
+      },
+      0,
+    ],
+  };
+}
+
+/**
+ * Pipeline del listado: metadatos + banderas, sin liquidador/informe (pueden ir
+ * firmas/fotos en base64 y inflar 1550 casos a decenas de MB).
+ */
+export function buildAlfaListadoPipeline({ filtro = {}, skip = 0, limit = 25 } = {}) {
+  return [
+    { $match: filtro && Object.keys(filtro).length ? filtro : {} },
+    { $sort: { createdAt: -1 } },
+    { $skip: skip },
+    { $limit: limit },
+    {
+      $addFields: {
+        tieneLiquidador: { $eq: [{ $type: '$liquidador' }, 'object'] },
+        tieneInforme: { $eq: [{ $type: '$informeUnico' }, 'object'] },
+        tieneLiquidadorConContenido: {
+          $or: [
+            alfaArrayTieneItemConTexto('$liquidador.evaluacionSismicaNSR10.presupuesto.items'),
+            alfaArrayTieneItemConTexto('$liquidador.detalleLiquidacionCat'),
+          ],
+        },
+      },
+    },
+    {
+      $project: {
+        liquidador: 0,
+        informeUnico: 0,
+      },
+    },
+  ];
 }

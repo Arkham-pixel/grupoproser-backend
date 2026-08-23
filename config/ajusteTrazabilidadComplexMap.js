@@ -55,6 +55,7 @@ export const CAMPOS_FECHA_HITOS_TRAZABILIDAD = [
   'fchaInfoFnal',
   'fchaPresentacionCifras',
   'fchaAceptacionCifrasAseguradora',
+  'fchaReconsideracion',
   'fchaEnvioFiniquito',
 ];
 

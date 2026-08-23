@@ -8,6 +8,7 @@ import {
 } from '../services/alertasAllianzService.js';
 import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
 import { preservarPresupuestoNsrSiVacio } from '../utils/protegerPresupuestoNsr10.js';
+import { aplicarFechaAccionEstadoAllianz, homologarEstadoAllianz } from '../utils/estadosAllianz.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -378,7 +379,40 @@ const buildAllianzPayload = (data = {}, base = {}) => {
     data.fechaEnvioAseguradora,
     base.fechaEnvioAseguradora ?? null
   ),
-  estado: toStringOrNull(data.estado, base.estado ?? null),
+  fechaAsignacion: parseDateFlexible(data.fechaAsignacion, base.fechaAsignacion ?? null),
+  fechaVisita: parseDateFlexible(data.fechaVisita, base.fechaVisita ?? null),
+  estado: homologarEstadoAllianz(toStringOrNull(data.estado, base.estado ?? 'CASO NUEVO')),
+  modalidadAtencion: toStringOrNull(data.modalidadAtencion, base.modalidadAtencion ?? null),
+  fechaCasoNuevo: parseDateFlexible(data.fechaCasoNuevo, base.fechaCasoNuevo ?? null),
+  fechaCoordinandoInspeccion: parseDateFlexible(
+    data.fechaCoordinandoInspeccion,
+    base.fechaCoordinandoInspeccion ?? null
+  ),
+  fechaAnalisisCaso: parseDateFlexible(data.fechaAnalisisCaso, base.fechaAnalisisCaso ?? null),
+  fechaSolicitudDocumento: parseDateFlexible(
+    data.fechaSolicitudDocumento,
+    base.fechaSolicitudDocumento ?? null
+  ),
+  fechaRecepcionDocumento: parseDateFlexible(
+    data.fechaRecepcionDocumento,
+    base.fechaRecepcionDocumento ?? null
+  ),
+  fechaObjecion: parseDateFlexible(data.fechaObjecion, base.fechaObjecion ?? null),
+  fechaAutorizacionAnalista: parseDateFlexible(
+    data.fechaAutorizacionAnalista,
+    base.fechaAutorizacionAnalista ?? null
+  ),
+  fechaCasoParaPago: parseDateFlexible(data.fechaCasoParaPago, base.fechaCasoParaPago ?? null),
+  documentoFaltante: toStringOrNull(data.documentoFaltante, base.documentoFaltante ?? null),
+  observacionPendienteDocumento: toStringOrNull(
+    data.observacionPendienteDocumento,
+    base.observacionPendienteDocumento ?? null
+  ),
+  motivoObjecion: toStringOrNull(data.motivoObjecion, base.motivoObjecion ?? null),
+  responsableAporteDocumento: toStringOrNull(
+    data.responsableAporteDocumento,
+    base.responsableAporteDocumento ?? null
+  ),
   riskId: toStringOrNull(data.riskId, base.riskId ?? null),
   distanciaEpicentroKm: parseNumberFlexible(
     data.distanciaEpicentroKm,
@@ -471,7 +505,7 @@ const buildAllianzPayload = (data = {}, base = {}) => {
   ),
   };
   payload.checklistCatCompleto = esChecklistCatLleno(payload);
-  return payload;
+  return aplicarFechaAccionEstadoAllianz(payload, base);
 };
 
 /** Mapea un SiniestroExpress → campos Allianz (estructura Alfa). */
@@ -509,7 +543,7 @@ export const mapExpressAAllianz = (express = {}) => ({
   fechaLiquidado: express.fechaDefinicionCaso || null,
   fechaAceptacionLiquidacion: null,
   fechaEnvioAseguradora: express.fechaEnvioAutorizacion || null,
-  estado: express.estadoProceso || 'PENDIENTE',
+  estado: homologarEstadoAllianz(express.estadoProceso),
   liquidador: express.liquidador && typeof express.liquidador === 'object' ? express.liquidador : null,
 });
 
@@ -560,7 +594,22 @@ const mergeImportacionAllianz = (incomingPayload = {}, existente = {}) => {
     'fechaLiquidado',
     'fechaAceptacionLiquidacion',
     'fechaEnvioAseguradora',
+    'fechaAsignacion',
+    'fechaVisita',
     'estado',
+    'modalidadAtencion',
+    'fechaCasoNuevo',
+    'fechaCoordinandoInspeccion',
+    'fechaAnalisisCaso',
+    'fechaSolicitudDocumento',
+    'fechaRecepcionDocumento',
+    'fechaObjecion',
+    'fechaAutorizacionAnalista',
+    'fechaCasoParaPago',
+    'documentoFaltante',
+    'observacionPendienteDocumento',
+    'motivoObjecion',
+    'responsableAporteDocumento',
     'riskId',
     'distanciaEpicentroKm',
     'tipoNegocioHomologado',
@@ -608,7 +657,8 @@ const mergeImportacionAllianz = (incomingPayload = {}, existente = {}) => {
       ...incomingPayload.evidenciaCat,
     });
   }
-  if (!out.estado) out.estado = 'PENDIENTE';
+  if (!out.estado) out.estado = 'CASO NUEVO';
+  out.estado = homologarEstadoAllianz(out.estado);
   out.checklistCatCompleto = esChecklistCatLleno(out);
   return out;
 };
@@ -816,7 +866,7 @@ export const importarCasosAllianz = async (req, res) => {
         const payloadBase = completarIdentificacionAllianz(
           buildAllianzPayload({
             ...fila,
-            estado: fila.estado || 'PENDIENTE',
+            estado: homologarEstadoAllianz(fila.estado),
           })
         );
 
@@ -838,7 +888,7 @@ export const importarCasosAllianz = async (req, res) => {
           continue;
         }
         if (!payloadBase.estado) {
-          payloadBase.estado = 'PENDIENTE';
+          payloadBase.estado = 'CASO NUEVO';
         }
 
         const claves = clavesDe(payloadBase);
@@ -1197,7 +1247,7 @@ export const syncDesdeExpress = async (req, res) => {
         const mapped = mapExpressAAllianz(exp);
         const payloadBase = buildAllianzPayload({
           ...mapped,
-          estado: mapped.estado || 'PENDIENTE',
+          estado: homologarEstadoAllianz(mapped.estado),
         });
 
         if (!payloadBase.identificacion) {

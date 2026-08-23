@@ -53,7 +53,11 @@ export const ALFA_EXCEL_COLUMN_MAP = Object.freeze({
   valorAseguradoContenidos: ['VALOR ASEGURADO CONTENIDOS'],
   cobertura: ['COBERTURA'],
   estadoPagoPrimas: ['ESTADO PAGO PRIMAS'],
-  valorReservaPreventivaPromedio: ['VALOR RESERVA PREVENTIVA PROMEDIO'],
+  valorReservaPreventivaPromedio: [
+    'VALOR RESERVA PREVENTIVA PROMEDIO',
+    'VALOR RESERVA ACTUARIAL',
+    'RESERVA ACTUARIAL',
+  ],
   valorComercialInmueble: ['VALOR COMERCIAL INMUEBLE'],
   reserva: ['RESERVA'],
   valorReclamado: ['VALOR RECLAMADO'],
@@ -63,7 +67,11 @@ export const ALFA_EXCEL_COLUMN_MAP = Object.freeze({
   fechaLiquidado: ['FECHA LIQUIDADO'],
   fechaAceptacionLiquidacion: ['FECHA ACEPTACION LIQUIDACION'],
   fechaEnvioAseguradora: ['FECHA ENVIO A LA ASEGURADORA', 'FECHA ENVIO ASEGURADORA'],
-  estado: ['ESTADO', 'ESTADO FINAL'],
+  /** Estado siniestro (workflow). */
+  estado: ['ESTADO SINIESTRO', 'ESTADO FINAL', 'ESTADO'],
+  /** Estado de gestión operativo (correo Alfa). */
+  estadoGestion: ['ESTADO GESTION', 'ESTADO DE GESTION'],
+  zonaAsignada: ['ZONA', 'ZONA ASIGNADA', 'TERRITORIO'],
 });
 
 /** Campos que el Excel puede alimentar (nunca protegidos). */
@@ -99,15 +107,13 @@ export const ALFA_EXCEL_UPDATABLE_FIELDS = Object.freeze([
   'fechaLiquidado',
   'fechaAceptacionLiquidacion',
   'fechaEnvioAseguradora',
-  // estado: PROTEGIDO — no se actualiza desde Excel
+  // estado / estadoGestion: PROTEGIDOS — ARNALD → Excel (outbound)
 ]);
 
 /**
  * Campos que el Excel NUNCA modifica.
- * Incluye `estado`: el workflow interno de ARNALD no se pisa desde Excel.
- * Si el Excel trae un `estado` distinto, el preview reporta IGNORED_PROTECTED
- * (no se oculta del diff: before/afterExcel + action).
- * `fechaLlamada` y `observacionLlamada` son solo ARNALD (formulario/reporte); no entran ni salen por SharePoint.
+ * `estado` y `estadoGestion` los escribe ARNALD (outbound amarillas).
+ * `fechaLlamada` y `observacionLlamada` son solo ARNALD.
  */
 export const PROTECTED_ALFA_FIELDS = Object.freeze([
   '_id',
@@ -119,14 +125,22 @@ export const PROTECTED_ALFA_FIELDS = Object.freeze([
   'informeUnico',
   'createdBy',
   'estado',
+  'estadoGestion',
+  'observacionesGestion',
   'fechaLlamada',
   'observacionLlamada',
   'ubicacionPredio',
+  'casoPadreId',
+  'grupoReclamacion',
+  'fueraDeZona',
   '__v',
 ]);
 
 /** Campos protegidos visibles en UI/preview (subset de negocio). */
-export const ALFA_EXCEL_PROTECTED_VISIBLE_FIELDS = Object.freeze(['estado']);
+export const ALFA_EXCEL_PROTECTED_VISIBLE_FIELDS = Object.freeze([
+  'estado',
+  'estadoGestion',
+]);
 
 export const ALFA_EXCEL_DATE_FIELDS = Object.freeze([
   'fechaSiniestro',

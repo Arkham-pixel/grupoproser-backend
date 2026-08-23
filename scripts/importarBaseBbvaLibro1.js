@@ -6,7 +6,8 @@
  *   node scripts/importarBaseBbvaLibro1.js
  *   node scripts/importarBaseBbvaLibro1.js "C:\\ruta\\Libro1.xlsx"
  */
-import 'dotenv/config';
+import '../config/loadEnv.js';
+import '../config/mongoDns.js';
 import mongoose from 'mongoose';
 import XLSX from 'xlsx';
 import BbvaCatCaso from '../models/BbvaCatCaso.js';
@@ -110,9 +111,11 @@ async function main() {
     leidos: data.length,
     creados: 0,
     actualizados: 0,
+    yaExistian: 0,
     omitidos: 0,
     listadoCreados: 0,
     listadoActualizados: 0,
+    listadoYaExistian: 0,
   };
 
   for (const row of data) {
@@ -155,15 +158,7 @@ async function main() {
       : await BbvaCatCaso.findOne({ identificacion: payload.identificacion });
 
     if (existente) {
-      const merge = {};
-      for (const [k, v] of Object.entries(payload)) {
-        if (v === '' || v == null) continue;
-        if (!existente[k]) merge[k] = v;
-      }
-      if (Object.keys(merge).length) {
-        await BbvaCatCaso.updateOne({ _id: existente._id }, { $set: merge });
-      }
-      resumen.actualizados += 1;
+      resumen.yaExistian += 1;
     } else {
       secuencial += 1;
       await BbvaCatCaso.create({
@@ -195,15 +190,7 @@ async function main() {
       ? await BbvaCatListadoCaso.findOne({ $or: [{ zc: siniestro }, { siniestro }] })
       : await BbvaCatListadoCaso.findOne({ identificacion: payload.identificacion });
     if (existenteListado) {
-      const mergeL = {};
-      for (const [k, v] of Object.entries(payloadListado)) {
-        if (v === '' || v == null) continue;
-        if (!existenteListado[k]) mergeL[k] = v;
-      }
-      if (Object.keys(mergeL).length) {
-        await BbvaCatListadoCaso.updateOne({ _id: existenteListado._id }, { $set: mergeL });
-      }
-      resumen.listadoActualizados += 1;
+      resumen.listadoYaExistian += 1;
     } else {
       secuencialListado += 1;
       await BbvaCatListadoCaso.create({

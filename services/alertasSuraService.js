@@ -1,7 +1,9 @@
 import SegurosSuraCaso from '../models/SegurosSuraCaso.js';
 import Responsable from '../models/Responsable.js';
+import SecurUser from '../models/SecurUser.js';
 import { DIAS_ENTRE_RECORDATORIOS_EMAIL } from './alertasService.js';
-import { enviarEmailAlertasSura } from './emailService.js';
+import { esEstadoSuraCerrado } from '../utils/estadosSura.js';
+import { enviarEmailAlertasSura, enviarNotificacionAsignacion } from './emailService.js';
 import { withRecipientLocale } from '../utils/resolveUserLocale.js';
 import {
   getResponsableResolverIndex,
@@ -9,23 +11,6 @@ import {
 } from './responsableResolverService.js';
 
 export const DIAS_RECORDATORIO_INACTIVIDAD_SURA = 30;
-
-/** Estados que cierran el caso para alertas (sin recordatorio). */
-const ESTADOS_CERRADOS_SURA = ['CERRADO'];
-
-function normalizarEstadoSura(valor) {
-  return String(valor ?? '')
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, ' ');
-}
-
-function esEstadoSuraCerrado(valorEstado) {
-  const estado = normalizarEstadoSura(valorEstado);
-  return ESTADOS_CERRADOS_SURA.includes(estado);
-}
 
 function parseFechaSura(valor) {
   if (!valor) return null;
@@ -132,7 +117,7 @@ function casoSuraAFormatoEmail(caso) {
 
 export async function obtenerTodasAlertasSura() {
   const casos = await SegurosSuraCaso.find({
-    estado: { $nin: ESTADOS_CERRADOS_SURA },
+    estado: { $nin: ['ANULADO', 'CERRADO'] },
   })
     .lean()
     .exec();
@@ -378,4 +363,92 @@ export async function enviarAlertasTodosSura(opciones = {}) {
     responsablesConAlertas: agrupadas.ajustadoresConAlertas,
     resultados,
   };
+}
+
+function textoCampo(valor) {
+  return String(valor ?? '').trim();
+}
+
+async function resolverEmailPersonaSura(clave) {
+  const k = textoCampo(clave);
+  if (!k) return '';
+  const porLogin = await SecurUser.findOne({
+    $or: [{ login: k }, { cedula: k }],
+  })
+    .select('email')
+    .lean();
+  if (porLogin?.email) return String(porLogin.email).trim();
+  const rx = new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+  const resp = await Responsable.findOne({
+    $or: [{ nmbrRespnsble: rx }, { codiRespnsble: k }],
+  })
+    .select('email')
+    .lean();
+  if (resp?.email) return String(resp.email).trim();
+  const porNombre = await SecurUser.findOne({ name: rx }).select('email').lean();
+  return porNombre?.email ? String(porNombre.email).trim() : '';
+}
+
+/**
+ * Correo cuando cambia estado o asignación (no en autosave de liquidador/informe).
+ */
+export async function notificarModificacionCasoSura({
+  antes = {},
+  despues = {},
+  actor = {},
+} = {}) {
+  const cambios = [];
+  const campos = [
+    ['estado', 'Estado'],
+    ['ajustador', 'Ajustador'],
+    ['inspector', 'Inspector'],
+    ['ajustadorLider', 'Ajustador líder'],
+  ];
+  for (const [key, label] of campos) {
+    const prev = textoCampo(antes[key]);
+    const next = textoCampo(despues[key]);
+    if (prev !== next) cambios.push(`${label}: "${prev || '—'}" → "${next || '—'}"`);
+  }
+  if (!cambios.length) return { omitido: true };
+
+  const destinatarios = [
+    despues.ajustadorLider,
+    despues.ajustador,
+    despues.inspector,
+    antes.ajustador,
+    antes.inspector,
+  ];
+  const emails = [];
+  for (const persona of destinatarios) {
+    const email = await resolverEmailPersonaSura(persona);
+    if (email) emails.push(email);
+  }
+  const unicos = [...new Set(emails)];
+  if (!unicos.length) return { omitido: true, motivo: 'sin_email' };
+
+  const casoId = String(despues._id || antes._id || '');
+  const consecutivo = despues.consecutivo || antes.consecutivo || '';
+  const actorNombre = actor.name || actor.login || 'ARNALD';
+
+  const resultados = [];
+  for (const email of unicos) {
+    const r = await enviarNotificacionAsignacion({
+      modulo: 'sura',
+      tipoCaso: 'sura',
+      numeroCaso: consecutivo,
+      consecutivo,
+      casoId,
+      aseguradora: 'Seguros Sura',
+      asegurado: despues.asegurado || despues.tomador || '',
+      nombreResponsable: despues.ajustador || '',
+      emailResponsable: email,
+      quienAsigna: actorNombre,
+      observaciones: `Se actualizó el caso SURA ${consecutivo}.\n\n${cambios.join('\n')}`,
+      enlacePanelOverride: casoId
+        ? `${process.env.FRONTEND_URL || 'https://arnald.proserpuertos.com.co'}/sura/caso?id=${casoId}`
+        : '',
+    });
+    resultados.push({ email, ...r });
+  }
+  return { omitido: false, cambios, resultados };
 }

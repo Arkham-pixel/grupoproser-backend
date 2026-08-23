@@ -9,7 +9,13 @@ const PREFIJOS_COMUNES = [
   '/uploads',
 ];
 
-const PREFIJOS_SOLO_LECTURA = ['/api/ciudades', '/api/responsables'];
+const PREFIJOS_SOLO_LECTURA = [
+  '/api/ciudades',
+  '/api/responsables',
+  '/api/ajustadores-catastrofico',
+  '/api/inspectores-catastrofico',
+  '/api/comunicados',
+];
 
 export function restringirContractorZurich(req, res, next) {
   const authHeader = req.headers.authorization || '';

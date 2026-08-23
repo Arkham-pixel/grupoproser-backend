@@ -29,6 +29,7 @@ import {
   getBloquesCercaniaAlfa,
   getCondicionesAlfa,
   downloadCondicionAlfa,
+  crearPredioVinculadoAlfa,
 } from '../controllers/segurosAlfa.controller.js';
 import { createMulterUpload, attachPersistedFileMiddleware } from '../storage/multerStorageFactory.js';
 import { STORAGE_CATEGORIES } from '../services/fileStorageService.js';
@@ -147,6 +148,7 @@ router.delete('/:id/archivos/:archivoId', eliminarArchivoAlfa);
 router.get('/:id', poblarUsuarioOpcional, obtenerCasoAlfa);
 router.post('/', crearCasoAlfa);
 router.put('/:id', verificarToken, actualizarCasoAlfa);
+router.post('/:id/predio-vinculado', verificarToken, crearPredioVinculadoAlfa);
 router.delete('/:id', eliminarCasoAlfa);
 
 export default router;

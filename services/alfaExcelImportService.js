@@ -247,8 +247,8 @@ export function matchAlfaCaseForExcelRow(payload, allCases) {
     if (byCredit.length > 0) {
       pool = byCredit;
       applied.numeroCredito = true;
-    } else if (preferredPlaceholder || pool.length > 1) {
-      // Refuerzo no cuadra: no CREATE ciego sobre casos existentes
+    } else if (pool.length > 1) {
+      // Varios casos misma id y el crédito no cuadra → no adivinar
       return matchResult(
         'AMBIGUOUS',
         pool,
@@ -256,6 +256,7 @@ export function matchAlfaCaseForExcelRow(payload, allCases) {
         buildEvidence({ ...applied, numeroCredito: false })
       );
     }
+    // Un solo caso por id: el consolidado Excel actualiza ese caso aunque el crédito viejo difiera
   }
 
   if (fecha) {
@@ -296,14 +297,16 @@ export function matchAlfaCaseForExcelRow(payload, allCases) {
       normKeyPolicy(only.numeroPoliza) === polExcel;
     const placeholderTarget = isPolicyPlaceholder(only.numeroPoliza);
 
-    // Misma id, pólizas reales distintas y sin refuerzo útil → no asumir UPDATE
+    // Misma id, pólizas reales distintas y VARIOS casos → no asumir UPDATE
+    // Si solo hay 1 caso, el consolidado Excel es fuente de verdad (actualiza póliza).
     if (
       polExcelReal &&
       !placeholderTarget &&
       !samePol &&
       !applied.numeroCredito &&
       !applied.fechaSiniestro &&
-      !applied.direccionPredio
+      !applied.direccionPredio &&
+      byId.length > 1
     ) {
       return matchResult('AMBIGUOUS', pool, 'AMBIGUOUS', buildEvidence(applied));
     }
@@ -321,6 +324,8 @@ export function matchAlfaCaseForExcelRow(payload, allCases) {
       strategy = applied.numeroCredito
         ? 'IDENTIFICACION_CREDITO'
         : 'IDENTIFICACION_MULTI_FACTOR';
+    } else if (byId.length === 1) {
+      strategy = 'IDENTIFICACION_UNICA';
     }
 
     return matchResult('MATCH', pool, strategy, buildEvidence(applied));
@@ -596,11 +601,12 @@ export function planRow(row, allCases) {
       };
     }
 
-    const createPayload = buildAlfaCasoPayload({ ...rawPayload, estado: 'PENDIENTE' });
-    createPayload.estado = 'PENDIENTE';
+    const createPayload = buildAlfaCasoPayload({ ...rawPayload, estado: 'Sin contactar' });
+    createPayload.estado = 'Sin contactar';
     if (
       isMeaningfulExcelValue(rawPayload.estado) &&
-      String(rawPayload.estado).trim().toUpperCase() !== 'PENDIENTE'
+      String(rawPayload.estado).trim().toUpperCase() !== 'PENDIENTE' &&
+      String(rawPayload.estado).trim() !== 'Sin contactar'
     ) {
       ignoredFields.estado = {
         before: null,
@@ -608,6 +614,17 @@ export function planRow(row, allCases) {
         action: 'IGNORED_PROTECTED',
       };
       warnings.push('IGNORED_PROTECTED:estado');
+    }
+    if (isMeaningfulExcelValue(rawPayload.estadoGestion)) {
+      ignoredFields.estadoGestion = {
+        before: null,
+        afterExcel: rawPayload.estadoGestion,
+        action: 'IGNORED_PROTECTED',
+      };
+      warnings.push('IGNORED_PROTECTED:estadoGestion');
+    }
+    if (!createPayload.estadoGestion) {
+      createPayload.estadoGestion = 'Sin contactar';
     }
 
     return {
@@ -633,6 +650,9 @@ export function planRow(row, allCases) {
         estadoActual: null,
         estadoExcel: rawPayload.estado || null,
         estadoAction: ignoredFields.estado?.action || 'DEFAULT_PENDIENTE',
+        estadoGestionActual: null,
+        estadoGestionExcel: rawPayload.estadoGestion || null,
+        estadoGestionAction: ignoredFields.estadoGestion?.action || 'DEFAULT_SIN_CONTACTAR',
       },
       claimNumberAssigned: false,
       claimNumberEventPending: false,
@@ -659,6 +679,18 @@ export function planRow(row, allCases) {
       action: 'IGNORED_PROTECTED',
     };
     warnings.push('IGNORED_PROTECTED:estado');
+  }
+  if (
+    rawPayload.estadoGestion != null &&
+    String(rawPayload.estadoGestion).trim() !== '' &&
+    !valuesEqualForDiff(rawPayload.estadoGestion, existing.estadoGestion)
+  ) {
+    ignoredFields.estadoGestion = {
+      before: existing.estadoGestion ?? null,
+      afterExcel: rawPayload.estadoGestion,
+      action: 'IGNORED_PROTECTED',
+    };
+    warnings.push('IGNORED_PROTECTED:estadoGestion');
   }
 
   for (const [field, meta] of Object.entries(ignoredFields)) {
@@ -707,6 +739,9 @@ export function planRow(row, allCases) {
       estadoActual: existing.estado || null,
       estadoExcel: rawPayload.estado || null,
       estadoAction: ignoredFields.estado?.action || 'UNCHANGED',
+      estadoGestionActual: existing.estadoGestion || null,
+      estadoGestionExcel: rawPayload.estadoGestion || null,
+      estadoGestionAction: ignoredFields.estadoGestion?.action || 'UNCHANGED',
       changeFields: Object.keys(changes),
     },
     claimNumberAssigned: claimAssigned,
@@ -983,7 +1018,7 @@ export async function previewAlfaExcelImport({
     sampleRows,
     warnings,
     note:
-      'Preview solo lectura. NO genera eventos reales ni modifica Mongo/SharePoint hasta POST /import/execute. Campo estado = IGNORED_PROTECTED.',
+      'Preview solo lectura. NO genera eventos reales ni modifica Mongo/SharePoint hasta POST /import/execute. Campos estado / estadoGestion = IGNORED_PROTECTED (ARNALD → Excel).',
   };
 }
 
