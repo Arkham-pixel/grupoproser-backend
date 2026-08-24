@@ -52,9 +52,13 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
     ciudad: String,
     departamento: String,
     fechaSiniestro: Date,
+    /** Fecha de aviso / radicación del siniestro (columna FECHA AVISO Excel). */
+    fechaAviso: Date,
     /** Vigencia de la póliza (hoja PENDIENTES: FECHA INICIO / FECHA FIN) */
     fechaInicioPoliza: Date,
     fechaFinPoliza: Date,
+    /** Valor asegurado SID (columna N del consolidado BD). */
+    valorAseguradoSid: Number,
     valorAseguradoInmueble: Number,
     valorAseguradoContenidos: Number,
     cobertura: String,

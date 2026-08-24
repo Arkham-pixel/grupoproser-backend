@@ -35,6 +35,7 @@ export const ALFA_EXCEL_COLUMN_MAP = Object.freeze({
   ciudad: ['CIUDAD'],
   departamento: ['DEPARTAMENTO'],
   fechaSiniestro: ['FECHA SINIESTRO'],
+  fechaAviso: ['FECHA AVISO', 'FECHA DE AVISO', 'FECHA AVISO SINIESTRO'],
   fechaInicioPoliza: [
     'FECHA INICIO',
     'FECHA INICIO POLIZA',
@@ -49,6 +50,7 @@ export const ALFA_EXCEL_COLUMN_MAP = Object.freeze({
     'VIGENCIA HASTA',
     'VIGENCIA FIN',
   ],
+  valorAseguradoSid: ['VALOR ASEGURADO SID', 'VALOR ASEGURADO S I D', 'VA SID'],
   valorAseguradoInmueble: ['VALOR ASEGURADO INMUEBLE'],
   valorAseguradoContenidos: ['VALOR ASEGURADO CONTENIDOS'],
   cobertura: ['COBERTURA'],
@@ -72,6 +74,12 @@ export const ALFA_EXCEL_COLUMN_MAP = Object.freeze({
   /** Estado de gestión operativo (correo Alfa). */
   estadoGestion: ['ESTADO GESTION', 'ESTADO DE GESTION'],
   zonaAsignada: ['ZONA', 'ZONA ASIGNADA', 'TERRITORIO'],
+  observacionesGestion: [
+    'OBSERVACION',
+    'OBSERVACIONES',
+    'OBSERVACIONES GESTION',
+    'OBSERVACION GESTION',
+  ],
 });
 
 /** Campos que el Excel puede alimentar (nunca protegidos). */
@@ -91,8 +99,10 @@ export const ALFA_EXCEL_UPDATABLE_FIELDS = Object.freeze([
   'ciudad',
   'departamento',
   'fechaSiniestro',
+  'fechaAviso',
   'fechaInicioPoliza',
   'fechaFinPoliza',
+  'valorAseguradoSid',
   'valorAseguradoInmueble',
   'valorAseguradoContenidos',
   'cobertura',
@@ -144,6 +154,7 @@ export const ALFA_EXCEL_PROTECTED_VISIBLE_FIELDS = Object.freeze([
 
 export const ALFA_EXCEL_DATE_FIELDS = Object.freeze([
   'fechaSiniestro',
+  'fechaAviso',
   'fechaInicioPoliza',
   'fechaFinPoliza',
   'fechaInspeccion',
@@ -154,6 +165,7 @@ export const ALFA_EXCEL_DATE_FIELDS = Object.freeze([
 ]);
 
 export const ALFA_EXCEL_MONEY_FIELDS = Object.freeze([
+  'valorAseguradoSid',
   'valorAseguradoInmueble',
   'valorAseguradoContenidos',
   'valorReservaPreventivaPromedio',

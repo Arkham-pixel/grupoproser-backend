@@ -17,7 +17,7 @@ export const ALFA_EXCEL_HEADER_ROW = 1;
 /** @type {Readonly<Record<string, OwnershipEntry>>} */
 export const ALFA_EXCEL_OWNERSHIP = Object.freeze({
   // —— Alfa (verde) — no writable ——
-  // A = FECHA AVISO (solo Excel Alfa; no hay campo caso)
+  fechaAviso: { owner: 'alfa', column: 'A', header: 'FECHA AVISO' },
   siniestro: { owner: 'alfa', column: 'B', header: 'SINIESTRO' },
   identificacion: { owner: 'alfa', column: 'C', header: 'IDENTIFICACIÓN' },
   asegurado: { owner: 'alfa', column: 'D', header: 'ASEGURADO' },
@@ -30,7 +30,7 @@ export const ALFA_EXCEL_OWNERSHIP = Object.freeze({
   ciudad: { owner: 'alfa', column: 'K', header: 'CIUDAD' },
   departamento: { owner: 'alfa', column: 'L', header: 'DEPARTAMENTO' },
   fechaSiniestro: { owner: 'alfa', column: 'M', header: 'FECHA SINIESTRO' },
-  // N = VALOR ASEGURADO SID (solo Excel)
+  valorAseguradoSid: { owner: 'alfa', column: 'N', header: 'VALOR ASEGURADO SID' },
   valorAseguradoInmueble: { owner: 'alfa', column: 'O', header: 'VALOR ASEGURADO INMUEBLE' },
   valorAseguradoContenidos: { owner: 'alfa', column: 'P', header: 'VALOR ASEGURADO CONTENIDOS' },
   cobertura: { owner: 'alfa', column: 'Q', header: 'COBERTURA' },
@@ -111,6 +111,13 @@ export const ALFA_EXCEL_OWNERSHIP = Object.freeze({
     column: 'AE',
     header: 'ESTADO SINIESTRO',
     headerAliases: ['ESTADO SINIESTRO', 'ESTADO'],
+    outboundEnabled: true,
+  },
+  observacionesGestion: {
+    owner: 'arnald',
+    column: 'AF',
+    header: 'OBSERVACION',
+    headerAliases: ['OBSERVACION', 'OBSERVACIONES', 'OBSERVACIONES GESTION'],
     outboundEnabled: true,
   },
 });

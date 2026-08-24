@@ -113,8 +113,13 @@ export function buildAlfaCasoPayload(data = {}, base = {}) {
     ciudad: toStringOrNull(data.ciudad, base.ciudad ?? null),
     departamento: toStringOrNull(data.departamento, base.departamento ?? null),
     fechaSiniestro: parseDateFlexible(data.fechaSiniestro, base.fechaSiniestro ?? null),
+    fechaAviso: parseDateFlexible(data.fechaAviso, base.fechaAviso ?? null),
     fechaInicioPoliza: parseDateFlexible(data.fechaInicioPoliza, base.fechaInicioPoliza ?? null),
     fechaFinPoliza: parseDateFlexible(data.fechaFinPoliza, base.fechaFinPoliza ?? null),
+    valorAseguradoSid: parseNumberFlexible(
+      data.valorAseguradoSid,
+      base.valorAseguradoSid ?? null
+    ),
     valorAseguradoInmueble: parseNumberFlexible(
       data.valorAseguradoInmueble,
       base.valorAseguradoInmueble ?? null
