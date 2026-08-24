@@ -564,7 +564,7 @@ function casoTieneArchivosListado(caso, archivosPorClave) {
 /**
  * Clustering greedy:
  * - Semillas en orden geográfico fijo (sur→norte / oeste→este)
- * - Numeración fija del bloque por centro (norte→sur). No se reordena por cantidad.
+ * - Numeración 1, 2, 3… de mayor a menor volumen de casos
  */
 export function clusterizarPorRadio(puntos = [], radioKm = 2.5) {
   const radio = Math.max(0.1, Number(radioKm) || 2.5);
@@ -630,8 +630,10 @@ export function clusterizarPorRadio(puntos = [], radioKm = 2.5) {
     });
   }
 
-  // Numeración fija por geografía del centro (norte → sur, luego oeste → este).
+  // Numeración 1, 2, 3… de mayor a menor cantidad (empate: geografía del centro).
   bloques.sort((a, b) => {
+    const dCant = (b.cantidad || 0) - (a.cantidad || 0);
+    if (dCant !== 0) return dCant;
     const dLat = Number(b.centro.lat) - Number(a.centro.lat);
     if (Math.abs(dLat) > 1e-9) return dLat;
     const dLng = Number(a.centro.lng) - Number(b.centro.lng);
@@ -752,6 +754,19 @@ export async function obtenerBloquesCercaniaBbvaCat({
       };
     })
     .filter((b) => !soloConArchivos || Number(b.cantidad) > 0);
+
+  bloquesVisibles.sort((a, b) => {
+    const dCant = (Number(b.cantidad) || 0) - (Number(a.cantidad) || 0);
+    if (dCant !== 0) return dCant;
+    return String(a.casos?.[0]?.consecutivo || '').localeCompare(
+      String(b.casos?.[0]?.consecutivo || ''),
+      'es'
+    );
+  });
+  bloquesVisibles.forEach((b, i) => {
+    b.id = `bloque-${i + 1}`;
+    b.nombre = `Bloque ${i + 1}`;
+  });
 
   const sinUbicarVisibles = filtrarVisibles(sinUbicar);
   const sinDireccionCount = sinUbicarVisibles.filter((c) => c.motivoSinUbicar === 'sin_direccion').length;
