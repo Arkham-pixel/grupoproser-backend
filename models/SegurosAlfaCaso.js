@@ -96,6 +96,12 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
     /** Fecha en que se marcó bajo deducible / se envió comunicación. */
     fechaComunicacionBajoDeducible: Date,
     /**
+     * Correo masivo de apertura (PROSER designado por Alfa).
+     * Evita reenvíos al volver a correr el script.
+     */
+    fechaEmailAperturaProser: Date,
+    emailAperturaProserMessageId: String,
+    /**
      * Coordenadas del predio para bloques de cercanía (solo ARNALD).
      * No sincroniza con SharePoint / Excel Control y Seguimiento.
      */
