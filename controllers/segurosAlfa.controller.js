@@ -538,7 +538,19 @@ export const actualizarCasoAlfa = async (req, res) => {
     }
 
     const base = registroActual.toObject();
-    const { data: bodyFiltrado } = aplicarRestriccionRolCaso(req, req.body || {}, base);
+    const { data: bodyFiltrado, soloEstado } = aplicarRestriccionRolCaso(req, req.body || {}, base);
+    if (
+      soloEstado &&
+      req.body &&
+      (Object.prototype.hasOwnProperty.call(req.body, 'liquidador') ||
+        Object.prototype.hasOwnProperty.call(req.body, 'informeUnico'))
+    ) {
+      return res.status(403).json({
+        success: false,
+        error:
+          'Su rol no puede guardar el liquidador ni el informe. Pida a un ajustador o líder que guarde, o use una cuenta con permiso de edición completa.',
+      });
+    }
     const payload = asegurarEstadoUnificado(buildAlfaPayload(bodyFiltrado, base));
     if (!payload.consecutivo) {
       payload.consecutivo = base.consecutivo || (await generarConsecutivoAlfa());
@@ -582,6 +594,13 @@ export const actualizarCasoAlfa = async (req, res) => {
         runValidators: true,
       }
     );
+
+    // Mixed: asegurar que el liquidador completo quedó persistido (no parcial)
+    if (payload.liquidador && typeof payload.liquidador === 'object' && actualizado) {
+      actualizado.liquidador = payload.liquidador;
+      actualizado.markModified('liquidador');
+      await actualizado.save();
+    }
 
     // Outbox asíncrono (solo columnas amarillas allowlist / piloto). No bloquea la respuesta.
     await enqueueAlfaExcelOutboundFromCaseUpdate({

@@ -41,6 +41,16 @@ assert(
 );
 assert(resolverLiquidadorParaUpdate(undefined, conItems) === conItems, 'resolver undefined');
 
+const editado = {
+  ...conItems,
+  detalleLiquidacionCat: [{ concepto: 'Muro', valorPerdida: 999 }],
+};
+const resueltoEdit = resolverLiquidadorParaUpdate(editado, conItems);
+assert(
+  resueltoEdit?.detalleLiquidacionCat?.[0]?.valorPerdida === 999,
+  'edicion con contenido debe persistir tal cual'
+);
+
 const informeLleno = { analisisGeneral: { descripcionEvento: 'Terremoto' }, fotosInspeccion: [{}] };
 const informeVacio = { analisisGeneral: {} };
 assert(

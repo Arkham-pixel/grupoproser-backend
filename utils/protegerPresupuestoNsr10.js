@@ -129,13 +129,21 @@ export function preservarPresupuestoNsrSiVacio(nuevo, actual) {
 
 /**
  * Resuelve liquidador para $set: nunca dejar null/vacío si ya había contenido.
+ * Si el cliente envía un liquidador CON contenido, se confía en él (edición real).
+ * Solo se protege el cascarón vacío que borraría un liquidador ya guardado.
  */
 export function resolverLiquidadorParaUpdate(incoming, actual) {
   if (incoming === undefined) return actual ?? null;
   if (incoming === null || typeof incoming !== 'object') {
     return scoreContenidoLiquidadorNsr(actual) > 0 ? actual : null;
   }
-  return preservarPresupuestoNsrSiVacio(incoming, actual);
+  const scoreNew = scoreContenidoLiquidadorNsr(incoming);
+  const scoreOld = scoreContenidoLiquidadorNsr(actual);
+  // Edición con datos: persistir exactamente lo enviado (no reinyectar el liquidador viejo)
+  if (scoreNew > 0) return incoming;
+  // Cascarón vacío no borra el existente
+  if (scoreOld > 0) return actual;
+  return incoming;
 }
 
 /**
