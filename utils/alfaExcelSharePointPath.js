@@ -57,3 +57,30 @@ export function isAcceptedAlfaExcelName(name) {
   if (isTempOfficeExcelName(n)) return false;
   return /\.(xlsx|xls)$/i.test(n);
 }
+
+/**
+ * Copia humana «…_Final.xlsx»: ARNALD NO debe leerla ni escribirla.
+ * El consolidado operativo es el mismo nombre sin el sufijo `_Final`.
+ */
+export function isAlfaExcelFinalProtectedName(name) {
+  return /_final\.(xlsx|xls)$/i.test(String(name || '').trim());
+}
+
+/** Si env apunta a *_Final.xlsx, lo convierte al archivo operativo. */
+export function toAlfaExcelOperationalFileName(name) {
+  const n = String(name || '').trim();
+  if (!n) return '';
+  if (!isAlfaExcelFinalProtectedName(n)) return n;
+  return n.replace(/_final(?=\.(xlsx|xls)$)/i, '');
+}
+
+export function assertAlfaExcelNotFinalProtected(name) {
+  const n = String(name || '').trim();
+  if (isAlfaExcelFinalProtectedName(n)) {
+    deny(
+      'ALFA_EXCEL_FINAL_PROTECTED',
+      `Prohibido tocar el consolidado Final («${n}»). Use el archivo operativo sin «_Final».`
+    );
+  }
+  return n;
+}

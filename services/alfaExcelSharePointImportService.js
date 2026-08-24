@@ -13,7 +13,9 @@ import {
 import {
   assertAlfaExcelSharePointPath,
   isAcceptedAlfaExcelName,
+  isAlfaExcelFinalProtectedName,
   isTempOfficeExcelName,
+  toAlfaExcelOperationalFileName,
 } from '../utils/alfaExcelSharePointPath.js';
 import AlfaExcelSharePointSource from '../models/AlfaExcelSharePointSource.js';
 import AlfaExcelImport from '../models/AlfaExcelImport.js';
@@ -109,6 +111,11 @@ export async function selectAlfaExcelFromSharePointFolder(rootPath, configuredFi
       ignored.push({ reason: 'NOT_XLSX_XLS', name, itemId: c.id });
       continue;
     }
+    // Copia humana de revisión: ARNALD no la selecciona nunca
+    if (isAlfaExcelFinalProtectedName(name)) {
+      ignored.push({ reason: 'FINAL_PROTECTED', name, itemId: c.id });
+      continue;
+    }
     if (!c.size || Number(c.size) === 0) {
       ignored.push({ reason: 'ZERO_SIZE', name, itemId: c.id });
       continue;
@@ -116,7 +123,8 @@ export async function selectAlfaExcelFromSharePointFolder(rootPath, configuredFi
     candidates.push(metaOf(c));
   }
 
-  const configured = String(configuredFileName || '').trim();
+  // Si .env tenía *_Final.xlsx, usar el operativo sin _Final
+  const configured = toAlfaExcelOperationalFileName(configuredFileName);
   if (configured) {
     const hit = candidates.find((x) => x.name === configured);
     if (!hit) {
@@ -126,6 +134,7 @@ export async function selectAlfaExcelFromSharePointFolder(rootPath, configuredFi
         candidates,
         ignored,
         path,
+        configuredFileName: configured,
       };
     }
     return {
@@ -134,6 +143,7 @@ export async function selectAlfaExcelFromSharePointFolder(rootPath, configuredFi
       candidates,
       ignored,
       path,
+      configuredFileName: configured,
     };
   }
 

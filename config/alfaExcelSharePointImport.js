@@ -3,6 +3,8 @@
  * EXECUTE nunca corre desde cron.
  */
 
+import { toAlfaExcelOperationalFileName } from '../utils/alfaExcelSharePointPath.js';
+
 function intEnv(name, fallback) {
   const n = parseInt(process.env[name] || '', 10);
   return Number.isFinite(n) && n > 0 ? n : fallback;
@@ -25,7 +27,10 @@ export function getAlfaExcelSharePointImportConfig() {
       process.env.SHAREPOINT_ALFA_EXCEL_IMPORT_PATH ||
         'SEGUROS ALFA/CONTROL Y SEGUIMIENTO'
     ).trim(),
-    fileName: String(process.env.SHAREPOINT_ALFA_EXCEL_FILE_NAME || '').trim(),
+    // Operativo: nunca *_Final.xlsx (copia de revisión humana)
+    fileName: toAlfaExcelOperationalFileName(
+      process.env.SHAREPOINT_ALFA_EXCEL_FILE_NAME || ''
+    ),
     /** Clave única del checkpoint (una fuente oficial). */
     integrationKey: 'alfa-excel-control-seguimiento',
   });

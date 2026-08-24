@@ -1,5 +1,5 @@
 /**
- * Ownership Excel Control y Seguimiento (hoja BD) — consolidado FAC-Cali Final.
+ * Ownership Excel Control y Seguimiento (hoja BD) — consolidado FAC-Cali operativo (sin _Final).
  * Amarillas (ARNALD outbound): T–AD según encabezados reales del archivo.
  * Verdes (Alfa inbound): A–S.
  *

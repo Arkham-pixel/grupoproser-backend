@@ -3,6 +3,8 @@
  * Default OFF — no activar hasta pasar piloto.
  */
 
+import { toAlfaExcelOperationalFileName } from '../utils/alfaExcelSharePointPath.js';
+
 function boolEnv(name, fallback = false) {
   const v = process.env[name];
   if (v === undefined || v === '') return fallback;
@@ -36,7 +38,10 @@ export function getAlfaExcelOutboundConfig() {
       process.env.SHAREPOINT_ALFA_EXCEL_IMPORT_PATH ||
         'SEGUROS ALFA/CONTROL Y SEGUIMIENTO'
     ).trim(),
-    fileName: String(process.env.SHAREPOINT_ALFA_EXCEL_FILE_NAME || '').trim(),
+    // Operativo: nunca *_Final.xlsx (copia de revisión humana)
+    fileName: toAlfaExcelOperationalFileName(
+      process.env.SHAREPOINT_ALFA_EXCEL_FILE_NAME || ''
+    ),
   });
 }
 

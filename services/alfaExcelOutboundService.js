@@ -36,6 +36,11 @@ import {
   readWorkbookRange,
 } from './microsoftGraphService.js';
 import { getAlfaExcelSharePointImportConfig } from '../config/alfaExcelSharePointImport.js';
+import {
+  isAlfaExcelFinalProtectedName,
+  toAlfaExcelOperationalFileName,
+} from '../utils/alfaExcelSharePointPath.js';
+import { selectAlfaExcelFromSharePointFolder } from './alfaExcelSharePointImportService.js';
 
 function logOut(event, payload = {}) {
   console.log(JSON.stringify({ event, at: new Date().toISOString(), ...payload }));
@@ -373,17 +378,66 @@ async function resolveSourceExcel() {
   });
   const ctx = await resolveDriveContext();
 
+  const operationalName = toAlfaExcelOperationalFileName(
+    cfg.fileName || importCfg.fileName || source?.fileName || ''
+  );
+
   let itemId = source?.itemId;
-  let fileName = source?.fileName || cfg.fileName || importCfg.fileName;
+  let fileName = source?.fileName || operationalName;
   let driveId = source?.driveId || ctx.driveId;
 
+  // Si el checkpoint apunta al *_Final, re-seleccionar el consolidado operativo
+  if (itemId) {
+    const metaProbe = await getItemMetadata(itemId);
+    if (isAlfaExcelFinalProtectedName(metaProbe.name)) {
+      logOut('ALFA_EXCEL_OUTBOUND_REPOINT_FROM_FINAL', {
+        previousFileName: metaProbe.name,
+        previousItemId: itemId,
+        operationalName,
+      });
+      itemId = null;
+    } else if (
+      operationalName &&
+      metaProbe.name &&
+      metaProbe.name !== operationalName &&
+      isAlfaExcelFinalProtectedName(source?.fileName)
+    ) {
+      itemId = null;
+    }
+  }
+
   if (!itemId) {
-    const err = new Error('EXCEL_SOURCE_NOT_CONFIGURED');
-    err.code = 'EXCEL_SOURCE_NOT_CONFIGURED';
-    throw err;
+    const selection = await selectAlfaExcelFromSharePointFolder(
+      cfg.rootPath || importCfg.rootPath,
+      operationalName
+    );
+    if (!selection.selected?.itemId) {
+      const err = new Error(
+        selection.outcome || 'EXCEL_SOURCE_NOT_CONFIGURED'
+      );
+      err.code = selection.outcome || 'EXCEL_SOURCE_NOT_CONFIGURED';
+      throw err;
+    }
+    itemId = selection.selected.itemId;
+    fileName = selection.selected.name;
+    if (source) {
+      source.itemId = itemId;
+      source.fileName = fileName;
+      source.driveId = ctx.driveId;
+      source.eTag = selection.selected.eTag;
+      await source.save();
+    }
   }
 
   const meta = await getItemMetadata(itemId);
+  if (isAlfaExcelFinalProtectedName(meta.name)) {
+    const err = new Error(
+      `Prohibido escribir en consolidado Final: ${meta.name}`
+    );
+    err.code = 'ALFA_EXCEL_FINAL_PROTECTED';
+    throw err;
+  }
+
   return {
     source,
     driveId: meta.parentReference?.driveId || driveId,
