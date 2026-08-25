@@ -1,4 +1,4 @@
-﻿import BbvaCatCaso from '../models/BbvaCatCaso.js';
+import BbvaCatCaso from '../models/BbvaCatCaso.js';
 import Responsable from '../models/Responsable.js';
 import { DIAS_ENTRE_RECORDATORIOS_EMAIL } from './alertasService.js';
 import { enviarEmailAlertasBbvaCat } from './emailService.js';

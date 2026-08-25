@@ -7,7 +7,7 @@ import {
   enviarAlertasBbvaCatAjustador,
 } from '../services/alertasBbvaCatService.js';
 import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
-import { preservarPresupuestoNsrSiVacio } from '../utils/protegerPresupuestoNsr10.js';
+import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoBbvaCat, homologarEstadoBbvaCat } from '../utils/estadosBbvaCat.js';
 import {
   geocodeCasosBbvaCatPendientes,
@@ -494,12 +494,7 @@ const buildBbvaCatPayload = (data = {}, base = {}) => {
     }
     return normalizeEvidenciaCat(prev);
   })(),
-  liquidador:
-    data.liquidador !== undefined
-      ? data.liquidador && typeof data.liquidador === 'object'
-        ? preservarPresupuestoNsrSiVacio(data.liquidador, base.liquidador)
-        : null
-      : base.liquidador ?? null,
+  liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
   informeUnico:
     data.informeUnico !== undefined
       ? data.informeUnico && typeof data.informeUnico === 'object'

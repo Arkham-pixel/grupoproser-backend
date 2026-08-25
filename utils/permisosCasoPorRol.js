@@ -19,13 +19,20 @@ export const CAMPOS_ASIGNACION_CASO = Object.freeze([
 /** Logins con poderes de ajustador líder SOLO en módulo SURA. */
 export const SURA_LOGINS_PERMISO_LIDER = Object.freeze(['72288319']);
 
+/** Alfa: ocultan del reporte/mapa los casos con fecha de llamada (Leyna Alfonso). */
+export const ALFA_LOGINS_COLA_FECHA_LLAMADA = Object.freeze(['1098662033']);
+
 const COLLATION_PERSONA = Object.freeze({ locale: 'es', strength: 1 });
 
-function normalizarClaveLoginSura(valor) {
+function normalizarClaveDocumentoLogin(valor) {
   const s = String(valor || '').trim();
   if (!s) return '';
   const digits = s.replace(/\D/g, '');
   return digits.length >= 5 ? digits : s.toLowerCase();
+}
+
+function normalizarClaveLoginSura(valor) {
+  return normalizarClaveDocumentoLogin(valor);
 }
 
 export function esLoginConPermisoLiderSura(login, modulo = '') {
@@ -33,6 +40,16 @@ export function esLoginConPermisoLiderSura(login, modulo = '') {
   const clave = normalizarClaveLoginSura(login);
   if (!clave) return false;
   return SURA_LOGINS_PERMISO_LIDER.map(normalizarClaveLoginSura).includes(clave);
+}
+
+export function esLoginColaFechaLlamadaAlfa(login) {
+  const clave = normalizarClaveDocumentoLogin(login);
+  if (!clave) return false;
+  return ALFA_LOGINS_COLA_FECHA_LLAMADA.map(normalizarClaveDocumentoLogin).includes(clave);
+}
+
+export function esIdentidadColaFechaLlamadaAlfa(opts = {}) {
+  return [opts.login, opts.cedula].some((v) => esLoginColaFechaLlamadaAlfa(v));
 }
 
 /** Login o cédula (Mario puede venir por cualquiera de los dos). */

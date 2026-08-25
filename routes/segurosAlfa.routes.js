@@ -61,7 +61,7 @@ const excelUpload = multer({
 router.get('/', poblarUsuarioOpcional, listarCasosAlfa);
 
 /** Bloques de cercanía (solo ARNALD; no SharePoint) — DEBE ir antes de /:id */
-router.get('/bloques-cercania', getBloquesCercaniaAlfa);
+router.get('/bloques-cercania', poblarUsuarioOpcional, getBloquesCercaniaAlfa);
 router.post('/geocode-pendientes', verificarToken, postGeocodePendientesAlfa);
 router.post('/ubicaciones-predio', verificarToken, postUbicacionesPredioAlfa);
 

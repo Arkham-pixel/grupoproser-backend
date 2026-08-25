@@ -165,6 +165,45 @@ export function getOutboundWritableFields() {
 }
 
 /**
+ * Campos al CREAR fila nueva en el consolidado (identidad verde + amarillas).
+ * Solo para append de casos ARNALD que aún no están en el Excel.
+ */
+export const ALFA_EXCEL_APPEND_FIELDS = Object.freeze([
+  'fechaAviso',
+  'siniestro',
+  'identificacion',
+  'asegurado',
+  'tomador',
+  'numeroPoliza',
+  'direccionPredio',
+  'numeroCredito',
+  'informacionContacto',
+  'correo',
+  'ciudad',
+  'departamento',
+  'fechaSiniestro',
+  'valorAseguradoSid',
+  'valorAseguradoInmueble',
+  'valorAseguradoContenidos',
+  'cobertura',
+  'estadoPagoPrimas',
+  'canalRadicacion',
+  'valorReservaPreventivaPromedio',
+  'valorComercialInmueble',
+  'reserva',
+  'valorReclamado',
+  'valorLiquidado',
+  'fechaInspeccion',
+  'fechaUltimoDocumento',
+  'fechaLiquidado',
+  'fechaAceptacionLiquidacion',
+  'fechaEnvioAseguradora',
+  'estadoGestion',
+  'estado',
+  'observacionesGestion',
+]);
+
+/**
  * Filtra changes para outbox.
  * - owner alfa → ALFA_EXCEL_FIELD_NOT_WRITABLE (descartado)
  * - sin columna / no arnald → OUTBOUND_FIELD_NOT_MAPPED

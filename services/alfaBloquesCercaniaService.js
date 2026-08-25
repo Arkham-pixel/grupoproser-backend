@@ -637,6 +637,7 @@ export async function obtenerBloquesCercaniaAlfa({
   radioKm = 2.5,
   ciudad = '',
   estado = '',
+  omitirConFechaLlamada = false,
 } = {}) {
   const filtro = {};
   if (ciudad) {
@@ -655,6 +656,9 @@ export async function obtenerBloquesCercaniaAlfa({
     // Ya inspeccionados: no salen en el mapa de rutas (planear visitas)
     if (casoYaInspeccionadoAlfa(c)) {
       omitidosInspeccionados += 1;
+      continue;
+    }
+    if (omitirConFechaLlamada && c?.fechaLlamada) {
       continue;
     }
     const base = {

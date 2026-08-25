@@ -7,7 +7,7 @@ import {
   enviarAlertasPrevisoraAjustador,
 } from '../services/alertasPrevisoraService.js';
 import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
-import { preservarPresupuestoNsrSiVacio } from '../utils/protegerPresupuestoNsr10.js';
+import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoPrevisora, homologarEstadoPrevisora } from '../utils/estadosPrevisora.js';
 
 const esValorVacio = (valor) =>
@@ -487,12 +487,7 @@ const buildPrevisoraPayload = (data = {}, base = {}) => {
     }
     return normalizeEvidenciaCat(prev);
   })(),
-  liquidador:
-    data.liquidador !== undefined
-      ? data.liquidador && typeof data.liquidador === 'object'
-        ? preservarPresupuestoNsrSiVacio(data.liquidador, base.liquidador)
-        : null
-      : base.liquidador ?? null,
+  liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
   informeUnico:
     data.informeUnico !== undefined
       ? data.informeUnico && typeof data.informeUnico === 'object'

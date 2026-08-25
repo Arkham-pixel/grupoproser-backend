@@ -8,7 +8,7 @@ import {
 } from '../services/alertasZurichService.js';
 import { ROL_SOLO_ZURICH, normalizarRol } from '../config/roles.js';
 import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
-import { preservarPresupuestoNsrSiVacio } from '../utils/protegerPresupuestoNsr10.js';
+import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoZurich, homologarEstadoZurich } from '../utils/estadosZurich.js';
 
 const esValorVacio = (valor) =>
@@ -492,12 +492,7 @@ const buildZurichPayload = (data = {}, base = {}) => {
     }
     return normalizeEvidenciaCat(prev);
   })(),
-  liquidador:
-    data.liquidador !== undefined
-      ? data.liquidador && typeof data.liquidador === 'object'
-        ? preservarPresupuestoNsrSiVacio(data.liquidador, base.liquidador)
-        : null
-      : base.liquidador ?? null,
+  liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
   informeUnico:
     data.informeUnico !== undefined
       ? data.informeUnico && typeof data.informeUnico === 'object'

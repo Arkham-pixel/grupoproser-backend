@@ -3,7 +3,7 @@ import InspectorCatastrofico from '../models/InspectorCatastrofico.js';
 import AjustadorCatastrofico from '../models/AjustadorCatastrofico.js';
 import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatastrofico.js';
 import { deleteStoredFile } from '../services/fileStorageService.js';
-import { preservarPresupuestoNsrSiVacio } from '../utils/protegerPresupuestoNsr10.js';
+import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoZurich, homologarEstadoZurich } from '../utils/estadosZurich.js';
 
 const esVacio = (valor) =>
@@ -186,10 +186,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       data.responsableAporteDocumento,
       base.responsableAporteDocumento ?? null
     ),
-    liquidador: preservarPresupuestoNsrSiVacio(
-      pickObjeto(data.liquidador, base.liquidador ?? null),
-      base.liquidador
-    ),
+    liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
     informeUnico: pickObjeto(data.informeUnico, base.informeUnico ?? null),
   });
   return aplicarFechaAccionEstadoZurich(
@@ -361,10 +358,16 @@ export const importarCasosListadoZurich = async (req, res) => {
     }
 
     const existentes = await ZurichListadoCaso.find().lean();
-    const [inspectores, ajustadores] = await Promise.all([
+    const [inspectoresRaw, ajustadoresRaw] = await Promise.all([
       InspectorCatastrofico.find({}).lean(),
       AjustadorCatastrofico.find({}).lean(),
     ]);
+    const noBbva = (d) =>
+      !(d.modulos || []).some(
+        (m) => String(m).toLowerCase().replace(/[-_\s]/g, '') === 'bbvacat'
+      );
+    const inspectores = inspectoresRaw.filter(noBbva);
+    const ajustadores = ajustadoresRaw.filter(noBbva);
     const indice = new Map();
     for (const doc of existentes) {
       const zc = normClave(doc.zc);

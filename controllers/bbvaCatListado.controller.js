@@ -1,8 +1,7 @@
 import BbvaCatListadoCaso from '../models/BbvaCatListadoCaso.js';
-import InspectorCatastrofico from '../models/InspectorCatastrofico.js';
 import AjustadorCatastrofico from '../models/AjustadorCatastrofico.js';
 import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatastrofico.js';
-import { preservarPresupuestoNsrSiVacio } from '../utils/protegerPresupuestoNsr10.js';
+import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoBbvaCat, homologarEstadoBbvaCat } from '../utils/estadosBbvaCat.js';
 import { crearControladoresArchivosListado } from '../utils/archivosCasoListado.js';
 
@@ -188,10 +187,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       data.responsableAporteDocumento,
       base.responsableAporteDocumento ?? null
     ),
-    liquidador: preservarPresupuestoNsrSiVacio(
-      pickObjeto(data.liquidador, base.liquidador ?? null),
-      base.liquidador
-    ),
+    liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
     informeUnico: pickObjeto(data.informeUnico, base.informeUnico ?? null),
   });
   return aplicarFechaAccionEstadoBbvaCat(
@@ -356,10 +352,12 @@ export const importarCasosListadoBbvaCat = async (req, res) => {
     }
 
     const existentes = await BbvaCatListadoCaso.find().lean();
-    const [inspectores, ajustadores] = await Promise.all([
-      InspectorCatastrofico.find({}).lean(),
-      AjustadorCatastrofico.find({}).lean(),
-    ]);
+    const ajustadoresRaw = await AjustadorCatastrofico.find({}).lean();
+    const esBbva = (d) =>
+      (d.modulos || []).some(
+        (m) => String(m).toLowerCase().replace(/[-_\s]/g, '') === 'bbvacat'
+      );
+    const ajustadores = ajustadoresRaw.filter(esBbva);
     const indice = new Map();
     for (const doc of existentes) {
       const zc = normClave(doc.zc);
@@ -383,14 +381,14 @@ export const importarCasosListadoBbvaCat = async (req, res) => {
       const filaNum = i + 1;
       try {
         const asignacion = resolverAsignacionCatastrofico({
-          inspectorExcel: filas[i]?.inspector,
-          ajustadorExcel: filas[i]?.ajustador,
-          inspectores,
+          inspectorExcel: '',
+          ajustadorExcel: filas[i]?.ajustador || filas[i]?.inspector,
+          inspectores: [],
           ajustadores,
         });
         const payload = buildPayload({
           ...filas[i],
-          inspector: asignacion.inspector,
+          inspector: null,
           ajustador: asignacion.ajustador,
           estado: homologarEstadoBbvaCat(filas[i]?.estado),
         });

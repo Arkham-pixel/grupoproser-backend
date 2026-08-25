@@ -14,12 +14,14 @@ import {
 import {
   ALFA_EXCEL_SHEET_NAME,
   ALFA_EXCEL_GREEN_COLUMNS,
+  ALFA_EXCEL_APPEND_FIELDS,
   filterOutboundWritableChanges,
   getOwnershipEntry,
   assertFieldWritableOrThrow,
 } from '../config/alfaExcelOwnershipMap.js';
 import { ALFA_EXCEL_DATE_FIELDS, ALFA_EXCEL_MONEY_FIELDS } from '../config/alfaExcelColumnMap.js';
 import { isAlfaOutboundEmptyValue, normalizeExcelHeader } from '../utils/alfaExcelNormalize.js';
+import { normalizeIdentification as normId } from '../utils/alfaIdentification.js';
 import {
   matchAlfaCaseForExcelRow,
   parseAlfaExcelBuffer,
@@ -1056,5 +1058,167 @@ export async function runAlfaExcelOutboundCycle({ batchSize } = {}) {
     failed: results.filter((r) => r.outcome === 'failed').length,
     pending: results.filter((r) => r.outcome === 'pending').length,
     results,
+  };
+}
+
+function nextAlfaExcelDataRow(ws) {
+  let last = 1;
+  ws.eachRow({ includeEmpty: false }, (_row, n) => {
+    if (n > last) last = n;
+  });
+  return Math.max(2, last + 1);
+}
+
+/** Evita que filas/columnas nuevas queden fuera del AutoFilter (“cuadro”). */
+function refreshAlfaExcelAutoFilter(ws) {
+  if (!ws) return null;
+  const headerRow = ws.getRow(1);
+  let lastCol = 1;
+  headerRow.eachCell({ includeEmpty: false }, (_cell, col) => {
+    if (col > lastCol) lastCol = col;
+  });
+  const lastRow = Math.max(2, nextAlfaExcelDataRow(ws) - 1);
+  const ref = `A1:${columnNumberToLetter(lastCol)}${lastRow}`;
+  ws.autoFilter = ref;
+  return ref;
+}
+
+/**
+ * Agrega al consolidado OPERATIVO las filas de casos ARNALD que aún no existen.
+ * Escribe identidad (A–S) + amarillas (T–AF). Nunca toca *_Final.xlsx.
+ * Sube por lotes para evitar bloqueos / ECONNRESET en Graph.
+ */
+export async function syncMissingArnaldCasosToAlfaExcel({ batchSize = 120 } = {}) {
+  const resolved = await resolveSourceExcel();
+  if (isAlfaExcelFinalProtectedName(resolved.fileName)) {
+    const err = new Error(`Prohibido append en Final: ${resolved.fileName}`);
+    err.code = 'ALFA_EXCEL_FINAL_PROTECTED';
+    throw err;
+  }
+
+  let driveId = resolved.driveId;
+  let itemId = resolved.itemId;
+  let fileName = resolved.fileName;
+  let totalAppended = 0;
+  let excelRowsBefore = 0;
+  let round = 0;
+
+  while (round < 30) {
+    round += 1;
+    const downloaded = await downloadDriveItemBuffer({ driveId, itemId });
+    const buffer = downloaded?.buffer || downloaded;
+    const parsed = parseAlfaExcelBuffer(buffer);
+    const excelRows = parsed.rows || [];
+    if (round === 1) excelRowsBefore = excelRows.length;
+
+    const casos = await SegurosAlfaCaso.find({}).lean();
+    const missing = [];
+    for (const caso of casos) {
+      const id = normId(caso.identificacion);
+      if (!id || String(id).length < 5) continue;
+      try {
+        findExcelRowForCase(caso, excelRows);
+      } catch (e) {
+        if (e?.code === 'EXCEL_ROW_NOT_FOUND') missing.push(caso);
+      }
+    }
+
+    if (!missing.length) {
+      logOut('ALFA_EXCEL_APPEND_MISSING_SYNCED', {
+        fileName,
+        excelRowsBefore,
+        appended: totalAppended,
+        rounds: round,
+        done: true,
+      });
+      return {
+        appended: totalAppended,
+        missing: 0,
+        excelRowsBefore,
+        excelRowsAfter: excelRowsBefore + totalAppended,
+        fileName,
+      };
+    }
+
+    const chunk = missing.slice(0, batchSize);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+    const ws =
+      wb.getWorksheet(parsed.sheetName || ALFA_EXCEL_SHEET_NAME) ||
+      wb.worksheets.find((w) => String(w.name).toUpperCase() === 'BD') ||
+      wb.worksheets[0];
+    if (!ws) {
+      const err = new Error('EXCEL_SHEET_NOT_FOUND');
+      err.code = 'EXCEL_SHEET_NOT_FOUND';
+      throw err;
+    }
+
+    const headerRow = ws.getRow(1);
+    let rowIdx = nextAlfaExcelDataRow(ws);
+    for (const caso of chunk) {
+      const row = ws.getRow(rowIdx);
+      for (const field of ALFA_EXCEL_APPEND_FIELDS) {
+        const entry = getOwnershipEntry(field);
+        if (!entry) continue;
+        const val = toExcelCellValue(field, caso[field]);
+        if (val == null || val === '') continue;
+        const resolvedCol = resolveOutboundColumn(headerRow, entry, entry.column);
+        if (!resolvedCol?.colNum) continue;
+        row.getCell(resolvedCol.colNum).value = val;
+      }
+      row.commit?.();
+      rowIdx += 1;
+    }
+
+    const autoFilterRef = refreshAlfaExcelAutoFilter(ws);
+    logOut('ALFA_EXCEL_APPEND_AUTOFILTER', { fileName, autoFilterRef });
+
+    const outBuf = Buffer.from(await wb.xlsx.writeBuffer());
+    const metaBefore = await getItemMetadata(itemId);
+    const uploaded = await replaceDriveItemContentBuffer({
+      driveId,
+      itemId,
+      buffer: outBuf,
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      ifMatch: metaBefore.eTag || undefined,
+    });
+
+    totalAppended += chunk.length;
+    const newEtag = uploaded?.eTag || metaBefore.eTag;
+    if (resolved.source) {
+      resolved.source.lastArnaldWrittenEtag = newEtag;
+      resolved.source.eTag = newEtag;
+      resolved.source.fileName = fileName;
+      await resolved.source.save();
+    }
+
+    logOut('ALFA_EXCEL_APPEND_BATCH', {
+      fileName,
+      round,
+      batchAppended: chunk.length,
+      remainingApprox: missing.length - chunk.length,
+      totalAppended,
+    });
+
+    // Si el lote cubrió todo lo pending en este snapshot, terminar
+    if (chunk.length >= missing.length) {
+      return {
+        appended: totalAppended,
+        missing: 0,
+        excelRowsBefore,
+        excelRowsAfter: excelRowsBefore + totalAppended,
+        fileName,
+        eTag: newEtag,
+      };
+    }
+  }
+
+  return {
+    appended: totalAppended,
+    missing: -1,
+    excelRowsBefore,
+    excelRowsAfter: excelRowsBefore + totalAppended,
+    fileName,
+    truncated: true,
   };
 }

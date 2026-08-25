@@ -51,6 +51,40 @@ assert(
   'edicion con contenido debe persistir tal cual'
 );
 
+const conDosItems = {
+  modelo: 'nsr10',
+  evaluacionSismicaNSR10: {
+    presupuesto: {
+      items: [
+        { actividad: 'Muro', cantidad: 1, valorUnitario: 100 },
+        { actividad: 'Techo', cantidad: 1, valorUnitario: 200 },
+      ],
+    },
+  },
+};
+const editadoMenosItems = {
+  modelo: 'nsr10',
+  evaluacionSismicaNSR10: {
+    presupuesto: {
+      items: [{ actividad: 'Muro editado', cantidad: 2, valorUnitario: 50 }],
+    },
+  },
+};
+const resueltoMenos = resolverLiquidadorParaUpdate(editadoMenosItems, conDosItems);
+assert(
+  resueltoMenos?.evaluacionSismicaNSR10?.presupuesto?.items?.length === 1,
+  'CAT/Alfa: editar con menos ítems debe persistir (no restaurar copia inicial)'
+);
+assert(
+  resueltoMenos?.evaluacionSismicaNSR10?.presupuesto?.items?.[0]?.actividad === 'Muro editado',
+  'CAT/Alfa: valores editados deben persistir'
+);
+const restaurariaCopia = preservarPresupuestoNsrSiVacio(editadoMenosItems, conDosItems);
+assert(
+  restaurariaCopia?.evaluacionSismicaNSR10?.presupuesto?.items?.length === 2,
+  'preservar (viejo) sí restauraría la copia inicial; por eso CAT no debe usarlo al editar'
+);
+
 const informeLleno = { analisisGeneral: { descripcionEvento: 'Terremoto' }, fotosInspeccion: [{}] };
 const informeVacio = { analisisGeneral: {} };
 assert(

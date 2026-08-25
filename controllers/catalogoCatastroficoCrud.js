@@ -50,7 +50,7 @@ export function crearCatalogoCatastroficoCrud(Model, etiqueta = 'registro') {
 
   const crear = async (req, res) => {
     try {
-      const { codigo, nombre, email, telefono, ciudad } = req.body || {};
+      const { codigo, nombre, email, telefono, ciudad, modulos } = req.body || {};
       if (!codigo || !nombre || !ciudad) {
         return res.status(400).json({
           success: false,
@@ -72,6 +72,7 @@ export function crearCatalogoCatastroficoCrud(Model, etiqueta = 'registro') {
         email: email != null ? String(email).trim() : '',
         telefono: telefono != null ? String(telefono).trim() : '',
         ciudad: String(ciudad).trim(),
+        modulos: Array.isArray(modulos) ? modulos.map((m) => String(m).trim()).filter(Boolean) : [],
       });
 
       res.status(201).json({
@@ -92,7 +93,7 @@ export function crearCatalogoCatastroficoCrud(Model, etiqueta = 'registro') {
   const actualizar = async (req, res) => {
     try {
       const { id } = req.params;
-      const { codigo, nombre, email, telefono, ciudad } = req.body || {};
+      const { codigo, nombre, email, telefono, ciudad, modulos } = req.body || {};
       if (!codigo || !nombre || !ciudad) {
         return res.status(400).json({
           success: false,
@@ -119,6 +120,9 @@ export function crearCatalogoCatastroficoCrud(Model, etiqueta = 'registro') {
           email: email != null ? String(email).trim() : '',
           telefono: telefono != null ? String(telefono).trim() : '',
           ciudad: String(ciudad).trim(),
+          ...(Array.isArray(modulos)
+            ? { modulos: modulos.map((m) => String(m).trim()).filter(Boolean) }
+            : {}),
         },
         { new: true, runValidators: true }
       );

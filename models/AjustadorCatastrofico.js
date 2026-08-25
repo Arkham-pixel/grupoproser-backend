@@ -8,6 +8,8 @@ const AjustadorCatastroficoSchema = new mongoose.Schema(
     telefono: { type: String, default: '', trim: true },
     /** Ciudad de cobertura (catálogo /api/ciudades) */
     ciudad: { type: String, required: true, trim: true },
+    /** Si tiene valores, solo aparece en esos módulos (ej. bbvaCat). Vacío = catálogo general. */
+    modulos: { type: [String], default: [] },
   },
   { collection: 'gsk3cAppajustadorcatastrofico', timestamps: true }
 );

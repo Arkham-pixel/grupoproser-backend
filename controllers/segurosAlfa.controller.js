@@ -46,7 +46,7 @@ import {
   listAlfaCondicionesDocuments,
   openAlfaCondicionDownloadStream,
 } from '../services/alfaCondicionesService.js';
-import { aplicarRestriccionRolCaso, obtenerIdentidadUsuarioReq, construirFiltroVistaAsignacion, casoVisibleParaIdentidad, collationVistaAsignacion, combinarFiltrosMongo } from '../utils/permisosCasoPorRol.js';
+import { aplicarRestriccionRolCaso, obtenerIdentidadUsuarioReq, construirFiltroVistaAsignacion, casoVisibleParaIdentidad, collationVistaAsignacion, combinarFiltrosMongo, esIdentidadColaFechaLlamadaAlfa } from '../utils/permisosCasoPorRol.js';
 import {
   resolverLiquidadorParaUpdate,
   resolverInformeUnicoParaUpdate,
@@ -1489,7 +1489,17 @@ export const getBloquesCercaniaAlfa = async (req, res) => {
     const radioKm = req.query?.radioKm ?? 2.5;
     const ciudad = req.query?.ciudad || '';
     const estado = req.query?.estado || '';
-    const data = await obtenerBloquesCercaniaAlfa({ radioKm, ciudad, estado });
+    const u = req.usuario || req.user || {};
+    const omitirConFechaLlamada = esIdentidadColaFechaLlamadaAlfa({
+      login: u.login,
+      cedula: u.cedula,
+    });
+    const data = await obtenerBloquesCercaniaAlfa({
+      radioKm,
+      ciudad,
+      estado,
+      omitirConFechaLlamada,
+    });
     return res.json({ success: true, data });
   } catch (error) {
     console.error('Error bloques cercanía Alfa:', error);

@@ -30,7 +30,7 @@ import {
   eliminarRegistroEnvioFacturacion,
 } from '../services/facturacionBandejaService.js';
 import { aplicarRestriccionRolCaso, obtenerIdentidadUsuarioReq, construirFiltroVistaAsignacion, casoVisibleParaIdentidad, collationVistaAsignacion, combinarFiltrosMongo } from '../utils/permisosCasoPorRol.js';
-import { preservarPresupuestoNsrSiVacio } from '../utils/protegerPresupuestoNsr10.js';
+import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { normalizarEstadoSura } from '../utils/estadosSura.js';
 import {
   normalizarClaveGerente,
@@ -319,12 +319,7 @@ export const buildSuraPayload = (data = {}, base = {}) => {
       base.fechaEnvioAseguradora ?? null
     ),
     estado,
-    liquidador:
-      data.liquidador !== undefined
-        ? data.liquidador && typeof data.liquidador === 'object'
-          ? preservarPresupuestoNsrSiVacio(data.liquidador, base.liquidador)
-          : null
-        : base.liquidador ?? null,
+    liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
     informeUnico:
       data.informeUnico !== undefined
         ? data.informeUnico && typeof data.informeUnico === 'object'
