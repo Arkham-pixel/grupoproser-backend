@@ -14,6 +14,10 @@ import {
   aplicarUbicacionesPredioBbvaCat,
   obtenerBloquesCercaniaBbvaCat,
 } from '../services/bbvaCatBloquesCercaniaService.js';
+import {
+  espejarArchivoCatEnListado,
+  rutaArchivoSigueEnUsoBbvaCat,
+} from '../utils/espejarArchivoBbvaCatEnListado.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -1025,6 +1029,20 @@ export const subirArchivoBbvaCat = async (req, res) => {
     await caso.save();
 
     const creado = caso.archivos[caso.archivos.length - 1];
+    try {
+      const espejo = await espejarArchivoCatEnListado(caso, creado);
+      if (espejo?.ok && !espejo.duplicado) {
+        console.log(
+          `📎 Archivo CAT espejado a listado ${espejo.consecutivo || espejo.listadoId}`
+        );
+      } else if (!espejo?.ok && espejo?.motivo === 'sin-listado') {
+        console.warn(
+          `⚠️ Archivo CAT ${caso.consecutivo || caso._id} sin caso de listado (ZC/STRO) para espejar`
+        );
+      }
+    } catch (errEspejo) {
+      console.warn('⚠️ No se pudo espejar archivo CAT en listado:', errEspejo.message);
+    }
     res.status(201).json({ success: true, data: creado, casoId: caso._id });
   } catch (error) {
     console.error('❌ Error subiendo archivo BbvaCat:', error);
@@ -1140,9 +1158,15 @@ export const eliminarArchivoBbvaCat = async (req, res) => {
     }
 
     if (archivo.ruta) {
-      await deleteStoredFile(archivo.ruta).catch((err) => {
-        console.warn('No se pudo eliminar archivo BbvaCat del almacenamiento:', err.message);
+      const enUso = await rutaArchivoSigueEnUsoBbvaCat(archivo.ruta, {
+        coleccion: 'cat',
+        casoId: caso._id,
       });
+      if (!enUso) {
+        await deleteStoredFile(archivo.ruta).catch((err) => {
+          console.warn('No se pudo eliminar archivo BbvaCat del almacenamiento:', err.message);
+        });
+      }
     }
     archivo.deleteOne();
     await caso.save();

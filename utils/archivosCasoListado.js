@@ -56,6 +56,7 @@ export function crearControladoresArchivosListado({
   Model,
   nombreModulo,
   rutaLocalPrefix,
+  skipDeleteStorage,
 }) {
   const etiquetaCaso = `Caso del listado ${nombreModulo}`;
 
@@ -107,12 +108,18 @@ export function crearControladoresArchivosListado({
       }
 
       if (archivo.ruta) {
-        await deleteStoredFile(archivo.ruta).catch((err) => {
-          console.warn(
-            `No se pudo eliminar archivo del listado ${nombreModulo} del almacenamiento:`,
-            err.message
-          );
-        });
+        const conservar =
+          typeof skipDeleteStorage === 'function'
+            ? await skipDeleteStorage(archivo.ruta, caso, archivo)
+            : false;
+        if (!conservar) {
+          await deleteStoredFile(archivo.ruta).catch((err) => {
+            console.warn(
+              `No se pudo eliminar archivo del listado ${nombreModulo} del almacenamiento:`,
+              err.message
+            );
+          });
+        }
       }
       archivo.deleteOne();
       await caso.save();

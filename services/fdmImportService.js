@@ -137,13 +137,23 @@ export const eventoClaveFdm = (caso = {}) => {
   return 'OLA INVERNAL';
 };
 
+/** Póliza normalizada; vacío = sin póliza. */
+export const polizaClaveFdm = (valor) => normClaveFdm(valor);
+
 /**
- * Deduplica por evento + identidad. Un mismo asegurado en ola invernal y terremoto
- * son dos casos distintos; no se pisan entre sí.
- *
- * La cédula se compara solo con dígitos (1.234.567 === 1234567).
- * Nombre+dirección y nombre+celular se usan aunque haya cédula, para unir
- * la misma persona con la identificación mal escrita y luego la correcta.
+ * Misma cédula + pólizas distintas (ambas con valor) = casos distintos (no fusionar).
+ */
+export const polizasConflictivasFdm = (a = {}, b = {}) => {
+  const pa = polizaClaveFdm(a.polizaAfectar);
+  const pb = polizaClaveFdm(b.polizaAfectar);
+  return Boolean(pa && pb && pa !== pb);
+};
+
+/**
+ * Deduplica por evento + identidad + póliza.
+ * Misma cédula con distinta póliza = dos casos (no se pisan).
+ * Misma cédula + misma póliza (o ambas sin póliza) = duplicado.
+ * Ola invernal y terremoto siguen siendo casos distintos.
  */
 export const clavesDeduplicacionFdm = (caso = {}) => {
   const claves = [];
@@ -151,21 +161,32 @@ export const clavesDeduplicacionFdm = (caso = {}) => {
   const cedula = cedulaClaveFdm(caso.cedula);
   const siniestro = normClaveFdm(caso.siniestro);
   const nroCaso = normClaveFdm(caso.caso);
-  const poliza = normClaveFdm(caso.polizaAfectar);
+  const poliza = polizaClaveFdm(caso.polizaAfectar);
   const direccion = direccionClaveFdm(caso.direccionAfectada);
   const nombre = normClaveFdm(caso.nombre);
   const celular = celularClaveFdm(caso.celular);
 
   if (siniestro) claves.push(`E:${evento}|S:${siniestro}`);
   if (nroCaso) claves.push(`E:${evento}|C:${nroCaso}`);
-  if (cedula && poliza) claves.push(`E:${evento}|I:${cedula}|P:${poliza}`);
-  if (cedula.length >= 6) claves.push(`E:${evento}|I:${cedula}`);
-  if (cedula.length >= 6 && direccion) claves.push(`E:${evento}|I:${cedula}|D:${direccion}`);
-  if (nombre && nombre !== 'SIN NOMBRE' && direccion) claves.push(`E:${evento}|N:${nombre}|D:${direccion}`);
-  if (nombre && nombre !== 'SIN NOMBRE' && celular.length >= 7) claves.push(`E:${evento}|N:${nombre}|T:${celular}`);
-  // Filas incompletas de SharePoint (solo nombre, sin cédula): misma persona no debe crear otro caso.
-  if (nombre && nombre !== 'SIN NOMBRE' && cedula.length < 6) {
-    claves.push(`E:${evento}|N:${nombre}|NOID`);
+  // Clave principal: cédula + póliza (o cédula sin póliza).
+  // NO indexar solo por cédula: eso fusionaba pólizas distintas.
+  if (cedula.length >= 6 && poliza) {
+    claves.push(`E:${evento}|I:${cedula}|P:${poliza}`);
+  } else if (cedula.length >= 6) {
+    claves.push(`E:${evento}|I:${cedula}|P:_`);
+  }
+  // Nombre+dirección / celular solo cuando no hay póliza que separe (evita cruzar pólizas).
+  if (!poliza) {
+    if (cedula.length >= 6 && direccion) claves.push(`E:${evento}|I:${cedula}|D:${direccion}`);
+    if (nombre && nombre !== 'SIN NOMBRE' && direccion) {
+      claves.push(`E:${evento}|N:${nombre}|D:${direccion}`);
+    }
+    if (nombre && nombre !== 'SIN NOMBRE' && celular.length >= 7) {
+      claves.push(`E:${evento}|N:${nombre}|T:${celular}`);
+    }
+    if (nombre && nombre !== 'SIN NOMBRE' && cedula.length < 6) {
+      claves.push(`E:${evento}|N:${nombre}|NOID`);
+    }
   }
   const nro = caso.numero;
   if (nro != null && nro !== '' && Number.isFinite(Number(nro))) {
@@ -210,14 +231,37 @@ const identidadPobreFdm = (caso = {}) =>
 export const sonElMismoCasoFdm = (a = {}, b = {}) => {
   if (!a || !b) return false;
   if (eventoClaveFdm(a) !== eventoClaveFdm(b)) return false;
+  // Misma persona, distinta póliza = dos casos (no fusionar).
+  if (polizasConflictivasFdm(a, b)) return false;
 
   const cedA = cedulaClaveFdm(a.cedula);
   const cedB = cedulaClaveFdm(b.cedula);
-  if (cedA.length >= 6 && cedA === cedB) return true;
+  const polA = polizaClaveFdm(a.polizaAfectar);
+  const polB = polizaClaveFdm(b.polizaAfectar);
 
-  const nomExacto = nombresEquivalentesFdm(a.nombre, b.nombre) && normClaveFdm(a.nombre) === normClaveFdm(b.nombre);
+  // Misma cédula: solo duplicado si misma póliza o ambas sin póliza.
+  // Una con póliza y otra vacía NO se fusionan aquí (evita cruzar pólizas).
+  if (cedA.length >= 6 && cedA === cedB) {
+    if (polA && polB) return polA === polB;
+    if (!polA && !polB) return true;
+    return false;
+  }
+
+  // Cédulas compatibles (typos) con misma póliza o ambas vacías.
+  if (cedulasCompatiblesFdm(a.cedula, b.cedula) && nombresEquivalentesFdm(a.nombre, b.nombre)) {
+    if (polA && polB) return polA === polB;
+    if (!polA && !polB) return true;
+    return false;
+  }
+
+  const nomExacto =
+    nombresEquivalentesFdm(a.nombre, b.nombre) &&
+    normClaveFdm(a.nombre) === normClaveFdm(b.nombre);
   const nomParecido = nombresEquivalentesFdm(a.nombre, b.nombre);
   if (!nomParecido) return false;
+
+  // Con póliza distinta o una sola con póliza, no unir por nombre.
+  if (polA || polB) return false;
 
   const dirA = direccionClaveFdm(a.direccionAfectada);
   const dirB = direccionClaveFdm(b.direccionAfectada);
@@ -229,11 +273,9 @@ export const sonElMismoCasoFdm = (a = {}, b = {}) => {
     cedA.length >= 6 && cedB.length >= 6 && !cedulasCompatiblesFdm(a.cedula, b.cedula);
 
   if (conflictoCedula) return false;
-  if (cedulasCompatiblesFdm(a.cedula, b.cedula) && nomParecido) return true;
   if (nomExacto && mismoTel) return true;
   if (nomExacto && mismaDir) return true;
   if (nomExacto && tokensNombreFdm(a.nombre).length >= 3) return true;
-  // Nombre exacto + al menos un lado sin cédula/celular: típico re-guardado de Fundación/SharePoint.
   if (nomExacto && !conflictoCedula && (identidadPobreFdm(a) || identidadPobreFdm(b))) {
     const munA = normClaveFdm(a.municipio);
     const munB = normClaveFdm(b.municipio);
@@ -395,7 +437,20 @@ const localizarExistenteFdm = (payload, indice, existentes) => {
   for (const clave of clavesDeduplicacionFdm(payload)) {
     if (indice.has(clave)) return indice.get(clave);
   }
-  return buscarPorIdentidadFdm(payload, existentes);
+  const porIdentidad = buscarPorIdentidadFdm(payload, existentes);
+  if (porIdentidad) return porIdentidad;
+
+  // Fila sin póliza: si hay un solo caso del mismo evento/cédula, actualizar ese.
+  const ced = cedulaClaveFdm(payload.cedula);
+  const pol = polizaClaveFdm(payload.polizaAfectar);
+  if (ced.length >= 6 && !pol) {
+    const evento = eventoClaveFdm(payload);
+    const candidatos = existentes.filter(
+      (c) => eventoClaveFdm(c) === evento && cedulaClaveFdm(c.cedula) === ced
+    );
+    if (candidatos.length === 1) return candidatos[0];
+  }
+  return null;
 };
 
 /**

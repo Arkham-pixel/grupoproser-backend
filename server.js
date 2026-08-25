@@ -23,6 +23,7 @@ import { iniciarCronAlfaExcelOutbound } from './services/cronAlfaExcelOutboundSe
 import { iniciarCronEquidadFdmExcelSharePointImport } from './services/cronEquidadFdmExcelSharePointImportService.js';
 import { iniciarCronEquidadFdmExcelOutbound } from './services/cronEquidadFdmExcelOutboundService.js';
 import { iniciarSharePointWatchdog } from './services/cronSharePointWatchdogService.js';
+import { iniciarCronEspejoArchivosBbvaCat } from './services/cronEspejoArchivosBbvaCatService.js';
 import { verifyMailOnStartup } from './services/mailTransport.js';
 import { verifyS3OnBoot } from './config/storage.js';
 
@@ -129,6 +130,7 @@ mongoose
       iniciarCronEquidadFdmExcelSharePointImport();
       iniciarCronEquidadFdmExcelOutbound();
       iniciarSharePointWatchdog();
+      iniciarCronEspejoArchivosBbvaCat();
     } catch (error) {
       console.error("❌ Error iniciando servicios de cron:", error.message);
     }
@@ -169,6 +171,7 @@ mongoose
             iniciarCronEquidadFdmExcelSharePointImport();
             iniciarCronEquidadFdmExcelOutbound();
             iniciarSharePointWatchdog();
+            iniciarCronEspejoArchivosBbvaCat();
           } catch (error) {
             console.error("❌ Error reiniciando servicios de cron:", error.message);
           }

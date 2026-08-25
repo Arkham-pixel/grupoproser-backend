@@ -41,8 +41,26 @@ export const esCasoLoricaOFueraTerremoto = (caso = {}) => {
   return true;
 };
 
+const polizaNormFdm = (valor) =>
+  String(valor ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, ' ');
+
+const esTerremotoFdm = (caso = {}) => {
+  const ev = String(caso.evento ?? '')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return ev.includes('TERREMOTO') || ev.includes('TEMBLOR');
+};
+
 /**
  * Antes de CREATE desde Excel terremoto: MATCH / REJECT / CREATE.
+ * Misma cédula + misma póliza → MATCH.
+ * Misma cédula + distinta póliza → CREATE (dos casos).
  * @returns {{ action: 'MATCH'|'REJECT'|'CREATE', caso?: object, reason?: string }}
  */
 export const decidirAltaDesdeExcelTerremoto = (fila = {}, existentes = []) => {
@@ -58,21 +76,25 @@ export const decidirAltaDesdeExcelTerremoto = (fila = {}, existentes = []) => {
     return { action: 'CREATE' };
   }
 
-  const mismos = existentes.filter((c) => soloDigitosFdm(c.cedula) === ced);
-  if (!mismos.length) return { action: 'CREATE' };
+  const polFila = polizaNormFdm(fila.polizaAfectar);
+  const mismosCed = existentes.filter((c) => soloDigitosFdm(c.cedula) === ced);
+  if (!mismosCed.length) return { action: 'CREATE' };
 
-  const terremoto = mismos.find((c) => {
-    const ev = String(c.evento ?? '')
-      .toUpperCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
-    return ev.includes('TERREMOTO') || ev.includes('TEMBLOR');
+  const terremotos = mismosCed.filter(esTerremotoFdm);
+
+  // Misma cédula + misma póliza (ambas con valor, o ambas vacías).
+  const matchExacto = terremotos.find((c) => {
+    const pol = polizaNormFdm(c.polizaAfectar);
+    if (polFila && pol) return pol === polFila;
+    if (!polFila && !pol) return true;
+    return false;
   });
-  if (terremoto) {
-    return { action: 'MATCH', caso: terremoto };
-  }
+  if (matchExacto) return { action: 'MATCH', caso: matchExacto };
 
-  const lorica = mismos.find((c) => esCasoLoricaOFueraTerremoto(c));
+  // Ya hay terremoto(s) con otra póliza o con póliza cuando la fila no trae → CREATE.
+  if (terremotos.length) return { action: 'CREATE' };
+
+  const lorica = mismosCed.find((c) => esCasoLoricaOFueraTerremoto(c));
   if (lorica) {
     return {
       action: 'REJECT',
@@ -81,9 +103,5 @@ export const decidirAltaDesdeExcelTerremoto = (fila = {}, existentes = []) => {
     };
   }
 
-  return {
-    action: 'REJECT',
-    reason: `Ya existe cédula ${ced} en ARNALD; no crear caso infinito`,
-    caso: mismos[0],
-  };
+  return { action: 'CREATE' };
 };

@@ -301,7 +301,28 @@ export const inferirEventoFdm = ({ cobertura, archivoNombre, hoja, fechaRegistro
   return null;
 };
 
-/** Unifica municipios equivalentes (Santiago de Cali = Cali). */
+/** Municipios canónicos (acentos correctos). Clave sin tildes → etiqueta. */
+const MUNICIPIOS_CANONICOS_FDM = Object.freeze({
+  QUIBDO: 'QUIBDÓ',
+  CALI: 'CALI',
+  'SANTIAGO DE CALI': 'CALI',
+  'CALI VALLE': 'CALI',
+  'CALI VALLE DEL CAUCA': 'CALI',
+  BUGA: 'BUGA',
+  'BUGA CENTRO': 'BUGA',
+  TULUA: 'TULUÁ',
+  JAMUNDI: 'JAMUNDÍ',
+  ALCALA: 'ALCALÁ',
+  QUINCHIA: 'QUINCHÍA',
+  GUATICA: 'GUÁTICA',
+  VILLAMARIA: 'VILLAMARÍA',
+  'LA UNION VALLE DEL CAUCA': 'LA UNIÓN-VALLE DEL CAUCA',
+  'LA VICTORIA VALLE DEL CAUCA': 'LA VICTORIA-VALLE DEL CAUCA',
+  'BOLIVAR VALLE DEL CAUCA': 'BOLÍVAR-VALLE DEL CAUCA',
+  'EL AGUILA': 'EL ÁGUILA',
+});
+
+/** Unifica municipios equivalentes (Santiago de Cali = Cali, Quibdo = Quibdó). */
 export const normalizarMunicipioFdm = (valor) => {
   if (valor == null || valor === '' || valor === 0 || valor === '0') return null;
   const texto = limpiarTextoMayusculas(valor);
@@ -327,6 +348,7 @@ export const normalizarMunicipioFdm = (valor) => {
   ) {
     return 'CALI';
   }
+  if (MUNICIPIOS_CANONICOS_FDM[clave]) return MUNICIPIOS_CANONICOS_FDM[clave];
   return texto;
 };
 

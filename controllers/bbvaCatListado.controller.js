@@ -4,6 +4,7 @@ import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatas
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoBbvaCat, homologarEstadoBbvaCat } from '../utils/estadosBbvaCat.js';
 import { crearControladoresArchivosListado } from '../utils/archivosCasoListado.js';
+import { rutaArchivoSigueEnUsoBbvaCat } from '../utils/espejarArchivoBbvaCatEnListado.js';
 
 const esVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null';
@@ -442,6 +443,8 @@ const archivosListadoBbvaCat = crearControladoresArchivosListado({
   Model: BbvaCatListadoCaso,
   nombreModulo: 'BBVA CAT',
   rutaLocalPrefix: '/uploads/bbva-cat/',
+  skipDeleteStorage: async (ruta, caso) =>
+    rutaArchivoSigueEnUsoBbvaCat(ruta, { coleccion: 'listado', casoId: caso?._id }),
 });
 
 export const subirArchivoListadoBbvaCat = archivosListadoBbvaCat.subir;
