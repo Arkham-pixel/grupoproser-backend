@@ -3,6 +3,8 @@
  *
  * Outbound (fotos, informe, liquidador, finiquito):
  *   SEGUROS ALFA/SINIESTROS/{CEDULA}/{SUBCARPETA}
+ * Casos enviados a la aseguradora (entrega final):
+ *   SEGUROS ALFA/CASOS ENVIADOS A LA ASEGURADORA/{CEDULA}/{SUBCARPETA}
  * Misma cédula = una carpeta (como la aseguradora). Sin consecutivo.
  * Si Alfa ya creó la carpeta, ensureFolder la reutiliza; no se duplica.
  *
@@ -20,9 +22,18 @@ import { sanitizeSharePointSegment } from './sharepointClaimPath.js';
 export const ALFA_DOC_SHAREPOINT_ROOT = 'SEGUROS ALFA';
 export const ALFA_DOC_SHAREPOINT_POLIZAS = 'PÓLIZAS';
 export const ALFA_DOC_SHAREPOINT_SINIESTROS = 'SINIESTROS';
+export const ALFA_DOC_SHAREPOINT_CASOS_ENVIADOS =
+  'CASOS ENVIADOS A LA ASEGURADORA';
+/** @deprecated usar ALFA_DOC_SHAREPOINT_CASOS_ENVIADOS */
+export const ALFA_DOC_SHAREPOINT_CASOS_CERRADOS =
+  ALFA_DOC_SHAREPOINT_CASOS_ENVIADOS;
 export const ALFA_DOC_IMPORT_PREFIX = `${ALFA_DOC_SHAREPOINT_ROOT}/${ALFA_DOC_SHAREPOINT_POLIZAS}`;
 /** Carpeta de la aseguradora por cédula. No se duplica si ya existe. */
 export const ALFA_DOC_SINIESTROS_PREFIX = `${ALFA_DOC_SHAREPOINT_ROOT}/${ALFA_DOC_SHAREPOINT_SINIESTROS}`;
+/** Entrega a aseguradora: misma estructura por cédula. */
+export const ALFA_DOC_CASOS_ENVIADOS_PREFIX = `${ALFA_DOC_SHAREPOINT_ROOT}/${ALFA_DOC_SHAREPOINT_CASOS_ENVIADOS}`;
+/** @deprecated usar ALFA_DOC_CASOS_ENVIADOS_PREFIX */
+export const ALFA_DOC_CASOS_CERRADOS_PREFIX = ALFA_DOC_CASOS_ENVIADOS_PREFIX;
 
 const SINIESTROS_SKIP_FOLDER_NAMES = new Set([
   'PENDIENTES_NUMERO_SINIESTRO',
@@ -164,6 +175,19 @@ export function buildAlfaSiniestrosFolderPath(identificacion) {
   return `${ALFA_DOC_SINIESTROS_PREFIX}/${idSeg}`;
 }
 
+/**
+ * Casos enviados: SEGUROS ALFA/CASOS ENVIADOS A LA ASEGURADORA/{cedula}
+ */
+export function buildAlfaCasosCerradosFolderPath(identificacion) {
+  const id = normalizeIdentification(identificacion);
+  if (!id || !/^\d{5,15}$/.test(id)) return null;
+  const idSeg = sanitizeSharePointSegment(id, { fallback: '' });
+  if (!idSeg) return null;
+  return `${ALFA_DOC_CASOS_ENVIADOS_PREFIX}/${idSeg}`;
+}
+
+export const buildAlfaCasosEnviadosFolderPath = buildAlfaCasosCerradosFolderPath;
+
 export function isAlfaSiniestrosCedulaWritePath(pathValue) {
   const n = String(pathValue || '')
     .replace(/^\/+|\/+$/g, '')
@@ -175,6 +199,25 @@ export function isAlfaSiniestrosCedulaWritePath(pathValue) {
   const id = normalizeIdentification(first);
   return Boolean(id && /^\d{5,15}$/.test(id));
 }
+
+export function isAlfaCasosCerradosCedulaWritePath(pathValue) {
+  const n = String(pathValue || '')
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/\\/g, '/');
+  const prefixes = [
+    ALFA_DOC_CASOS_ENVIADOS_PREFIX,
+    `${ALFA_DOC_SHAREPOINT_ROOT}/CASOS CERRADOS`, // legacy
+  ];
+  const matched = prefixes.find((p) => n.startsWith(`${p}/`));
+  if (!matched) return false;
+  const rest = n.slice(matched.length).replace(/^\//, '');
+  const first = rest.split('/')[0] || '';
+  const id = normalizeIdentification(first);
+  return Boolean(id && /^\d{5,15}$/.test(id));
+}
+
+export const isAlfaCasosEnviadosCedulaWritePath =
+  isAlfaCasosCerradosCedulaWritePath;
 
 /**
  * Destino outbound ARNALD → SharePoint (fotos, informe, liquidador, finiquito).
@@ -198,6 +241,33 @@ export function buildAlfaSiniestrosDocumentPath({ identificacion, documentType }
     identificacion: normalizeIdentification(identificacion),
   };
 }
+
+/**
+ * Destino → SEGUROS ALFA/CASOS ENVIADOS A LA ASEGURADORA/{cedula}/{SUBCARPETA}
+ * INFORMES / LIQUIDACION / FOTOS / GENERAL / …
+ */
+export function buildAlfaCasosCerradosDocumentPath({ identificacion, documentType } = {}) {
+  const folder = buildAlfaCasosCerradosFolderPath(identificacion);
+  if (!folder) {
+    return {
+      ok: false,
+      code: 'MISSING_IDENTIFICATION',
+      reason: 'MISSING_IDENTIFICATION',
+    };
+  }
+  const subfolder = getAlfaDocumentSubfolder(documentType);
+  return {
+    ok: true,
+    path: `${folder}/${subfolder}`,
+    casosCerradosFolder: folder,
+    casosEnviadosFolder: folder,
+    subfolder,
+    identificacion: normalizeIdentification(identificacion),
+  };
+}
+
+export const buildAlfaCasosEnviadosDocumentPath =
+  buildAlfaCasosCerradosDocumentPath;
 
 /**
  * Parsea nombre de carpeta bajo PÓLIZAS.

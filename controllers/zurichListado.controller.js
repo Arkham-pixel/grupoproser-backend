@@ -2,6 +2,7 @@ import ZurichListadoCaso from '../models/ZurichListadoCaso.js';
 import InspectorCatastrofico from '../models/InspectorCatastrofico.js';
 import AjustadorCatastrofico from '../models/AjustadorCatastrofico.js';
 import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatastrofico.js';
+import { catalogoPerteneceAModulo } from '../utils/filtrarCatalogoPorModulo.js';
 import { deleteStoredFile } from '../services/fileStorageService.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoZurich, homologarEstadoZurich } from '../utils/estadosZurich.js';
@@ -362,12 +363,8 @@ export const importarCasosListadoZurich = async (req, res) => {
       InspectorCatastrofico.find({}).lean(),
       AjustadorCatastrofico.find({}).lean(),
     ]);
-    const noBbva = (d) =>
-      !(d.modulos || []).some(
-        (m) => String(m).toLowerCase().replace(/[-_\s]/g, '') === 'bbvacat'
-      );
-    const inspectores = inspectoresRaw.filter(noBbva);
-    const ajustadores = ajustadoresRaw.filter(noBbva);
+    const inspectores = inspectoresRaw.filter((d) => catalogoPerteneceAModulo(d, 'zurich'));
+    const ajustadores = ajustadoresRaw.filter((d) => catalogoPerteneceAModulo(d, 'zurich'));
     const indice = new Map();
     for (const doc of existentes) {
       const zc = normClave(doc.zc);

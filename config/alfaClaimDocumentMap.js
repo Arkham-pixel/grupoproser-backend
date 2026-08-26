@@ -8,7 +8,9 @@ const MAP = Object.freeze({
   INSPECCION: 'inspeccion',
   FOTOS: 'fotografia',
   LIQUIDACION: 'liquidacion',
+  FINIQUITO: 'liquidacion',
   INFORME: 'informe',
+  OBJECION_DEDUCIBLE: 'general',
   OTRO: 'otro',
 });
 

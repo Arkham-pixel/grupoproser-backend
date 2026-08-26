@@ -15,7 +15,9 @@ import {
 import {
   ALFA_DOC_IMPORT_PREFIX,
   ALFA_DOC_SINIESTROS_PREFIX,
+  ALFA_DOC_CASOS_ENVIADOS_PREFIX,
   isAlfaSiniestrosCedulaWritePath,
+  isAlfaCasosCerradosCedulaWritePath,
 } from './alfaDocumentPath.js';
 
 const ALWAYS_BLOCKED_ROOTS = new Set([
@@ -80,7 +82,7 @@ export function assertAllowedSharePointPath({ path, sourceModule, mode } = {}) {
       );
     }
 
-    // Alfa writes: PÓLIZAS (histórico) o SINIESTROS/{cedula} (carpeta de la aseguradora).
+    // Alfa writes: PÓLIZAS (histórico), SINIESTROS/{cedula} o CASOS ENVIADOS A LA ASEGURADORA/{cedula}.
     // No crear PENDIENTES_NUMERO_SINIESTRO ni carpetas que no sean cédula.
     if (first === 'SINIESTROS' || firstUpper === 'SINIESTROS') {
       deny(
@@ -98,13 +100,15 @@ export function assertAllowedSharePointPath({ path, sourceModule, mode } = {}) {
       );
     }
     const siniestrosCedula = isAlfaSiniestrosCedulaWritePath(normalized);
+    const casosCerradosCedula = isAlfaCasosCerradosCedulaWritePath(normalized);
     if (
       !isAlfaSharePointPath(normalized) &&
-      !siniestrosCedula
+      !siniestrosCedula &&
+      !casosCerradosCedula
     ) {
       deny(
         'INVALID_SHAREPOINT_PATH',
-        `Alfa solo permite ${getAlfaSharePointAllowedPrefix()}/** o ${ALFA_DOC_SINIESTROS_PREFIX}/{cedula}/** (recibido: ${normalized})`
+        `Alfa solo permite ${getAlfaSharePointAllowedPrefix()}/**, ${ALFA_DOC_SINIESTROS_PREFIX}/{cedula}/** o ${ALFA_DOC_CASOS_ENVIADOS_PREFIX}/{cedula}/** (recibido: ${normalized})`
       );
     }
 

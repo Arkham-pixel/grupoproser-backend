@@ -11,7 +11,7 @@ import {
 } from '../config/sharepointSync.js';
 import { getSharePointTestRoot } from '../utils/sharepointTestPath.js';
 import { buildSharePointClaimPath } from '../utils/sharepointClaimPath.js';
-import { buildAlfaSiniestrosDocumentPath } from '../utils/alfaDocumentPath.js';
+import { buildAlfaSiniestrosDocumentPath, buildAlfaCasosCerradosDocumentPath } from '../utils/alfaDocumentPath.js';
 import SegurosAlfaCaso from '../models/SegurosAlfaCaso.js';
 import {
   acquireSyncLock,
@@ -38,11 +38,23 @@ function logSync(event, payload = {}) {
   console.log(`[claimDocumentSync] ${JSON.stringify(safe)}`);
 }
 
+function isCasosCerradosRoot(value) {
+  const n = String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, ' ');
+  return (
+    n === 'CASOS ENVIADOS A LA ASEGURADORA' ||
+    n === 'CASOS_ENVIADOS_A_LA_ASEGURADORA' ||
+    n === 'CASOS CERRADOS' ||
+    n === 'CASOS_CERRADOS'
+  );
+}
+
 /**
- * Destino Alfa: SINIESTROS/{cedula}/{SUBCARPETA}
- * Reutiliza la carpeta que ya creó la aseguradora.
+ * Destino Alfa: SINIESTROS/{cedula}/{SUBCARPETA} o CASOS ENVIADOS A LA ASEGURADORA/{cedula}/{SUBCARPETA}
  */
-async function resolveAlfaDestinationFolder(doc) {
+async function resolveAlfaDestinationFolder(doc, { destinationRoot } = {}) {
   let identificacion = doc.alfaIdentificacion;
 
   if (doc.claimId) {
@@ -54,10 +66,20 @@ async function resolveAlfaDestinationFolder(doc) {
     }
   }
 
-  const built = buildAlfaSiniestrosDocumentPath({
-    identificacion,
-    documentType: doc.documentType,
-  });
+  const rootHint =
+    destinationRoot ||
+    doc.sharepoint?.destinationRoot ||
+    doc.destinationRoot;
+
+  const built = isCasosCerradosRoot(rootHint)
+    ? buildAlfaCasosCerradosDocumentPath({
+        identificacion,
+        documentType: doc.documentType,
+      })
+    : buildAlfaSiniestrosDocumentPath({
+        identificacion,
+        documentType: doc.documentType,
+      });
 
   if (!built.ok) {
     const err = new Error(built.reason || 'PENDING_DESTINATION');
@@ -102,7 +124,10 @@ function resolveDestinationFolder(doc) {
  * Sincroniza un ClaimDocument pendiente/fallido hacia SharePoint.
  * @returns {{ result: string, document?: object, error?: object }}
  */
-export async function syncClaimDocument(documentId, { now = new Date() } = {}) {
+export async function syncClaimDocument(
+  documentId,
+  { now = new Date(), destinationRoot } = {}
+) {
   const started = Date.now();
 
   const before = await getDocumentById(documentId);
@@ -121,9 +146,17 @@ export async function syncClaimDocument(documentId, { now = new Date() } = {}) {
     return { result: 'SKIP_MODULE_DISABLED', document: before };
   }
 
+  const forceCasosCerrados = isCasosCerradosRoot(
+    destinationRoot || before.sharepoint?.destinationRoot
+  );
+  const alreadyOnCasosCerrados = String(before.sharepoint?.path || '').includes(
+    'CASOS ENVIADOS A LA ASEGURADORA'
+  );
+
   if (
     before.sharepoint?.syncStatus === 'synced' &&
-    before.sharepoint?.itemId
+    before.sharepoint?.itemId &&
+    !(forceCasosCerrados && !alreadyOnCasosCerrados)
   ) {
     logSync('skip', {
       documentId,
@@ -152,10 +185,17 @@ export async function syncClaimDocument(documentId, { now = new Date() } = {}) {
         // seguir con snapshot
       }
     }
-    const probe = buildAlfaSiniestrosDocumentPath({
-      identificacion,
-      documentType: before.documentType,
-    });
+    const rootHint =
+      destinationRoot || before.sharepoint?.destinationRoot;
+    const probe = isCasosCerradosRoot(rootHint)
+      ? buildAlfaCasosCerradosDocumentPath({
+          identificacion,
+          documentType: before.documentType,
+        })
+      : buildAlfaSiniestrosDocumentPath({
+          identificacion,
+          documentType: before.documentType,
+        });
     if (!probe.ok) {
       logSync('skip', {
         documentId,
@@ -218,7 +258,9 @@ export async function syncClaimDocument(documentId, { now = new Date() } = {}) {
   let destinationPath;
   try {
     if (doc.sourceModule === 'alfa' && canUseSiniestrosPath(doc)) {
-      destinationPath = await resolveAlfaDestinationFolder(doc);
+      destinationPath = await resolveAlfaDestinationFolder(doc, {
+        destinationRoot,
+      });
       // Si estaba pending y ahora hay path, marcar ready
       if (doc.destinationStatus === 'pending_destination') {
         doc.destinationStatus = 'ready';
