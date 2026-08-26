@@ -132,6 +132,7 @@ async function main() {
     const direccionPredio = toTxt(row[3]);
     const payload = {
       siniestro,
+      zc: siniestro,
       identificacion: identificacion || siniestro,
       tipoIdentificacion: identificacion ? 'CC' : '',
       asegurado,

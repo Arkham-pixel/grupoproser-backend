@@ -168,6 +168,18 @@ const BbvaCatCasoSchema = new mongoose.Schema(
      */
     checklistCatCompleto: { type: Boolean, default: false, index: true },
     /**
+     * Bloque de cercanía persistido (visitas). Si fijo=true no se reasigna ni se cruza.
+     */
+    bloqueCercania: {
+      numero: { type: Number, default: null },
+      nombre: { type: String, default: null },
+      centroLat: Number,
+      centroLng: Number,
+      radioKm: Number,
+      fijo: { type: Boolean, default: false },
+      fijadoEn: Date,
+    },
+    /**
      * Coordenadas del predio para bloques de cercanía (mapa de visitas).
      */
     ubicacionPredio: {

@@ -155,7 +155,7 @@ const normClave = (valor) =>
 /** Claves de deduplicación (prioridad: siniestro → id+crédito → id+póliza → id+dirección). */
 const clavesDeduplicacion = (caso = {}) => {
   const claves = [];
-  const siniestro = normClave(caso.siniestro);
+  const siniestro = normClave(caso.siniestro || caso.nmroSinstro);
   const identificacion = normClave(caso.identificacion);
   const numeroCredito = normClave(caso.numeroCredito);
   const numeroPoliza = normClave(caso.numeroPoliza);
@@ -236,7 +236,7 @@ export const buildSuraPayload = (data = {}, base = {}) => {
   );
   const siniestro = primerTexto(data.siniestro, data.nmroSinstro, base.siniestro, base.nmroSinstro);
   const estado = normalizarEstadoSura(
-    primerTexto(data.descripcionEstado, data.estado, base.descripcionEstado, base.estado) ||
+    primerTexto(data.estado, data.descripcionEstado, base.estado, base.descripcionEstado) ||
       'CASO NUEVO'
   );
 
@@ -245,7 +245,7 @@ export const buildSuraPayload = (data = {}, base = {}) => {
     siniestro,
     identificacion,
     asegurado: primerTexto(data.asegurado, data.asgrBenfcro, base.asegurado, base.asgrBenfcro),
-    tomador: primerTexto(data.tomador, data.nombIntermediario, base.tomador, base.nombIntermediario),
+    tomador: primerTexto(data.tomador, base.tomador),
     ajustadorLider: toStringOrNull(data.ajustadorLider, base.ajustadorLider ?? null),
     ajustador: primerTexto(data.ajustador, data.codiRespnsble, base.ajustador, base.codiRespnsble),
     inspector: toStringOrNull(data.inspector, base.inspector ?? null),
@@ -283,7 +283,13 @@ export const buildSuraPayload = (data = {}, base = {}) => {
       data.valorAseguradoContenidos,
       base.valorAseguradoContenidos ?? null
     ),
-    cobertura: toStringOrNull(data.cobertura, base.cobertura ?? null),
+    cobertura: primerTexto(
+      data.cobertura,
+      data.causa_siniestro,
+      data.amprAfctdo,
+      base.cobertura,
+      base.causa_siniestro
+    ),
     estadoPagoPrimas: toStringOrNull(data.estadoPagoPrimas, base.estadoPagoPrimas ?? null),
     valorReservaPreventivaPromedio: parseNumberFlexible(
       data.valorReservaPreventivaPromedio,
@@ -362,6 +368,12 @@ export const buildSuraPayload = (data = {}, base = {}) => {
   if (!payload.numDocumento && identificacion) payload.numDocumento = identificacion;
   if (!payload.codiRespnsble && payload.ajustador) payload.codiRespnsble = payload.ajustador;
   if (!payload.descripcionEstado) payload.descripcionEstado = estado;
+  if (!payload.causa_siniestro && payload.cobertura) payload.causa_siniestro = payload.cobertura;
+  if (data.fchaAsgncion !== undefined) {
+    payload.fchaAsgncion = parseDateFlexible(data.fchaAsgncion, base.fchaAsgncion ?? null);
+  } else if (typeof payload.fchaAsgncion === 'string') {
+    payload.fchaAsgncion = parseDate(payload.fchaAsgncion);
+  }
   if (!payload.nombreCliente && !payload.nombreAseguradora) {
     payload.nombreCliente = SURA_RAZON_SOCIAL;
     payload.nombreAseguradora = SURA_RAZON_SOCIAL;
@@ -393,6 +405,15 @@ const mergeImportacionSura = (incomingPayload = {}, existente = {}) => {
     'valorAseguradoInmueble',
     'valorAseguradoContenidos',
     'cobertura',
+    'tipoPoliza',
+    'causa_siniestro',
+    'tipoDucumento',
+    'funcAsgrdraNombre',
+    'codWorkflow',
+    'nombIntermediario',
+    'descSinstro',
+    'descripcionEstado',
+    'fchaAsgncion',
     'estadoPagoPrimas',
     'valorReservaPreventivaPromedio',
     'valorComercialInmueble',
@@ -658,7 +679,7 @@ export const eliminarCasoSura = async (req, res) => {
 
 /**
  * Importación masiva con deduplicación.
- * Si el caso ya existe (siniestro, o identificación+crédito/póliza/dirección), se actualiza; no se duplica.
+ * Si el caso ya existe (mismo siniestro; o, sin siniestro, id+crédito/póliza/dirección), se actualiza; no se duplica.
  */
 export const importarCasosSura = async (req, res) => {
   try {
@@ -690,11 +711,6 @@ export const importarCasosSura = async (req, res) => {
         if (!indice.has(clave)) indice.set(clave, doc);
       }
     }
-
-    const ahora = new Date();
-    const año = ahora.getFullYear();
-    const mes = String(ahora.getMonth() + 1).padStart(2, '0');
-    let secuencial = await obtenerMaxSecuencialSura();
 
     const resumen = {
       totalRecibidos: filas.length,
@@ -729,18 +745,22 @@ export const importarCasosSura = async (req, res) => {
 
         const claves = clavesDeduplicacion(payloadBase);
         let existente = null;
-        for (const clave of claves) {
-          if (indice.has(clave)) {
-            existente = indice.get(clave);
-            break;
+        const claveSiniestro = claves.find((c) => c.startsWith('S:'));
+        if (claveSiniestro && indice.has(claveSiniestro)) {
+          existente = indice.get(claveSiniestro);
+        } else if (!claveSiniestro) {
+          for (const clave of claves) {
+            if (indice.has(clave)) {
+              existente = indice.get(clave);
+              break;
+            }
           }
         }
 
         if (existente) {
           const merge = mergeImportacionSura(payloadBase, existente);
           if (!merge.consecutivo) {
-            secuencial += 1;
-            merge.consecutivo = `SURA-${año}-${mes}-${secuencial}`;
+            merge.consecutivo = await generarConsecutivoSura();
           }
 
           const actualizado = await SegurosSuraCaso.findByIdAndUpdate(existente._id, merge, {
@@ -752,8 +772,7 @@ export const importarCasosSura = async (req, res) => {
             indice.set(clave, actualizado);
           }
         } else {
-          secuencial += 1;
-          payloadBase.consecutivo = `SURA-${año}-${mes}-${secuencial}`;
+          payloadBase.consecutivo = await generarConsecutivoSura();
           const creado = await SegurosSuraCaso.create(payloadBase);
           const lean = creado.toObject();
           resumen.creados += 1;

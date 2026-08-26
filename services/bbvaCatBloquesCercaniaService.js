@@ -566,6 +566,232 @@ function casoTieneArchivosListado(caso, archivosPorClave) {
  * - Semillas en orden geográfico fijo (sur→norte / oeste→este)
  * - Numeración 1, 2, 3… de mayor a menor volumen de casos
  */
+const RADIO_KM_BLOQUES_FIJOS = 5;
+
+function numeroBloqueDeCaso(caso = {}) {
+  const n = Number(caso?.bloqueCercania?.numero);
+  return caso?.bloqueCercania?.fijo && Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function centroBloqueDeCaso(caso = {}) {
+  const lat = Number(caso?.bloqueCercania?.centroLat);
+  const lng = Number(caso?.bloqueCercania?.centroLng);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+  return null;
+}
+
+/**
+ * Arma bloques respetando membresía congelada.
+ * - Los fijos no se mueven de número ni se fusionan entre sí.
+ * - Un caso nuevo entra al bloque fijo más cercano si está ≤ radio del centro (sin mover el centro).
+ * - El resto forma bloques nuevos a continuación (N+1…), sin solapar centros fijos.
+ */
+export function armarBloquesRespetandoFijos(puntos = [], radioKm = RADIO_KM_BLOQUES_FIJOS) {
+  const radio = Math.max(0.1, Number(radioKm) || RADIO_KM_BLOQUES_FIJOS);
+  const fijos = [];
+  const libres = [];
+  for (const p of puntos) {
+    const n = numeroBloqueDeCaso(p);
+    if (n) fijos.push({ ...p, _num: n });
+    else libres.push({ ...p });
+  }
+
+  if (!fijos.length) return clusterizarPorRadio(puntos, radio);
+
+  const porNumero = new Map();
+  for (const p of fijos) {
+    if (!porNumero.has(p._num)) porNumero.set(p._num, []);
+    porNumero.get(p._num).push(p);
+  }
+
+  const bloquesFijos = [...porNumero.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([numero, miembros]) => {
+      const stored = miembros.map((m) => centroBloqueDeCaso(m)).find(Boolean);
+      const centro = stored || {
+        lat: miembros.reduce((s, m) => s + Number(m.lat), 0) / miembros.length,
+        lng: miembros.reduce((s, m) => s + Number(m.lng), 0) / miembros.length,
+      };
+      const radioBloque = Number(miembros[0]?.bloqueCercania?.radioKm) || radio;
+      return {
+        id: `bloque-${numero}`,
+        nombre: `Bloque ${numero}`,
+        numero,
+        fijo: true,
+        centro,
+        radioKm: radioBloque,
+        cantidad: miembros.length,
+        casos: miembros.map((m) => ({
+          ...m,
+          distanciaKmCentro: Math.round(haversineKm(centro, m) * 100) / 100,
+        })),
+      };
+    });
+
+  const restantes = [];
+  for (const p of libres) {
+    let mejor = null;
+    let mejorD = Infinity;
+    for (const b of bloquesFijos) {
+      const d = haversineKm(b.centro, p);
+      if (d <= b.radioKm && d < mejorD) {
+        mejor = b;
+        mejorD = d;
+      }
+    }
+    if (mejor) {
+      mejor.casos.push({
+        ...p,
+        distanciaKmCentro: Math.round(mejorD * 100) / 100,
+        complemento: true,
+      });
+      mejor.cantidad = mejor.casos.length;
+    } else {
+      restantes.push(p);
+    }
+  }
+
+  const maxNum = bloquesFijos.reduce((m, b) => Math.max(m, b.numero), 0);
+  const crudos = clusterizarPorRadio(restantes, radio);
+  const bloquesNuevos = [];
+  let next = maxNum;
+  for (const nb of crudos) {
+    let mejor = null;
+    let mejorD = Infinity;
+    for (const b of bloquesFijos) {
+      const d = haversineKm(b.centro, nb.centro);
+      if (d <= b.radioKm && d < mejorD) {
+        mejor = b;
+        mejorD = d;
+      }
+    }
+    if (mejor) {
+      for (const c of nb.casos || []) {
+        mejor.casos.push({
+          ...c,
+          distanciaKmCentro: Math.round(haversineKm(mejor.centro, c) * 100) / 100,
+          complemento: true,
+        });
+      }
+      mejor.cantidad = mejor.casos.length;
+      continue;
+    }
+    next += 1;
+    bloquesNuevos.push({
+      ...nb,
+      id: `bloque-${next}`,
+      nombre: `Bloque ${next}`,
+      numero: next,
+      fijo: false,
+      nuevo: true,
+    });
+  }
+
+  return [...bloquesFijos, ...bloquesNuevos].sort((a, b) => a.numero - b.numero);
+}
+
+export async function fijarBloquesCercaniaBbvaCat({ radioKm = RADIO_KM_BLOQUES_FIJOS, forzar = false } = {}) {
+  const radio = Math.max(0.1, Number(radioKm) || RADIO_KM_BLOQUES_FIJOS);
+  const yaFijos = await BbvaCatCaso.countDocuments({ 'bloqueCercania.fijo': true });
+  if (yaFijos > 0 && !forzar) {
+    return { omitido: true, yaFijos, radioKm: radio };
+  }
+
+  const casos = await BbvaCatCaso.find({}).lean();
+  const puntos = [];
+  for (const c of casos) {
+    if (!casoTieneCoordsValidas(c)) continue;
+    puntos.push({
+      _id: String(c._id),
+      consecutivo: c.consecutivo,
+      lat: Number(c.ubicacionPredio.lat),
+      lng: Number(c.ubicacionPredio.lng),
+    });
+  }
+  const bloques = clusterizarPorRadio(puntos, radio);
+  const ahora = new Date();
+  let escritos = 0;
+  for (let i = 0; i < bloques.length; i += 1) {
+    const b = bloques[i];
+    const numero = i + 1;
+    for (const c of b.casos || []) {
+      await BbvaCatCaso.updateOne(
+        { _id: c._id },
+        {
+          $set: {
+            bloqueCercania: {
+              numero,
+              nombre: `Bloque ${numero}`,
+              centroLat: b.centro.lat,
+              centroLng: b.centro.lng,
+              radioKm: radio,
+              fijo: true,
+              fijadoEn: ahora,
+            },
+          },
+        }
+      );
+      escritos += 1;
+    }
+  }
+  return { omitido: false, bloques: bloques.length, escritos, radioKm: radio };
+}
+
+export async function persistirAsignacionBloquesNuevosBbvaCat({
+  radioKm = RADIO_KM_BLOQUES_FIJOS,
+} = {}) {
+  const radio = Math.max(0.1, Number(radioKm) || RADIO_KM_BLOQUES_FIJOS);
+  const casos = await BbvaCatCaso.find({}).lean();
+  const puntos = [];
+  for (const c of casos) {
+    if (!casoTieneCoordsValidas(c)) continue;
+    puntos.push({
+      _id: String(c._id),
+      consecutivo: c.consecutivo,
+      lat: Number(c.ubicacionPredio.lat),
+      lng: Number(c.ubicacionPredio.lng),
+      bloqueCercania: c.bloqueCercania || null,
+    });
+  }
+  const bloques = armarBloquesRespetandoFijos(puntos, radio);
+  const ahora = new Date();
+  let escritos = 0;
+  let unidosAFijo = 0;
+  let bloquesNuevos = 0;
+  for (const b of bloques) {
+    if (b.nuevo) bloquesNuevos += 1;
+    for (const c of b.casos || []) {
+      const actual = casos.find((x) => String(x._id) === String(c._id));
+      if (actual?.bloqueCercania?.fijo) continue;
+      await BbvaCatCaso.updateOne(
+        { _id: c._id },
+        {
+          $set: {
+            bloqueCercania: {
+              numero: b.numero,
+              nombre: b.nombre,
+              centroLat: b.centro.lat,
+              centroLng: b.centro.lng,
+              radioKm: b.radioKm || radio,
+              fijo: true,
+              fijadoEn: ahora,
+            },
+          },
+        }
+      );
+      escritos += 1;
+      if (b.fijo) unidosAFijo += 1;
+    }
+  }
+  return {
+    bloques: bloques.length,
+    escritos,
+    unidosAFijo,
+    bloquesNuevos,
+    radioKm: radio,
+  };
+}
+
 export function clusterizarPorRadio(puntos = [], radioKm = 2.5) {
   const radio = Math.max(0.1, Number(radioKm) || 2.5);
   const restantes = puntos
@@ -716,6 +942,7 @@ export async function obtenerBloquesCercaniaBbvaCat({
       geocodeStatus: c.ubicacionPredio?.geocodeStatus || null,
       locationType: c.ubicacionPredio?.locationType || null,
       tieneArchivos,
+      bloqueCercania: c.bloqueCercania || null,
     };
     if (casoTieneCoordsValidas(c)) {
       ubicados.push({
@@ -732,7 +959,12 @@ export async function obtenerBloquesCercaniaBbvaCat({
     }
   }
 
-  const bloques = clusterizarPorRadio(ubicados, radioKm);
+  const radioNum = Math.max(0.1, Number(radioKm) || 2.5);
+  const hayFijos = ubicados.some((p) => numeroBloqueDeCaso(p));
+  const respetarFijos = hayFijos && radioNum >= 4;
+  const bloques = respetarFijos
+    ? armarBloquesRespetandoFijos(ubicados, radioNum)
+    : clusterizarPorRadio(ubicados, radioNum);
 
   const filtrarVisibles = (lista) => {
     if (!depurarArchivos) return lista;
@@ -745,28 +977,37 @@ export async function obtenerBloquesCercaniaBbvaCat({
     .map((b) => {
       const casosVisibles = filtrarVisibles(b.casos || []);
       const cantidadConArchivo = (b.casos || []).filter((c) => c.tieneArchivos).length;
+      const numero = Number(b.numero) || Number(String(b.id || '').replace(/\D/g, '')) || 0;
       return {
         ...b,
+        numero,
+        id: numero ? `bloque-${numero}` : b.id,
+        nombre: numero ? `Bloque ${numero}` : b.nombre,
         casos: casosVisibles,
         cantidad: casosVisibles.length,
         cantidadTotal: (b.casos || []).length,
         cantidadConArchivo,
       };
     })
-    .filter((b) => !soloConArchivos || Number(b.cantidad) > 0);
+    .filter((b) => Number(b.cantidad) > 0);
 
-  bloquesVisibles.sort((a, b) => {
-    const dCant = (Number(b.cantidad) || 0) - (Number(a.cantidad) || 0);
-    if (dCant !== 0) return dCant;
-    return String(a.casos?.[0]?.consecutivo || '').localeCompare(
-      String(b.casos?.[0]?.consecutivo || ''),
-      'es'
-    );
-  });
-  bloquesVisibles.forEach((b, i) => {
-    b.id = `bloque-${i + 1}`;
-    b.nombre = `Bloque ${i + 1}`;
-  });
+  if (!respetarFijos) {
+    bloquesVisibles.sort((a, b) => {
+      const dCant = (Number(b.cantidad) || 0) - (Number(a.cantidad) || 0);
+      if (dCant !== 0) return dCant;
+      return String(a.casos?.[0]?.consecutivo || '').localeCompare(
+        String(b.casos?.[0]?.consecutivo || ''),
+        'es'
+      );
+    });
+    bloquesVisibles.forEach((b, i) => {
+      b.id = `bloque-${i + 1}`;
+      b.nombre = `Bloque ${i + 1}`;
+      b.numero = i + 1;
+    });
+  } else {
+    bloquesVisibles.sort((a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0));
+  }
 
   const sinUbicarVisibles = filtrarVisibles(sinUbicar);
   const sinDireccionCount = sinUbicarVisibles.filter((c) => c.motivoSinUbicar === 'sin_direccion').length;
@@ -784,6 +1025,7 @@ export async function obtenerBloquesCercaniaBbvaCat({
     geocodeFallidoCount,
     bloques: bloquesVisibles,
     sinUbicar: sinUbicarVisibles,
+    respetarFijos: Boolean(respetarFijos),
     depurarArchivos: Boolean(depurarArchivos),
     incluirConArchivos: Boolean(incluirConArchivos),
     soloConArchivos: Boolean(soloConArchivos),
