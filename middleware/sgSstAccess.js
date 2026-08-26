@@ -1,7 +1,8 @@
 import SgSstCaso from '../models/SgSstCaso.js';
+import { esRolContractor } from '../config/roles.js';
 
 const ROLES_GLOBALES = new Set(['admin', 'administrador', 'soporte']);
-const ROLES_DENEGADOS = new Set(['visualizador', 'puertos', 'externo', 'contractor_zurich', 'contractor_alfa', 'contractor_sura', 'contractor_solo_zurich', 'contractor_solo_bbva', 'contractor_solo_equidad', 'contractor_solo_previsora']);
+const ROLES_DENEGADOS = new Set(['visualizador', 'puertos', 'externo']);
 
 function usuarioDesdeReq(req) {
   return req.usuario || req.user || null;
@@ -18,7 +19,8 @@ export function tieneAccesoGlobalSgSst(usuario) {
 }
 
 export function esRolDenegadoSgSst(usuario) {
-  return Boolean(usuario?.externo) || ROLES_DENEGADOS.has(rolDesdeUsuario(usuario));
+  const rol = rolDesdeUsuario(usuario);
+  return Boolean(usuario?.externo) || ROLES_DENEGADOS.has(rol) || esRolContractor(rol);
 }
 
 export function esCreadorSgSst(usuario, caso) {

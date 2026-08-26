@@ -14,6 +14,7 @@ export const ROLES_VALIDOS = [
   'contractor_solo_bbva',
   'contractor_solo_equidad',
   'contractor_solo_previsora',
+  'contractor_catastroficos',
 ];
 
 /** Contratista con acceso únicamente al módulo Zurich. */
@@ -28,11 +29,15 @@ export const ROL_SOLO_EQUIDAD = 'contractor_solo_equidad';
 /** Contratista solo módulo Previsora (Home + Previsora). */
 export const ROL_SOLO_PREVISORA = 'contractor_solo_previsora';
 
+/** Contratista con todos los módulos catastróficos. */
+export const ROL_CATASTROFICOS = 'contractor_catastroficos';
+
 const ETIQUETA_TRES = 'Zurich, Alfa, Sura y BBVA';
 const ETIQUETA_SOLO_ZURICH = 'Zurich';
 const ETIQUETA_SOLO_BBVA = 'BBVA';
 const ETIQUETA_SOLO_EQUIDAD = 'Equidad FDM';
 const ETIQUETA_SOLO_PREVISORA = 'Previsora';
+const ETIQUETA_CATASTROFICOS = 'Catastróficos';
 
 /** Texto que se agrega al nombre entre paréntesis al asignar el rol. */
 export const SUFIJO_NOMBRE_POR_ROL = {
@@ -43,6 +48,7 @@ export const SUFIJO_NOMBRE_POR_ROL = {
   contractor_solo_bbva: ETIQUETA_SOLO_BBVA,
   contractor_solo_equidad: ETIQUETA_SOLO_EQUIDAD,
   contractor_solo_previsora: ETIQUETA_SOLO_PREVISORA,
+  contractor_catastroficos: ETIQUETA_CATASTROFICOS,
 };
 
 const SUFIJOS_LEGACY = [
@@ -54,6 +60,7 @@ const SUFIJOS_LEGACY = [
   'BBVA',
   'Equidad FDM',
   'Previsora',
+  'Catastróficos',
 ];
 
 const APIS_TRES = [
@@ -70,6 +77,20 @@ const APIS_SOLO_EQUIDAD = ['/api/equidad-fdm'];
 const APIS_SOLO_PREVISORA = [
   '/api/previsora',
   '/api/previsora-listado',
+  '/api/tareas',
+];
+const APIS_CATASTROFICOS = [
+  '/api/previsora',
+  '/api/previsora-listado',
+  '/api/zurich',
+  '/api/zurich-listado',
+  '/api/bbva-cat',
+  '/api/bbva-cat-listado',
+  '/api/seguros-alfa',
+  '/api/sura',
+  '/api/allianz',
+  '/api/allianz-listado',
+  '/api/historial-formularios',
   '/api/tareas',
 ];
 
@@ -102,6 +123,10 @@ export const CONTRATISTAS_MODULO = {
   contractor_solo_previsora: {
     apis: APIS_SOLO_PREVISORA,
     mensaje: 'Su rol Previsora solo permite Home y el módulo Previsora.',
+  },
+  contractor_catastroficos: {
+    apis: APIS_CATASTROFICOS,
+    mensaje: 'Su rol Catastróficos solo permite Previsora, Zurich, BBVA, Alfa, Sura y Allianz.',
   },
 };
 
