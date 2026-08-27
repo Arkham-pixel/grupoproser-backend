@@ -297,18 +297,15 @@ export function matchAlfaCaseForExcelRow(payload, allCases) {
       normKeyPolicy(only.numeroPoliza) === polExcel;
     const placeholderTarget = isPolicyPlaceholder(only.numeroPoliza);
 
-    // Misma id, pólizas reales distintas y VARIOS casos → no asumir UPDATE
-    // Si solo hay 1 caso, el consolidado Excel es fuente de verdad (actualiza póliza).
-    if (
-      polExcelReal &&
-      !placeholderTarget &&
-      !samePol &&
-      !applied.numeroCredito &&
-      !applied.fechaSiniestro &&
-      !applied.direccionPredio &&
-      byId.length > 1
-    ) {
-      return matchResult('AMBIGUOUS', pool, 'AMBIGUOUS', buildEvidence(applied));
+    // Regla duplicados Alfa: otra póliza real = otro caso (CREATE).
+    // No fusionar dos pólizas reales distintas en el mismo registro.
+    if (polExcelReal && !placeholderTarget && !samePol) {
+      return matchResult(
+        'CREATE',
+        [],
+        'CREATE_OTRA_POLIZA',
+        buildEvidence({ identificacion: true })
+      );
     }
 
     applied.numeroPoliza = samePol;

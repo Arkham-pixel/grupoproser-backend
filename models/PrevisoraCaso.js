@@ -86,8 +86,13 @@ const PrevisoraCasoSchema = new mongoose.Schema(
     valorReservaPreventivaPromedio: Number,
     valorComercialInmueble: Number,
     reserva: Number,
+    /** Nota libre que complementa el valor de reserva. */
+    observacionReserva: { type: String, default: '' },
     valorReclamado: Number,
     valorLiquidado: Number,
+    fechaLlamada: Date,
+    /** Nota libre que complementa la fecha de llamada. */
+    observacionLlamada: { type: String, default: '' },
     fechaInspeccion: Date,
     fechaUltimoDocumento: Date,
     fechaLiquidado: Date,
@@ -172,6 +177,12 @@ const PrevisoraCasoSchema = new mongoose.Schema(
     /** Id del historial formType=catastrofico (informe Complex) */
     historialCatastroficoId: { type: String, default: null },
     archivos: { type: [ArchivoPrevisoraSchema], default: [] },
+    /**
+     * Correo masivo de apertura (GRUPO PROSER designado por Previsora).
+     * Evita reenvíos al volver a correr el script.
+     */
+    fechaEmailAperturaPrevisora: Date,
+    emailAperturaPrevisoraMessageId: String,
   },
   {
     collection: 'gsk3cAppprevisoraCasos',

@@ -74,6 +74,12 @@ const PrevisoraListadoCasoSchema = new mongoose.Schema(
     liquidador: { type: mongoose.Schema.Types.Mixed, default: null },
     informeUnico: { type: mongoose.Schema.Types.Mixed, default: null },
     archivos: { type: [ArchivoPrevisoraListadoSchema], default: [] },
+    /**
+     * Correo masivo de apertura (GRUPO PROSER designado por Previsora).
+     * Evita reenvíos al volver a correr el script.
+     */
+    fechaEmailAperturaPrevisora: Date,
+    emailAperturaPrevisoraMessageId: String,
   },
   {
     collection: 'gsk3cAppprevisoraListadoCasos',

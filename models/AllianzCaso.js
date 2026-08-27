@@ -86,8 +86,13 @@ const AllianzCasoSchema = new mongoose.Schema(
     valorReservaPreventivaPromedio: Number,
     valorComercialInmueble: Number,
     reserva: Number,
+    /** Nota libre que complementa el valor de reserva. */
+    observacionReserva: { type: String, default: '' },
     valorReclamado: Number,
     valorLiquidado: Number,
+    fechaLlamada: Date,
+    /** Nota libre que complementa la fecha de llamada. */
+    observacionLlamada: { type: String, default: '' },
     fechaInspeccion: Date,
     fechaUltimoDocumento: Date,
     fechaLiquidado: Date,

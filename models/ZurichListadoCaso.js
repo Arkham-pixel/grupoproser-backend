@@ -72,6 +72,12 @@ const ZurichListadoCasoSchema = new mongoose.Schema(
     liquidador: { type: mongoose.Schema.Types.Mixed, default: null },
     informeUnico: { type: mongoose.Schema.Types.Mixed, default: null },
     archivos: { type: [ArchivoZurichListadoSchema], default: [] },
+    /**
+     * Correo masivo de apertura (GRUPO PROSER designado por Zurich).
+     * Evita reenvíos al volver a correr el script.
+     */
+    fechaEmailAperturaZurich: Date,
+    emailAperturaZurichMessageId: String,
   },
   {
     collection: 'gsk3cAppzurichListadoCasos',

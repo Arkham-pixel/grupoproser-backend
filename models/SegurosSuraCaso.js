@@ -61,6 +61,9 @@ const SegurosSuraCasoSchema = new mongoose.Schema(
     correo: String,
     /** Celular del asegurado o de quien lo asiste (cierre del siniestro) */
     celular: String,
+    /** SEDE (Riesgo): texto libre alfanumérico */
+    sede: String,
+    sedeRiesgo: String,
     canalRadicacion: String,
     ciudad: String,
     departamento: String,
@@ -74,6 +77,8 @@ const SegurosSuraCasoSchema = new mongoose.Schema(
     valorReservaPreventivaPromedio: Number,
     valorComercialInmueble: Number,
     reserva: Number,
+    /** Nota libre que complementa el valor de reserva. */
+    observacionReserva: { type: String, default: '' },
     valorReclamado: Number,
     valorLiquidado: Number,
     fechaLlamada: Date,
@@ -201,6 +206,12 @@ const SegurosSuraCasoSchema = new mongoose.Schema(
         error: String,
       },
     ],
+    /**
+     * Correo masivo de apertura (GRUPO PROSER designado por Seguros SURA).
+     * Evita reenvíos al volver a correr el script.
+     */
+    fechaEmailAperturaSura: Date,
+    emailAperturaSuraMessageId: String,
   },
   {
     collection: 'gsk3cAppsegurosSuraCasos',

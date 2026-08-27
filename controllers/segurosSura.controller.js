@@ -65,6 +65,8 @@ const CAMPOS_IDENTIDAD_SURA = new Set([
   'direccionPredio',
   'ciudad',
   'departamento',
+  'sede',
+  'sedeRiesgo',
   'fechaSiniestro',
   'fechaInspeccion',
   'reserva',
@@ -250,11 +252,22 @@ export const buildSuraPayload = (data = {}, base = {}) => {
     ajustador: primerTexto(data.ajustador, data.codiRespnsble, base.ajustador, base.codiRespnsble),
     inspector: toStringOrNull(data.inspector, base.inspector ?? null),
     numeroPoliza: primerTexto(data.numeroPoliza, data.nmroPolza, base.numeroPoliza, base.nmroPolza),
-    direccionPredio: toStringOrNull(data.direccionPredio, base.direccionPredio ?? null),
+    direccionPredio: toStringOrNull(
+      data.direccionPredio !== undefined ? data.direccionPredio : data.direccion,
+      base.direccionPredio ?? null
+    ),
     numeroCredito: toStringOrNull(data.numeroCredito, base.numeroCredito ?? null),
     informacionContacto: toStringOrNull(data.informacionContacto, base.informacionContacto ?? null),
     correo: toStringOrNull(data.correo, base.correo ?? null),
     celular: toStringOrNull(data.celular, base.celular ?? null),
+    sede: toStringOrNull(
+      data.sede !== undefined ? data.sede : data.sedeRiesgo,
+      base.sede ?? base.sedeRiesgo ?? null
+    ),
+    sedeRiesgo: toStringOrNull(
+      data.sede !== undefined ? data.sede : data.sedeRiesgo,
+      base.sedeRiesgo ?? base.sede ?? null
+    ),
     canalRadicacion: toStringOrNull(data.canalRadicacion, base.canalRadicacion ?? null),
     ciudad: primerTexto(
       data.ciudad,
@@ -302,6 +315,7 @@ export const buildSuraPayload = (data = {}, base = {}) => {
     reserva:
       primerNumero(data.reserva, data.vlorResrva) ??
       parseNumberFlexible(undefined, base.reserva ?? base.vlorResrva ?? null),
+    observacionReserva: toStringOrNull(data.observacionReserva, base.observacionReserva ?? null) || '',
     valorReclamado:
       primerNumero(data.valorReclamado, data.vlorReclmo) ??
       parseNumberFlexible(undefined, base.valorReclamado ?? base.vlorReclmo ?? null),
@@ -399,6 +413,8 @@ const mergeImportacionSura = (incomingPayload = {}, existente = {}) => {
     'canalRadicacion',
     'ciudad',
     'departamento',
+    'sede',
+    'sedeRiesgo',
     'fechaSiniestro',
     'fechaInicioPoliza',
     'fechaFinPoliza',
@@ -432,9 +448,10 @@ const mergeImportacionSura = (incomingPayload = {}, existente = {}) => {
     archivos: existente.archivos || [],
     liquidador: existente.liquidador ?? null,
     informeUnico: existente.informeUnico ?? null,
-    // Solo ARNALD: el Excel nunca los trae; no se deben perder en import.
+    // La importación Excel no debe borrar notas operativas de llamada/reserva.
     fechaLlamada: existente.fechaLlamada ?? null,
     observacionLlamada: existente.observacionLlamada || '',
+    observacionReserva: existente.observacionReserva || '',
     ubicacionPredio: existente.ubicacionPredio ?? undefined,
   };
   for (const campo of campos) {
