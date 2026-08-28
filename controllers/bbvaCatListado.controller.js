@@ -3,6 +3,7 @@ import AjustadorCatastrofico from '../models/AjustadorCatastrofico.js';
 import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatastrofico.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoBbvaCat, homologarEstadoBbvaCat } from '../utils/estadosBbvaCat.js';
+import { homologarCiudadBbvaCat } from '../utils/ciudadesBbvaCat.js';
 import { crearControladoresArchivosListado } from '../utils/archivosCasoListado.js';
 import { rutaArchivoSigueEnUsoBbvaCat } from '../utils/espejarArchivoBbvaCatEnListado.js';
 
@@ -147,7 +148,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     telefonoAsegurado: pick(data.telefonoAsegurado, base.telefonoAsegurado ?? null),
     contactoAsegurado: pick(data.contactoAsegurado, base.contactoAsegurado ?? null),
     observaciones: pick(data.observaciones, base.observaciones ?? null),
-    ciudad: pick(data.ciudad, base.ciudad ?? null),
+    ciudad: homologarCiudadBbvaCat(pick(data.ciudad, base.ciudad ?? null)) || pick(data.ciudad, base.ciudad ?? null),
     departamento: pick(data.departamento, base.departamento ?? null),
     ajustadorLider: pick(data.ajustadorLider, base.ajustadorLider ?? null),
     ajustador: pick(data.ajustador, base.ajustador ?? null),

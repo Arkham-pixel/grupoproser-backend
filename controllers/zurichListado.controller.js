@@ -6,6 +6,7 @@ import { catalogoPerteneceAModulo } from '../utils/filtrarCatalogoPorModulo.js';
 import { deleteStoredFile } from '../services/fileStorageService.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoZurich, homologarEstadoZurich } from '../utils/estadosZurich.js';
+import { homologarCiudadZurich } from '../utils/ciudadesBbvaCat.js';
 
 const esVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null';
@@ -148,7 +149,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     telefonoAsegurado: pick(data.telefonoAsegurado, base.telefonoAsegurado ?? null),
     contactoAsegurado: pick(data.contactoAsegurado, base.contactoAsegurado ?? null),
     observaciones: pick(data.observaciones, base.observaciones ?? null),
-    ciudad: pick(data.ciudad, base.ciudad ?? null),
+    ciudad: homologarCiudadZurich(pick(data.ciudad, base.ciudad ?? null)) || pick(data.ciudad, base.ciudad ?? null),
     departamento: pick(data.departamento, base.departamento ?? null),
     ajustadorLider: pick(data.ajustadorLider, base.ajustadorLider ?? null),
     ajustador: pick(data.ajustador, base.ajustador ?? null),

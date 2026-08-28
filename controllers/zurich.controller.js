@@ -10,6 +10,7 @@ import { ROL_SOLO_ZURICH, normalizarRol } from '../config/roles.js';
 import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoZurich, homologarEstadoZurich } from '../utils/estadosZurich.js';
+import { homologarCiudadZurich } from '../utils/ciudadesBbvaCat.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -344,7 +345,7 @@ const buildZurichPayload = (data = {}, base = {}) => {
   correo: toStringOrNull(data.correo, base.correo ?? null),
   celular: toStringOrNull(data.celular, base.celular ?? null),
   canalRadicacion: toStringOrNull(data.canalRadicacion, base.canalRadicacion ?? null),
-  ciudad: toStringOrNull(data.ciudad, base.ciudad ?? null),
+  ciudad: homologarCiudadZurich(toStringOrNull(data.ciudad, base.ciudad ?? null)) || toStringOrNull(data.ciudad, base.ciudad ?? null),
   departamento: toStringOrNull(data.departamento, base.departamento ?? null),
   fechaSiniestro: parseDateFlexible(data.fechaSiniestro, base.fechaSiniestro ?? null),
   fechaInicioPoliza: parseDateFlexible(data.fechaInicioPoliza, base.fechaInicioPoliza ?? null),
@@ -527,7 +528,7 @@ export const mapExpressAZurich = (express = {}) => ({
   correo: express.correoNotificacion || null,
   celular: null,
   canalRadicacion: 'EXPRESS',
-  ciudad: express.ciudadSiniestro || null,
+  ciudad: homologarCiudadZurich(express.ciudadSiniestro) || express.ciudadSiniestro || null,
   departamento: null,
   fechaSiniestro: express.fechaSiniestro || null,
   fechaInicioPoliza: null,

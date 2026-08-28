@@ -71,7 +71,7 @@ const APIS_TRES = [
   '/api/bbva-cat',
   '/api/bbva-cat-listado',
 ];
-const APIS_SOLO_ZURICH = ['/api/zurich'];
+const APIS_SOLO_ZURICH = ['/api/zurich', '/api/zurich-listado'];
 const APIS_SOLO_BBVA = ['/api/bbva-cat', '/api/bbva-cat-listado'];
 const APIS_SOLO_EQUIDAD = ['/api/equidad-fdm'];
 const APIS_SOLO_PREVISORA = [

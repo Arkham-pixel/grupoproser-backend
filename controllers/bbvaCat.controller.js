@@ -9,6 +9,7 @@ import {
 import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoBbvaCat, homologarEstadoBbvaCat } from '../utils/estadosBbvaCat.js';
+import { homologarCiudadBbvaCat } from '../utils/ciudadesBbvaCat.js';
 import {
   geocodeCasosBbvaCatPendientes,
   aplicarUbicacionesPredioBbvaCat,
@@ -348,7 +349,7 @@ const buildBbvaCatPayload = (data = {}, base = {}) => {
   correo: toStringOrNull(data.correo, base.correo ?? null),
   celular: toStringOrNull(data.celular, base.celular ?? null),
   canalRadicacion: toStringOrNull(data.canalRadicacion, base.canalRadicacion ?? null),
-  ciudad: toStringOrNull(data.ciudad, base.ciudad ?? null),
+  ciudad: homologarCiudadBbvaCat(toStringOrNull(data.ciudad, base.ciudad ?? null)) || toStringOrNull(data.ciudad, base.ciudad ?? null),
   departamento: toStringOrNull(data.departamento, base.departamento ?? null),
   fechaSiniestro: parseDateFlexible(data.fechaSiniestro, base.fechaSiniestro ?? null),
   fechaInicioPoliza: parseDateFlexible(data.fechaInicioPoliza, base.fechaInicioPoliza ?? null),
@@ -532,7 +533,7 @@ export const mapExpressABbvaCat = (express = {}) => ({
   correo: express.correoNotificacion || null,
   celular: null,
   canalRadicacion: 'EXPRESS',
-  ciudad: express.ciudadSiniestro || null,
+  ciudad: homologarCiudadBbvaCat(express.ciudadSiniestro) || express.ciudadSiniestro || null,
   departamento: null,
   fechaSiniestro: express.fechaSiniestro || null,
   fechaInicioPoliza: null,
