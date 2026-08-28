@@ -1,17 +1,23 @@
 /**
  * Carga Sharepoint_Z.xlsx en Zurich.
- * Condiciones (mismas de siempre):
+ * Condiciones:
  *  - No borra ni reemplaza la colección
- *  - No duplica (CAT: ZC / STRO; listado: ZC)
- *  - En existentes del listado solo completa huecos
- *  - Reporte CAT recibe los casos nuevos (este Excel no cruza con la base CAT de Risk ID)
+ *  - No duplica por ZC / STRO
+ *  - Mismo nombre + misma cédula + misma póliza = duplicado (se omite)
+ *  - Mismo nombre + misma cédula + distinta póliza = válido (se crea)
+ *  - En existentes del listado solo completa huecos (no pisa cédula/póliza)
+ *  - Reporte CAT recibe los casos nuevos que no cruzan por ZC/STRO
  *
  * Uso:
  *   node scripts/importarSharepointZurich.js
+ *   node scripts/importarSharepointZurich.js --dry-run
  *   node scripts/importarSharepointZurich.js "C:\\ruta\\Sharepoint_Z.xlsx"
  */
-import 'dotenv/config';
+import dns from 'dns';
+import dotenv from 'dotenv';
 import mongoose from 'mongoose';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import XLSX from 'xlsx';
 import ZurichCaso from '../models/ZurichCaso.js';
 import ZurichListadoCaso from '../models/ZurichListadoCaso.js';
@@ -19,9 +25,21 @@ import InspectorCatastrofico from '../models/InspectorCatastrofico.js';
 import AjustadorCatastrofico from '../models/AjustadorCatastrofico.js';
 import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatastrofico.js';
 import { homologarEstadoZurich } from '../utils/estadosZurich.js';
+import { homologarCiudadZurich } from '../utils/ciudadesBbvaCat.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '../.env') });
+
+if (process.env.MONGO_SKIP_PUBLIC_DNS !== '1') {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+}
+
+const args = process.argv.slice(2);
+const dryRun = args.includes('--dry-run');
 const excelPath =
-  process.argv[2] || 'C:\\Users\\GP-TI\\Downloads\\Sharepoint_Z.xlsx';
+  args.find((a) => !a.startsWith('--')) || 'C:\\Users\\GP-TI\\Downloads\\Sharepoint_Z.xlsx';
+
+const PLACEHOLDER_ID = /^(DILIGENCIAR|PENDIENTE|N\/?A|NA|NULL|-|0|SIN DATO|POR CONFIRMAR)$/i;
 
 const normHeader = (valor) =>
   String(valor ?? '')
@@ -48,9 +66,14 @@ const limpiar = (raw) => {
 
 const esVacio = (v) => v === undefined || v === null || v === '' || v === 'null';
 
+const esPlaceholder = (valor) => {
+  if (esVacio(valor)) return true;
+  return PLACEHOLDER_ID.test(String(valor).trim());
+};
+
 const completar = (incoming, existing) => {
-  if (!esVacio(existing) && existing !== '0') return existing;
-  if (!esVacio(incoming) && incoming !== '0') return incoming;
+  if (!esVacio(existing) && existing !== '0' && !esPlaceholder(existing)) return existing;
+  if (!esVacio(incoming) && incoming !== '0' && !esPlaceholder(incoming)) return incoming;
   return existing ?? incoming ?? null;
 };
 
@@ -150,6 +173,16 @@ const parseContacto = (valor) => {
   };
 };
 
+/** Cédula/NIT real: no es ZC, STRO ni Risk ID estilo "3518-NOMBRE". */
+const esCedulaReal = (id, zc, stro) => {
+  const n = normClave(id);
+  if (!n || esPlaceholder(id)) return false;
+  if (n === normClave(zc) || n === normClave(stro)) return false;
+  if (/^\d+-[A-Z]/.test(n)) return false;
+  const digitos = String(id).replace(/\D/g, '');
+  return digitos.length >= 5;
+};
+
 const HEADER_MAP = {
   ZC: 'zc',
   'Z CLAIMS': 'zc',
@@ -161,6 +194,15 @@ const HEADER_MAP = {
   ASEGURADO: 'asegurado',
   'NOMBRE ASEGURADO': 'asegurado',
   NOMBRE: 'asegurado',
+  CEDULA: 'cedula',
+  IDENTIFICACION: 'cedula',
+  'NIT': 'cedula',
+  DOCUMENTO: 'cedula',
+  'TIPO IDENTIFICACION': 'tipoIdentificacion',
+  POLIZA: 'numeroPoliza',
+  'N POLIZA': 'numeroPoliza',
+  'NUMERO POLIZA': 'numeroPoliza',
+  'NO POLIZA': 'numeroPoliza',
   'VALOR ASEGURADO COP': 'valorAseguradoInmueble',
   'VALOR ASEGURADO': 'valorAseguradoInmueble',
   DIRECCION: 'direccionPredio',
@@ -191,6 +233,8 @@ const parsearExcel = (filePath) => {
     if (campo) colMap[c] = campo;
   });
   const casos = [];
+  const vistosZc = new Set();
+  const dupsExcel = [];
   for (let r = 1; r < matriz.length; r += 1) {
     const row = matriz[r] || [];
     const caso = {};
@@ -221,8 +265,10 @@ const parsearExcel = (filePath) => {
     if (!caso.zc && !caso.siniestro && !caso.asegurado) continue;
     caso.zc = String(caso.zc || '').replace(/\.0$/, '');
     caso.siniestro = String(caso.siniestro || '').replace(/\.0$/, '');
+    caso.cedula = String(caso.cedula || '').replace(/\.0$/, '');
+    caso.numeroPoliza = String(caso.numeroPoliza || '').replace(/\.0$/, '');
     const loc = splitCiudadDepto(caso.ciudad);
-    caso.ciudad = loc.ciudad;
+    caso.ciudad = homologarCiudadZurich(loc.ciudad) || loc.ciudad;
     caso.departamento = loc.departamento;
     const contacto = parseContacto(caso.informacionContacto);
     caso.telefonoAsegurado = contacto.telefono;
@@ -230,14 +276,25 @@ const parsearExcel = (filePath) => {
     caso.contactoAsegurado = contacto.legado;
     caso.celular = contacto.telefono;
     caso.correo = contacto.correo;
-    caso.identificacion = caso.zc || caso.siniestro;
+    caso.identificacion =
+      (esCedulaReal(caso.cedula, caso.zc, caso.siniestro) && caso.cedula) ||
+      caso.zc ||
+      caso.siniestro;
     if (caso.montoAnticipo) {
       const anticipo = `Anticipo: ${caso.montoAnticipo}`;
       caso.observaciones = [caso.observaciones, anticipo].filter(Boolean).join(' | ');
     }
+    const zcK = normClave(caso.zc);
+    if (zcK) {
+      if (vistosZc.has(zcK)) {
+        dupsExcel.push({ zc: caso.zc, asegurado: caso.asegurado, siniestro: caso.siniestro });
+        continue;
+      }
+      vistosZc.add(zcK);
+    }
     casos.push(caso);
   }
-  return casos;
+  return { casos, dupsExcel };
 };
 
 const maxSecuencial = (docs, patron) => {
@@ -249,8 +306,18 @@ const maxSecuencial = (docs, patron) => {
   return max;
 };
 
-await mongoose.connect(process.env.MONGO_URI);
-const casosExcel = parsearExcel(excelPath);
+const clavePersonaPoliza = (doc) => {
+  const ced = esCedulaReal(doc.identificacion || doc.cedula, doc.zc, doc.siniestro)
+    ? normClave(doc.identificacion || doc.cedula)
+    : '';
+  const pol = normClave(doc.numeroPoliza);
+  const nom = normClave(doc.asegurado);
+  if (!ced || !nom) return null;
+  return { nom, ced, pol };
+};
+
+await mongoose.connect(process.env.MONGO_URI_DIRECT || process.env.MONGO_URI);
+const { casos: casosExcel, dupsExcel } = parsearExcel(excelPath);
 const [inspectores, ajustadores, catExistentes, listadoExistentes] = await Promise.all([
   InspectorCatastrofico.find({}).lean(),
   AjustadorCatastrofico.find({}).lean(),
@@ -259,17 +326,41 @@ const [inspectores, ajustadores, catExistentes, listadoExistentes] = await Promi
 ]);
 
 const catIdx = new Map();
+const catPersona = [];
 for (const doc of catExistentes) {
-  for (const clave of [`ZC:${normClave(doc.zc)}`, `S:${normClave(doc.siniestro)}`, `I:${normClave(doc.identificacion)}`]) {
+  for (const clave of [`ZC:${normClave(doc.zc)}`, `S:${normClave(doc.siniestro)}`]) {
     if (clave.endsWith(':')) continue;
     if (!catIdx.has(clave)) catIdx.set(clave, doc);
   }
+  const persona = clavePersonaPoliza(doc);
+  if (persona) catPersona.push({ ...persona, doc });
 }
+
 const lstIdx = new Map();
+const lstPersona = [];
 for (const doc of listadoExistentes) {
   const zc = normClave(doc.zc);
   if (zc && !lstIdx.has(zc)) lstIdx.set(zc, doc);
+  const persona = clavePersonaPoliza(doc);
+  if (persona) lstPersona.push({ ...persona, doc });
 }
+
+const hitPersonaMismaPoliza = (lista, fila) => {
+  const persona = clavePersonaPoliza(fila);
+  if (!persona) return null;
+  return (
+    lista.find((p) => p.nom === persona.nom && p.ced === persona.ced && p.pol && p.pol === persona.pol) ||
+    (!persona.pol
+      ? lista.find((p) => p.nom === persona.nom && p.ced === persona.ced && !p.pol)
+      : null)
+  );
+};
+
+const hitPersonaOtraPoliza = (lista, fila) => {
+  const persona = clavePersonaPoliza(fila);
+  if (!persona || !persona.pol) return [];
+  return lista.filter((p) => p.nom === persona.nom && p.ced === persona.ced && p.pol && p.pol !== persona.pol);
+};
 
 const ahora = new Date();
 const año = ahora.getFullYear();
@@ -278,12 +369,18 @@ let seqCat = maxSecuencial(catExistentes, /^ZURICH-\d{4}-\d{2}-(\d+)$/i);
 let seqLst = maxSecuencial(listadoExistentes, /^ZURICH-LST-\d{4}-\d{2}-(\d+)$/i);
 
 const resumen = {
+  dryRun,
   excel: casosExcel.length,
+  excelDupsZcOmitidos: dupsExcel.length,
   catCreados: 0,
   catYaExistian: 0,
+  catDuplicadoPersonaPoliza: 0,
   listadoCreados: 0,
   listadoHuecos: 0,
+  listadoDuplicadoPersonaPoliza: 0,
   omitidos: 0,
+  permitidosMismoNombreOtraPoliza: [],
+  nuevosListado: [],
 };
 
 for (const fila of casosExcel) {
@@ -299,20 +396,33 @@ for (const fila of casosExcel) {
 
   const zcK = normClave(fila.zc);
   const sK = normClave(fila.siniestro);
-  const hitCat =
+  const hitCatZc =
     (zcK && catIdx.get(`ZC:${zcK}`)) ||
-    (sK && catIdx.get(`S:${sK}`)) ||
-    (zcK && catIdx.get(`I:${zcK}`));
+    (sK && catIdx.get(`S:${sK}`));
+  const dupCatPersona = hitPersonaMismaPoliza(catPersona, fila);
+  const otraPolCat = hitPersonaOtraPoliza(catPersona, fila);
 
-  if (hitCat) {
+  if (hitCatZc) {
     resumen.catYaExistian += 1;
+  } else if (dupCatPersona) {
+    resumen.catDuplicadoPersonaPoliza += 1;
   } else if (fila.identificacion) {
+    if (otraPolCat.length) {
+      resumen.permitidosMismoNombreOtraPoliza.push({
+        destino: 'CAT',
+        zc: fila.zc,
+        asegurado: fila.asegurado,
+        poliza: fila.numeroPoliza || null,
+      });
+    }
     seqCat += 1;
-    const creado = await ZurichCaso.create({
+    const payloadCat = {
       consecutivo: `ZURICH-${año}-${mes}-${seqCat}`,
       zc: fila.zc || null,
       siniestro: fila.siniestro || null,
       identificacion: fila.identificacion,
+      tipoIdentificacion: fila.tipoIdentificacion || null,
+      numeroPoliza: fila.numeroPoliza || null,
       asegurado: fila.asegurado || null,
       ajustador: asignacion.ajustador || fila.ajustador || null,
       direccionPredio: fila.direccionPredio || null,
@@ -337,17 +447,27 @@ for (const fila of casosExcel) {
       observaciones: fila.observaciones || null,
       observacionesCat: fila.observacionesCat || null,
       estado: estadoNuevo,
-    });
-    const lean = creado.toObject();
+    };
+    if (!dryRun) {
+      const creado = await ZurichCaso.create(payloadCat);
+      const lean = creado.toObject();
+      if (zcK) catIdx.set(`ZC:${zcK}`, lean);
+      if (sK) catIdx.set(`S:${sK}`, lean);
+      const persona = clavePersonaPoliza(lean);
+      if (persona) catPersona.push({ ...persona, doc: lean });
+    } else {
+      if (zcK) catIdx.set(`ZC:${zcK}`, payloadCat);
+      if (sK) catIdx.set(`S:${sK}`, payloadCat);
+    }
     resumen.catCreados += 1;
-    if (zcK) catIdx.set(`ZC:${zcK}`, lean);
-    if (sK) catIdx.set(`S:${sK}`, lean);
   } else {
     resumen.omitidos += 1;
   }
 
   if (!zcK) continue;
   const hitLst = lstIdx.get(zcK);
+  const dupLstPersona = !hitLst ? hitPersonaMismaPoliza(lstPersona, fila) : null;
+  const otraPolLst = hitPersonaOtraPoliza(lstPersona, fila);
   const obsListado = [
     fila.direccionPredio,
     fila.observacionesCat,
@@ -361,9 +481,12 @@ for (const fila of casosExcel) {
       zc: completar(fila.zc, hitLst.zc),
       siniestro: completar(fila.siniestro, hitLst.siniestro),
       identificacion: completar(fila.identificacion, hitLst.identificacion),
+      tipoIdentificacion: completar(fila.tipoIdentificacion, hitLst.tipoIdentificacion),
+      numeroPoliza: completar(fila.numeroPoliza, hitLst.numeroPoliza),
       asegurado: completar(fila.asegurado, hitLst.asegurado),
       ciudad: completar(fila.ciudad, hitLst.ciudad),
       departamento: completar(fila.departamento, hitLst.departamento),
+      direccionPredio: completar(fila.direccionPredio, hitLst.direccionPredio),
       ajustador: completar(asignacion.ajustador || fila.ajustador, hitLst.ajustador),
       telefonoAsegurado: completar(fila.telefonoAsegurado, hitLst.telefonoAsegurado),
       correoAsegurado: completar(fila.correoAsegurado, hitLst.correoAsegurado),
@@ -372,19 +495,34 @@ for (const fila of casosExcel) {
       fechaAsignacion: hitLst.fechaAsignacion || fila.fechaAsignacion || null,
       fechaVisita: hitLst.fechaVisita || fila.fechaInspeccion || null,
     };
-    await ZurichListadoCaso.findByIdAndUpdate(hitLst._id, { $set: merge });
+    if (!dryRun) {
+      await ZurichListadoCaso.findByIdAndUpdate(hitLst._id, { $set: merge });
+    }
     resumen.listadoHuecos += 1;
     lstIdx.set(zcK, { ...hitLst, ...merge });
+  } else if (dupLstPersona) {
+    resumen.listadoDuplicadoPersonaPoliza += 1;
   } else {
+    if (otraPolLst.length) {
+      resumen.permitidosMismoNombreOtraPoliza.push({
+        destino: 'listado',
+        zc: fila.zc,
+        asegurado: fila.asegurado,
+        poliza: fila.numeroPoliza || null,
+      });
+    }
     seqLst += 1;
-    const creadoLst = await ZurichListadoCaso.create({
+    const payloadLst = {
       consecutivo: `ZURICH-LST-${año}-${mes}-${seqLst}`,
       zc: fila.zc,
       siniestro: fila.siniestro || null,
       identificacion: fila.identificacion,
+      tipoIdentificacion: fila.tipoIdentificacion || null,
+      numeroPoliza: fila.numeroPoliza || null,
       asegurado: fila.asegurado || null,
       ciudad: fila.ciudad || null,
       departamento: fila.departamento || null,
+      direccionPredio: fila.direccionPredio || null,
       ajustador: asignacion.ajustador || fila.ajustador || null,
       telefonoAsegurado: fila.telefonoAsegurado || null,
       correoAsegurado: fila.correoAsegurado || null,
@@ -395,16 +533,29 @@ for (const fila of casosExcel) {
       fechaCasoNuevo: fila.fechaAsignacion || ahora,
       fechaCoordinandoInspeccion: inspeccionSi ? fila.fechaInspeccion || ahora : null,
       estado: estadoNuevo,
+    };
+    resumen.nuevosListado.push({
+      zc: fila.zc,
+      siniestro: fila.siniestro,
+      asegurado: fila.asegurado,
+      ciudad: fila.ciudad,
     });
+    if (!dryRun) {
+      const creadoLst = await ZurichListadoCaso.create(payloadLst);
+      const leanLst = creadoLst.toObject();
+      lstIdx.set(zcK, leanLst);
+      const persona = clavePersonaPoliza(leanLst);
+      if (persona) lstPersona.push({ ...persona, doc: leanLst });
+    } else {
+      lstIdx.set(zcK, payloadLst);
+    }
     resumen.listadoCreados += 1;
-    lstIdx.set(zcK, creadoLst.toObject());
   }
 }
 
-const [catTotal, listadoTotal] = await Promise.all([
-  ZurichCaso.countDocuments(),
-  ZurichListadoCaso.countDocuments(),
-]);
+const [catTotal, listadoTotal] = dryRun
+  ? [catExistentes.length + resumen.catCreados, listadoExistentes.length + resumen.listadoCreados]
+  : await Promise.all([ZurichCaso.countDocuments(), ZurichListadoCaso.countDocuments()]);
 
 console.log(JSON.stringify({ ...resumen, catTotal, listadoTotal }, null, 2));
 await mongoose.disconnect();

@@ -1,4 +1,4 @@
-﻿import ZurichCaso from '../models/ZurichCaso.js';
+import ZurichCaso from '../models/ZurichCaso.js';
 import Responsable from '../models/Responsable.js';
 import { DIAS_ENTRE_RECORDATORIOS_EMAIL } from './alertasService.js';
 import { enviarEmailAlertasZurich } from './emailService.js';
@@ -11,7 +11,7 @@ import {
 export const DIAS_RECORDATORIO_INACTIVIDAD_ZURICH = 30;
 
 /** Estados que cierran el caso para alertas (sin recordatorio). */
-const ESTADOS_CERRADOS_ZURICH = ['CERRADO'];
+const ESTADOS_CERRADOS_ZURICH = ['LIQUIDADO', 'OBJETADO', 'CERRADO'];
 
 function normalizarEstadoZurich(valor) {
   return String(valor ?? '')

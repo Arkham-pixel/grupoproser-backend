@@ -26,6 +26,14 @@ const toStr = (valor, fallback = null) => {
   return String(valor).replace(/\t/g, ' ').replace(/\s+/g, ' ').trim() || fallback || null;
 };
 
+const parseNumero = (valor, fallback = null) => {
+  if (valor === undefined) return fallback ?? null;
+  if (valor === null || valor === '') return fallback ?? null;
+  if (typeof valor === 'number' && Number.isFinite(valor)) return valor;
+  const n = Number(String(valor).replace(/\./g, '').replace(/[^\d-]/g, ''));
+  return Number.isNaN(n) ? fallback ?? null : n;
+};
+
 /** Incoming útil completa huecos; no pisa un dato ya guardado. */
 const completarCampo = (incoming, existing) => {
   const a = toStr(incoming, null);
@@ -150,6 +158,26 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     observaciones: pick(data.observaciones, base.observaciones ?? null),
     ciudad: pick(data.ciudad, base.ciudad ?? null),
     departamento: pick(data.departamento, base.departamento ?? null),
+    valorAseguradoInmueble: parseNumero(
+      data.valorAseguradoInmueble,
+      base.valorAseguradoInmueble ?? null
+    ),
+    valorAseguradoContenidos: parseNumero(
+      data.valorAseguradoContenidos,
+      base.valorAseguradoContenidos ?? null
+    ),
+    valorReservaPreventivaPromedio: parseNumero(
+      data.valorReservaPreventivaPromedio,
+      base.valorReservaPreventivaPromedio ?? null
+    ),
+    valorComercialInmueble: parseNumero(
+      data.valorComercialInmueble,
+      base.valorComercialInmueble ?? null
+    ),
+    reserva: parseNumero(data.reserva, base.reserva ?? null),
+    observacionReserva: pick(data.observacionReserva, base.observacionReserva ?? null),
+    valorReclamado: parseNumero(data.valorReclamado, base.valorReclamado ?? null),
+    valorLiquidado: parseNumero(data.valorLiquidado, base.valorLiquidado ?? null),
     ajustadorLider: pick(data.ajustadorLider, base.ajustadorLider ?? null),
     ajustador: pick(data.ajustador, base.ajustador ?? null),
     inspector: pick(data.inspector, base.inspector ?? null),
@@ -189,6 +217,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     ),
     liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
     informeUnico: pickObjeto(data.informeUnico, base.informeUnico ?? null),
+    informeAgil: pickObjeto(data.informeAgil, base.informeAgil ?? null),
   });
   return aplicarFechaAccionEstadoAllianz(
     armarContactoAsegurado(armarContactoIntermediario(payload)),

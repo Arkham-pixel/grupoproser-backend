@@ -94,8 +94,16 @@ const ZurichCasoSchema = new mongoose.Schema(
     /** Nota libre que complementa la fecha de llamada. */
     observacionLlamada: { type: String, default: '' },
     fechaInspeccion: Date,
+    /** Fecha en que el caso pasa a INSPECCIONADO */
+    fechaInspeccionado: Date,
+    /** Fecha en que el caso pasa a VERIFICADO (cruce CAT ↔ listado). */
+    fechaVerificado: Date,
     fechaUltimoDocumento: Date,
     fechaLiquidado: Date,
+    /** Fecha de emisión del informe preliminar (no es un estado del flujo). */
+    fechaInformePreliminar: Date,
+    /** Fecha de emisión del informe final o único. */
+    fechaInformeFinal: Date,
     fechaAceptacionLiquidacion: Date,
     fechaEnvioAseguradora: Date,
     fechaAsignacion: Date,

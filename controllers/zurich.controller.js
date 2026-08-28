@@ -1,6 +1,7 @@
-﻿import mongoose from 'mongoose';
+import mongoose from 'mongoose';
 import ZurichCaso from '../models/ZurichCaso.js';
 import { deleteStoredFile } from '../services/fileStorageService.js';
+import { rutaArchivoSigueEnUsoZurich } from '../utils/espejarArchivoZurichCatEnListado.js';
 import {
   obtenerAlertasZurichPorAjustadores,
   enviarAlertasTodosZurich,
@@ -339,17 +340,29 @@ const buildZurichPayload = (data = {}, base = {}) => {
   tipoPoliza: toStringOrNull(data.tipoPoliza, base.tipoPoliza ?? null),
   tipoPolizaOtro: toStringOrNull(data.tipoPolizaOtro, base.tipoPolizaOtro ?? null),
   causa: toStringOrNull(data.causa, base.causa ?? null),
-  direccionPredio: toStringOrNull(data.direccionPredio, base.direccionPredio ?? null),
+  direccionPredio: toStringOrNull(
+    data.direccionPredio ?? data.direccion ?? data.direccionRiesgo,
+    base.direccionPredio ?? null
+  ),
   numeroCredito: toStringOrNull(data.numeroCredito, base.numeroCredito ?? null),
   informacionContacto: toStringOrNull(data.informacionContacto, base.informacionContacto ?? null),
   correo: toStringOrNull(data.correo, base.correo ?? null),
   celular: toStringOrNull(data.celular, base.celular ?? null),
   canalRadicacion: toStringOrNull(data.canalRadicacion, base.canalRadicacion ?? null),
   ciudad: homologarCiudadZurich(toStringOrNull(data.ciudad, base.ciudad ?? null)) || toStringOrNull(data.ciudad, base.ciudad ?? null),
-  departamento: toStringOrNull(data.departamento, base.departamento ?? null),
+  departamento: toStringOrNull(data.departamento, base.departamento ?? null) ||
+    (homologarCiudadZurich(toStringOrNull(data.ciudad, base.ciudad ?? null)) === 'CALI'
+      ? 'VALLE DEL CAUCA'
+      : null),
   fechaSiniestro: parseDateFlexible(data.fechaSiniestro, base.fechaSiniestro ?? null),
-  fechaInicioPoliza: parseDateFlexible(data.fechaInicioPoliza, base.fechaInicioPoliza ?? null),
-  fechaFinPoliza: parseDateFlexible(data.fechaFinPoliza, base.fechaFinPoliza ?? null),
+  fechaInicioPoliza: parseDateFlexible(
+    data.fechaInicioPoliza ?? data.vigenciaDesde,
+    base.fechaInicioPoliza ?? null
+  ),
+  fechaFinPoliza: parseDateFlexible(
+    data.fechaFinPoliza ?? data.vigenciaHasta,
+    base.fechaFinPoliza ?? null
+  ),
   valorAseguradoInmueble: parseNumberFlexible(
     data.valorAseguradoInmueble,
     base.valorAseguradoInmueble ?? null
@@ -358,7 +371,7 @@ const buildZurichPayload = (data = {}, base = {}) => {
     data.valorAseguradoContenidos,
     base.valorAseguradoContenidos ?? null
   ),
-  cobertura: toStringOrNull(data.cobertura, base.cobertura ?? null),
+  cobertura: toStringOrNull(data.cobertura ?? data.amparo ?? data.evento, base.cobertura ?? null),
   estadoPagoPrimas: toStringOrNull(data.estadoPagoPrimas, base.estadoPagoPrimas ?? null),
   valorReservaPreventivaPromedio: parseNumberFlexible(
     data.valorReservaPreventivaPromedio,
@@ -375,11 +388,18 @@ const buildZurichPayload = (data = {}, base = {}) => {
   fechaLlamada: parseDateFlexible(data.fechaLlamada, base.fechaLlamada ?? null),
   observacionLlamada: toStringOrNull(data.observacionLlamada, base.observacionLlamada ?? null) || '',
   fechaInspeccion: parseDateFlexible(data.fechaInspeccion, base.fechaInspeccion ?? null),
+  fechaInspeccionado: parseDateFlexible(data.fechaInspeccionado, base.fechaInspeccionado ?? null),
+  fechaVerificado: parseDateFlexible(data.fechaVerificado, base.fechaVerificado ?? null),
   fechaUltimoDocumento: parseDateFlexible(
     data.fechaUltimoDocumento,
     base.fechaUltimoDocumento ?? null
   ),
   fechaLiquidado: parseDateFlexible(data.fechaLiquidado, base.fechaLiquidado ?? null),
+  fechaInformePreliminar: parseDateFlexible(
+    data.fechaInformePreliminar,
+    base.fechaInformePreliminar ?? null
+  ),
+  fechaInformeFinal: parseDateFlexible(data.fechaInformeFinal, base.fechaInformeFinal ?? null),
   fechaAceptacionLiquidacion: parseDateFlexible(
     data.fechaAceptacionLiquidacion,
     base.fechaAceptacionLiquidacion ?? null
@@ -600,8 +620,11 @@ const mergeImportacionZurich = (incomingPayload = {}, existente = {}) => {
     'fechaLlamada',
     'observacionLlamada',
     'fechaInspeccion',
+    'fechaInspeccionado',
     'fechaUltimoDocumento',
     'fechaLiquidado',
+    'fechaInformePreliminar',
+    'fechaInformeFinal',
     'fechaAceptacionLiquidacion',
     'fechaEnvioAseguradora',
     'fechaAsignacion',
@@ -616,6 +639,8 @@ const mergeImportacionZurich = (incomingPayload = {}, existente = {}) => {
     'fechaObjecion',
     'fechaAutorizacionAnalista',
     'fechaCasoParaPago',
+    'fechaInformePreliminar',
+    'fechaInformeFinal',
     'documentoFaltante',
     'observacionPendienteDocumento',
     'motivoObjecion',
@@ -779,7 +804,7 @@ export const actualizarCasoZurich = async (req, res) => {
     const actualizado = await ZurichCaso.findByIdAndUpdate(
       registroActual._id,
       { $set: payload },
-      { new: true, runValidators: false }
+      { new: true, runValidators: false, strict: false }
     );
 
     res.json({ success: true, data: actualizado });
@@ -1143,9 +1168,15 @@ export const eliminarArchivoZurich = async (req, res) => {
     }
 
     if (archivo.ruta) {
-      await deleteStoredFile(archivo.ruta).catch((err) => {
-        console.warn('No se pudo eliminar archivo Zurich del almacenamiento:', err.message);
+      const enUso = await rutaArchivoSigueEnUsoZurich(archivo.ruta, {
+        coleccion: 'cat',
+        casoId: caso._id,
       });
+      if (!enUso) {
+        await deleteStoredFile(archivo.ruta).catch((err) => {
+          console.warn('No se pudo eliminar archivo Zurich del almacenamiento:', err.message);
+        });
+      }
     }
     archivo.deleteOne();
     await caso.save();

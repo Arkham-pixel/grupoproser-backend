@@ -1,12 +1,26 @@
+import mongoose from 'mongoose';
 import ZurichListadoCaso from '../models/ZurichListadoCaso.js';
 import InspectorCatastrofico from '../models/InspectorCatastrofico.js';
 import AjustadorCatastrofico from '../models/AjustadorCatastrofico.js';
 import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatastrofico.js';
 import { catalogoPerteneceAModulo } from '../utils/filtrarCatalogoPorModulo.js';
 import { deleteStoredFile } from '../services/fileStorageService.js';
+import { rutaArchivoSigueEnUsoZurich } from '../utils/espejarArchivoZurichCatEnListado.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoZurich, homologarEstadoZurich } from '../utils/estadosZurich.js';
 import { homologarCiudadZurich } from '../utils/ciudadesBbvaCat.js';
+
+if (ZurichListadoCaso?.schema) {
+  ZurichListadoCaso.schema.add({
+    tomador: String,
+    direccionPredio: String,
+    fechaInicioPoliza: Date,
+    fechaFinPoliza: Date,
+    cobertura: String,
+    departamento: String,
+  });
+  ZurichListadoCaso.schema.set('strict', false);
+}
 
 const esVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null';
@@ -127,6 +141,14 @@ const pickObjeto = (incoming, existing) => {
   return existing ?? null;
 };
 
+const parseNumero = (valor, fallback = null) => {
+  if (valor === undefined) return fallback ?? null;
+  if (valor === null || valor === '') return fallback ?? null;
+  if (typeof valor === 'number' && Number.isFinite(valor)) return valor;
+  const n = Number(String(valor).replace(/\./g, '').replace(/[^\d-]/g, ''));
+  return Number.isNaN(n) ? fallback ?? null : n;
+};
+
 const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
   const pick = pisar ? toStr : completarCampo;
   const pickFecha = pisar ? parseFecha : completarFecha;
@@ -149,13 +171,29 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     telefonoAsegurado: pick(data.telefonoAsegurado, base.telefonoAsegurado ?? null),
     contactoAsegurado: pick(data.contactoAsegurado, base.contactoAsegurado ?? null),
     observaciones: pick(data.observaciones, base.observaciones ?? null),
+    observacionesCat: pick(data.observacionesCat, base.observacionesCat ?? null),
     ciudad: homologarCiudadZurich(pick(data.ciudad, base.ciudad ?? null)) || pick(data.ciudad, base.ciudad ?? null),
     departamento: pick(data.departamento, base.departamento ?? null),
+    tomador: pick(data.tomador, base.tomador ?? null),
+    direccionPredio: pick(
+      data.direccionPredio ?? data.direccion ?? data.direccionRiesgo,
+      base.direccionPredio ?? null
+    ),
+    fechaInicioPoliza: pickFecha(
+      data.fechaInicioPoliza ?? data.vigenciaDesde,
+      base.fechaInicioPoliza ?? null
+    ),
+    fechaFinPoliza: pickFecha(
+      data.fechaFinPoliza ?? data.vigenciaHasta,
+      base.fechaFinPoliza ?? null
+    ),
+    cobertura: pick(data.cobertura ?? data.amparo ?? data.evento, base.cobertura ?? null),
     ajustadorLider: pick(data.ajustadorLider, base.ajustadorLider ?? null),
     ajustador: pick(data.ajustador, base.ajustador ?? null),
     inspector: pick(data.inspector, base.inspector ?? null),
     fechaAsignacion: pickFecha(data.fechaAsignacion, base.fechaAsignacion ?? null),
     fechaVisita: pickFecha(data.fechaVisita, base.fechaVisita ?? null),
+    reserva: data.reserva !== undefined ? parseNumero(data.reserva, base.reserva ?? null) : (base.reserva ?? null),
     estado: homologarEstadoZurich(pick(data.estado, base.estado ?? 'CASO NUEVO') || 'CASO NUEVO'),
     modalidadAtencion: pick(data.modalidadAtencion, base.modalidadAtencion ?? null),
     fechaCasoNuevo: pickFecha(data.fechaCasoNuevo, base.fechaCasoNuevo ?? null),
@@ -163,6 +201,8 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       data.fechaCoordinandoInspeccion,
       base.fechaCoordinandoInspeccion ?? null
     ),
+    fechaInspeccionado: pickFecha(data.fechaInspeccionado, base.fechaInspeccionado ?? null),
+    fechaVerificado: pickFecha(data.fechaVerificado, base.fechaVerificado ?? null),
     fechaAnalisisCaso: pickFecha(data.fechaAnalisisCaso, base.fechaAnalisisCaso ?? null),
     fechaSolicitudDocumento: pickFecha(
       data.fechaSolicitudDocumento,
@@ -178,6 +218,12 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       base.fechaAutorizacionAnalista ?? null
     ),
     fechaCasoParaPago: pickFecha(data.fechaCasoParaPago, base.fechaCasoParaPago ?? null),
+    fechaLiquidado: pickFecha(data.fechaLiquidado, base.fechaLiquidado ?? null),
+    fechaInformePreliminar: pickFecha(
+      data.fechaInformePreliminar,
+      base.fechaInformePreliminar ?? null
+    ),
+    fechaInformeFinal: pickFecha(data.fechaInformeFinal, base.fechaInformeFinal ?? null),
     documentoFaltante: pick(data.documentoFaltante, base.documentoFaltante ?? null),
     observacionPendienteDocumento: pick(
       data.observacionPendienteDocumento,
@@ -191,10 +237,40 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
     informeUnico: pickObjeto(data.informeUnico, base.informeUnico ?? null),
   });
+  if (!toStr(payload.departamento) && homologarCiudadZurich(payload.ciudad) === 'CALI') {
+    payload.departamento = 'VALLE DEL CAUCA';
+  }
   return aplicarFechaAccionEstadoZurich(
     armarContactoAsegurado(armarContactoIntermediario(payload)),
     base
   );
+};
+
+const sinUndefined = (obj = {}) => {
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) out[k] = v;
+  }
+  return out;
+};
+
+/** Persiste en Mongo sin que mongoose strict descarte tomador/vigencia/cobertura. */
+const persistirListadoZurich = async (id, payload, { crear = false } = {}) => {
+  const $set = sinUndefined(payload);
+  const now = new Date();
+  $set.updatedAt = now;
+  if (crear) {
+    const _id = new mongoose.Types.ObjectId();
+    await ZurichListadoCaso.collection.insertOne({
+      _id,
+      archivos: [],
+      ...$set,
+      createdAt: now,
+    });
+    return ZurichListadoCaso.findById(_id).lean();
+  }
+  await ZurichListadoCaso.collection.updateOne({ _id: id }, { $set });
+  return ZurichListadoCaso.findById(id).lean();
 };
 
 const obtenerMaxSecuencial = async () => {
@@ -233,7 +309,7 @@ export const crearCasoListadoZurich = async (req, res) => {
       });
     }
     payload.consecutivo = await generarConsecutivo();
-    const documento = await ZurichListadoCaso.create(payload);
+    const documento = await persistirListadoZurich(null, payload, { crear: true });
     res.status(201).json({ success: true, data: documento });
   } catch (error) {
     console.error('❌ Error al crear caso listado Zurich:', error);
@@ -254,7 +330,8 @@ export const listarCasosListadoZurich = async (req, res) => {
       ZurichListadoCaso.find({})
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(Number(limit)),
+        .limit(Number(limit))
+        .lean(),
     ]);
     res.json({
       success: true,
@@ -275,7 +352,7 @@ export const listarCasosListadoZurich = async (req, res) => {
 
 export const obtenerCasoListadoZurich = async (req, res) => {
   try {
-    const documento = await ZurichListadoCaso.findById(req.params.id);
+    const documento = await ZurichListadoCaso.findById(req.params.id).lean();
     if (!documento) {
       return res.status(404).json({ success: false, error: 'Caso del listado no encontrado' });
     }
@@ -298,11 +375,7 @@ export const actualizarCasoListadoZurich = async (req, res) => {
     }
     const payload = buildPayload(req.body, actual.toObject(), { pisar: true });
     if (!payload.consecutivo) payload.consecutivo = actual.consecutivo || (await generarConsecutivo());
-    const actualizado = await ZurichListadoCaso.findByIdAndUpdate(
-      actual._id,
-      { $set: payload },
-      { new: true, runValidators: false }
-    );
+    const actualizado = await persistirListadoZurich(actual._id, payload);
     res.json({ success: true, data: actualizado });
   } catch (error) {
     console.error('❌ Error al actualizar listado Zurich:', error);
@@ -322,9 +395,15 @@ export const eliminarCasoListadoZurich = async (req, res) => {
     }
     for (const archivo of registro.archivos || []) {
       if (archivo?.ruta) {
-        await deleteStoredFile(archivo.ruta).catch((err) => {
-          console.warn('No se pudo eliminar archivo del listado Zurich:', err.message);
+        const enUso = await rutaArchivoSigueEnUsoZurich(archivo.ruta, {
+          coleccion: 'listado',
+          casoId: registro._id,
         });
+        if (!enUso) {
+          await deleteStoredFile(archivo.ruta).catch((err) => {
+            console.warn('No se pudo eliminar archivo del listado Zurich:', err.message);
+          });
+        }
       }
     }
     await ZurichListadoCaso.deleteOne({ _id: registro._id });
@@ -413,18 +492,15 @@ export const importarCasosListadoZurich = async (req, res) => {
             secuencial += 1;
             merge.consecutivo = `ZURICH-LST-${año}-${mes}-${secuencial}`;
           }
-          const actualizado = await ZurichListadoCaso.findByIdAndUpdate(existente._id, merge, {
-            new: true,
-          }).lean();
+          const actualizado = await persistirListadoZurich(existente._id, merge);
           resumen.actualizados += 1;
           if (clave) indice.set(clave, actualizado);
         } else {
           secuencial += 1;
           payload.consecutivo = `ZURICH-LST-${año}-${mes}-${secuencial}`;
-          const creado = await ZurichListadoCaso.create(payload);
-          const lean = creado.toObject();
+          const creado = await persistirListadoZurich(null, payload, { crear: true });
           resumen.creados += 1;
-          if (clave) indice.set(clave, lean);
+          if (clave) indice.set(clave, creado);
         }
       } catch (errFila) {
         resumen.omitidos += 1;
@@ -542,9 +618,15 @@ export const eliminarArchivoListadoZurich = async (req, res) => {
     }
 
     if (archivo.ruta) {
-      await deleteStoredFile(archivo.ruta).catch((err) => {
-        console.warn('No se pudo eliminar archivo del listado Zurich del almacenamiento:', err.message);
+      const enUso = await rutaArchivoSigueEnUsoZurich(archivo.ruta, {
+        coleccion: 'listado',
+        casoId: caso._id,
       });
+      if (!enUso) {
+        await deleteStoredFile(archivo.ruta).catch((err) => {
+          console.warn('No se pudo eliminar archivo del listado Zurich del almacenamiento:', err.message);
+        });
+      }
     }
     archivo.deleteOne();
     await caso.save();

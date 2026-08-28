@@ -48,23 +48,37 @@ const ZurichListadoCasoSchema = new mongoose.Schema(
     /** Texto legado del contacto asegurado */
     contactoAsegurado: String,
     observaciones: String,
+    observacionesCat: String,
     ciudad: String,
     departamento: String,
+    tomador: String,
+    direccionPredio: String,
+    fechaInicioPoliza: Date,
+    fechaFinPoliza: Date,
+    cobertura: String,
     ajustadorLider: String,
     ajustador: String,
     inspector: String,
     fechaAsignacion: Date,
     fechaVisita: Date,
+    /** Reserva entregada por el perito (informe). */
+    reserva: Number,
     estado: { type: String, required: true, default: 'CASO NUEVO' },
     modalidadAtencion: String,
     fechaCasoNuevo: Date,
     fechaCoordinandoInspeccion: Date,
+    fechaInspeccionado: Date,
+    /** Fecha en que el caso pasa a VERIFICADO (cruce CAT ↔ listado). */
+    fechaVerificado: Date,
     fechaAnalisisCaso: Date,
     fechaSolicitudDocumento: Date,
     fechaRecepcionDocumento: Date,
     fechaObjecion: Date,
     fechaAutorizacionAnalista: Date,
     fechaCasoParaPago: Date,
+    fechaLiquidado: Date,
+    fechaInformePreliminar: Date,
+    fechaInformeFinal: Date,
     documentoFaltante: String,
     observacionPendienteDocumento: String,
     motivoObjecion: String,
@@ -82,15 +96,36 @@ const ZurichListadoCasoSchema = new mongoose.Schema(
   {
     collection: 'gsk3cAppzurichListadoCasos',
     timestamps: true,
+    /** Evita que un schema cacheado del proceso descarte tomador/vigencia/cobertura. */
+    strict: false,
   }
 );
 
 ZurichListadoCasoSchema.index({ zc: 1 }, { unique: false, sparse: true });
 
-const ZurichListadoCaso = mongoose.model(
-  'ZurichListadoCaso',
-  ZurichListadoCasoSchema,
-  'gsk3cAppzurichListadoCasos'
-);
+ZurichListadoCasoSchema.add({
+  tomador: String,
+  direccionPredio: String,
+  fechaInicioPoliza: Date,
+  fechaFinPoliza: Date,
+  cobertura: String,
+  departamento: String,
+});
+
+const ZurichListadoCaso =
+  mongoose.models.ZurichListadoCaso ||
+  mongoose.model('ZurichListadoCaso', ZurichListadoCasoSchema, 'gsk3cAppzurichListadoCasos');
+
+if (ZurichListadoCaso?.schema) {
+  ZurichListadoCaso.schema.add({
+    tomador: String,
+    direccionPredio: String,
+    fechaInicioPoliza: Date,
+    fechaFinPoliza: Date,
+    cobertura: String,
+    departamento: String,
+  });
+  ZurichListadoCaso.schema.set('strict', false);
+}
 
 export default ZurichListadoCaso;

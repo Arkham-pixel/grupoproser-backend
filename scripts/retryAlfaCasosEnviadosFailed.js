@@ -12,11 +12,7 @@ import { syncClaimDocument } from '../services/claimDocumentSyncService.js';
 
 const DESTINO = 'CASOS ENVIADOS A LA ASEGURADORA';
 const CONSECUTIVOS = [
-  'ALFA-2026-08-117',
-  'ALFA-2026-08-32',
-  'ALFA-2026-08-203',
-  'ALFA-2026-08-206',
-  'ALFA-2026-08-4',
+  'ALFA-2026-08-11',
 ];
 
 function sanitizeFileName(name) {

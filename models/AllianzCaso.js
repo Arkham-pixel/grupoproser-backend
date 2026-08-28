@@ -174,6 +174,8 @@ const AllianzCasoSchema = new mongoose.Schema(
     liquidador: { type: mongoose.Schema.Types.Mixed, default: null },
     /** Borrador del informe único embebido (legado / respaldo) */
     informeUnico: { type: mongoose.Schema.Types.Mixed, default: null },
+    /** Formato ágil (valores, deducible a aplicar, indemnización sugerida) */
+    informeAgil: { type: mongoose.Schema.Types.Mixed, default: null },
     /** Id del historial formType=catastrofico (informe Complex) */
     historialCatastroficoId: { type: String, default: null },
     archivos: { type: [ArchivoAllianzSchema], default: [] },

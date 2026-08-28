@@ -1,8 +1,8 @@
 /**
  * Encola ClaimDocument tras upload Seguros Alfa (S3 OK + caso guardado).
- * Destino SharePoint: SEGUROS ALFA/SINIESTROS/{CEDULA}/{SUBCARPETA}
- * Si Alfa ya creó la carpeta de cédula, ensureFolder la reutiliza (no duplica).
+ * Destino SharePoint: SEGUROS ALFA/CASOS ENVIADOS A LA ASEGURADORA/{CEDULA}/{SUBCARPETA}
  * Sin identificación → pending_destination. La póliza placeholder no bloquea.
+ * Review-first: sync deshabilitado hasta que el usuario pulse Subir.
  */
 
 import mongoose from 'mongoose';
@@ -13,6 +13,7 @@ import { mapAlfaDocumentType } from '../config/alfaClaimDocumentMap.js';
 import { sanitizeStoredFileName } from '../utils/sharepointClaimPath.js';
 import { parseS3KeyFromStoredPath } from '../utils/storageKeyBuilder.js';
 import {
+  buildAlfaCasosCerradosDocumentPath,
   buildAlfaSiniestrosDocumentPath,
   isRealAlfaPolicyNumber,
 } from '../utils/alfaDocumentPath.js';
@@ -84,7 +85,7 @@ export async function releaseAlfaPendingDestinationDocuments(caso) {
     return { released: 0, reason: 'STILL_NO_IDENTIFICATION' };
   }
 
-  const built = buildAlfaSiniestrosDocumentPath({
+  const built = buildAlfaCasosCerradosDocumentPath({
     identificacion: id,
     documentType: 'general',
   });
@@ -104,12 +105,11 @@ export async function releaseAlfaPendingDestinationDocuments(caso) {
     doc.alfaIdentificacion = id;
     doc.alfaNumeroPoliza = isRealAlfaPolicyNumber(pol) ? pol : undefined;
     doc.claimNumberSource = 'identificacion_poliza';
-    if (doc.sharepoint?.syncStatus === 'disabled' || !doc.sharepoint?.itemId) {
-      doc.sharepoint = doc.sharepoint || {};
-      doc.sharepoint.enabled = true;
-      doc.sharepoint.syncStatus = 'pending';
-      doc.sharepoint.nextRetryAt = new Date();
-      doc.sharepoint.lastError = undefined;
+    // Review-first: NO auto-habilitar sync (evita crear carpetas sin revisión).
+    if (!doc.sharepoint) doc.sharepoint = {};
+    if (doc.sharepoint.enabled !== true) {
+      doc.sharepoint.enabled = false;
+      doc.sharepoint.syncStatus = 'disabled';
     }
     await doc.save();
     released += 1;
@@ -195,7 +195,7 @@ export async function enqueueAlfaClaimDocumentAfterUpload({
 
     const identificacion = normId(caso.identificacion);
     const numeroPoliza = normalizePolicyNumber(caso.numeroPoliza);
-    const pathBuild = buildAlfaSiniestrosDocumentPath({
+    const pathBuild = buildAlfaCasosCerradosDocumentPath({
       identificacion,
       documentType: mapped.documentType,
     });
@@ -390,7 +390,7 @@ export async function enqueueAlfaClaimDocumentAfterReplace({
     const resolved = resolveAlfaClaimNumber(caso);
     const bucket = getBucketName();
     const identificacion = normId(caso.identificacion);
-    const pathBuild = buildAlfaSiniestrosDocumentPath({
+    const pathBuild = buildAlfaCasosCerradosDocumentPath({
       identificacion,
       documentType: mapped.documentType,
     });

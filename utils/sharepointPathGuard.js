@@ -2,8 +2,8 @@
  * Guard central de rutas SharePoint (réplica).
  * Conserva assertTestPath para scripts/pruebas aisladas.
  *
- * Alfa NUEVOS writes: SEGUROS ALFA/SINIESTROS/{cedula}/** (carpeta aseguradora)
- * y SEGUROS ALFA/PÓLIZAS/** (compat inbound). Excel no usa este guard.
+ * Alfa NUEVOS writes: SEGUROS ALFA/CASOS ENVIADOS A LA ASEGURADORA/{cedula}/**
+ * y SEGUROS ALFA/PÓLIZAS/** (compat inbound). No escribe en SINIESTROS.
  */
 
 import { getSharePointSyncConfig } from '../config/sharepointSync.js';
@@ -14,9 +14,7 @@ import {
 } from './alfaSharePointPath.js';
 import {
   ALFA_DOC_IMPORT_PREFIX,
-  ALFA_DOC_SINIESTROS_PREFIX,
   ALFA_DOC_CASOS_ENVIADOS_PREFIX,
-  isAlfaSiniestrosCedulaWritePath,
   isAlfaCasosCerradosCedulaWritePath,
 } from './alfaDocumentPath.js';
 
@@ -82,33 +80,28 @@ export function assertAllowedSharePointPath({ path, sourceModule, mode } = {}) {
       );
     }
 
-    // Alfa writes: PÓLIZAS (histórico), SINIESTROS/{cedula} o CASOS ENVIADOS A LA ASEGURADORA/{cedula}.
-    // No crear PENDIENTES_NUMERO_SINIESTRO ni carpetas que no sean cédula.
+    // Alfa writes: solo CASOS ENVIADOS A LA ASEGURADORA/{cedula} (y PÓLIZAS histórico).
+    // NO crear carpetas en SEGUROS ALFA/SINIESTROS.
     if (first === 'SINIESTROS' || firstUpper === 'SINIESTROS') {
       deny(
         'INVALID_SHAREPOINT_PATH',
-        'Alfa no escribe en la raíz global SINIESTROS/; use SEGUROS ALFA/SINIESTROS/{cedula}/...'
+        'Alfa no escribe en SINIESTROS/; use SEGUROS ALFA/CASOS ENVIADOS A LA ASEGURADORA/{cedula}/...'
       );
     }
     if (
       normalized === 'SEGUROS ALFA/SINIESTROS' ||
-      normalized.startsWith('SEGUROS ALFA/SINIESTROS/PENDIENTES')
+      normalized.startsWith('SEGUROS ALFA/SINIESTROS/')
     ) {
       deny(
         'INVALID_SHAREPOINT_PATH',
-        'Alfa no escribe en SEGUROS ALFA/SINIESTROS raíz ni PENDIENTES_*; solo {cedula}/subcarpeta'
+        'Alfa ya no escribe en SEGUROS ALFA/SINIESTROS; destino: CASOS ENVIADOS A LA ASEGURADORA/{cedula}'
       );
     }
-    const siniestrosCedula = isAlfaSiniestrosCedulaWritePath(normalized);
     const casosCerradosCedula = isAlfaCasosCerradosCedulaWritePath(normalized);
-    if (
-      !isAlfaSharePointPath(normalized) &&
-      !siniestrosCedula &&
-      !casosCerradosCedula
-    ) {
+    if (!isAlfaSharePointPath(normalized) && !casosCerradosCedula) {
       deny(
         'INVALID_SHAREPOINT_PATH',
-        `Alfa solo permite ${getAlfaSharePointAllowedPrefix()}/**, ${ALFA_DOC_SINIESTROS_PREFIX}/{cedula}/** o ${ALFA_DOC_CASOS_ENVIADOS_PREFIX}/{cedula}/** (recibido: ${normalized})`
+        `Alfa solo permite ${getAlfaSharePointAllowedPrefix()}/** o ${ALFA_DOC_CASOS_ENVIADOS_PREFIX}/{cedula}/** (recibido: ${normalized})`
       );
     }
 

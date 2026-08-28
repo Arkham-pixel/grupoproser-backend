@@ -17,15 +17,21 @@ import { syncClaimDocument } from '../services/claimDocumentSyncService.js';
 const DESTINO = 'CASOS ENVIADOS A LA ASEGURADORA';
 
 const CASOS = [
-  { consecutivo: 'ALFA-2026-08-117', cedula: '14471219', nombre: 'Raul Benitez' },
-  { consecutivo: 'ALFA-2026-08-32', cedula: '94531730', nombre: 'Alexander Ospina' },
-  { consecutivo: 'ALFA-2026-08-203', cedula: '16729830', nombre: 'Javier Montenegro' },
-  { consecutivo: 'ALFA-2026-08-206', cedula: '31917347', nombre: 'Lelia Quitian' },
-  { consecutivo: 'ALFA-2026-08-4', cedula: '6106582', nombre: 'Juan Carlos Vicuna Herrera' },
+  { consecutivo: 'ALFA-2026-08-11', cedula: '66923951', nombre: 'Yenny Rios Garcia' },
 ];
 
 const CONSECUTIVOS = CASOS.map((c) => c.consecutivo);
 const DRY = process.argv.includes('--dry-run');
+
+function sanitizeFileName(name) {
+  return String(name || 'archivo')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w.\-()+ ]+/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+}
 
 function inferTypeFromArchivo(archivo, claim) {
   const etiqueta = String(archivo?.etiqueta || '').trim().toUpperCase();
@@ -122,6 +128,8 @@ for (const caso of casos) {
     doc.alfaIdentificacion = caso.identificacion || doc.alfaIdentificacion;
     doc.destinationStatus = 'ready';
     doc.destinationReason = undefined;
+    const safeName = sanitizeFileName(doc.storedName || doc.originalName);
+    if (safeName) doc.storedName = safeName;
     if (!doc.sharepoint) doc.sharepoint = {};
     doc.sharepoint.enabled = true;
     doc.sharepoint.syncStatus = 'pending';

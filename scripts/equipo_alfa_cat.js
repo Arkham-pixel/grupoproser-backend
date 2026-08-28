@@ -1,5 +1,5 @@
 /**
- * Equipo Alfa (agosto): 10 ajustadores e inspectores fijos.
+ * Equipo Alfa (agosto): ajustadores e inspectores fijos.
  * Fuente: EQUIPO ALFA AGOSTO.xlsx
  *
  * Uso: node scripts/equipo_alfa_cat.js
@@ -28,6 +28,7 @@ const PERSONAS = [
   { nombre: 'VALENTINA COLLAZOS DIAZ', cedula: '1061701741' },
   { nombre: 'GUILLERMO HARVEY MUÑOZ PEÑA', cedula: '4617592' },
   { nombre: 'LEYNA LUCIA ALFONSO ROJAS', cedula: '1098662033' },
+  { nombre: 'MARIA ALEJANDRA SOLANO MONDRAGON', cedula: '1130629353' },
 ];
 
 function norm(valor) {

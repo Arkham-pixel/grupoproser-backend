@@ -55,6 +55,14 @@ const AllianzListadoCasoSchema = new mongoose.Schema(
     inspector: String,
     fechaAsignacion: Date,
     fechaVisita: Date,
+    valorAseguradoInmueble: Number,
+    valorAseguradoContenidos: Number,
+    valorReservaPreventivaPromedio: Number,
+    valorComercialInmueble: Number,
+    reserva: Number,
+    observacionReserva: { type: String, default: '' },
+    valorReclamado: Number,
+    valorLiquidado: Number,
     estado: { type: String, required: true, default: 'CASO NUEVO' },
     modalidadAtencion: String,
     fechaCasoNuevo: Date,
@@ -71,7 +79,14 @@ const AllianzListadoCasoSchema = new mongoose.Schema(
     responsableAporteDocumento: String,
     liquidador: { type: mongoose.Schema.Types.Mixed, default: null },
     informeUnico: { type: mongoose.Schema.Types.Mixed, default: null },
+    informeAgil: { type: mongoose.Schema.Types.Mixed, default: null },
     archivos: { type: [ArchivoAllianzListadoSchema], default: [] },
+    /**
+     * Correo masivo de apertura (GRUPO PROSER designado por Allianz).
+     * Evita reenvíos al volver a correr el script.
+     */
+    fechaEmailAperturaAllianz: Date,
+    emailAperturaAllianzMessageId: String,
   },
   {
     collection: 'gsk3cAppallianzListadoCasos',

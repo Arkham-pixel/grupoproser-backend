@@ -956,9 +956,20 @@ export const enviarEmailAlertasAlfa = async (datosAlertas) => {
     }
 
     const t = getEmailText(datosAlertas);
-    const tituloSistema = t.alertsSystemAlfa || 'Sistema de Alertas Seguros Alfa';
+    const moduloNorm = String(datosAlertas.modulo || 'alfa').toLowerCase().trim();
+    const esAlfa = moduloNorm === 'alfa';
+    const tituloSistema = esAlfa
+      ? t.alertsSystemAlfa || 'Sistema de Alertas Seguros Alfa'
+      : fillEmailTemplate(t.alertsSystemNamed || 'Sistema de Alertas {nombre}', {
+          nombre: datosAlertas.aseguradora || datosAlertas.modulo || 'ARNALD',
+        });
     const enlacePanel =
       datosAlertas.enlacePanelOverride || `${resolveFrontendUrl()}/seguros-alfa/reporte`;
+    const subjectTipo = esAlfa
+      ? t.subjectAlertasAlfa || 'SEGUROS ALFA'
+      : String(datosAlertas.aseguradora || datosAlertas.modulo || 'ARNALD').toUpperCase();
+    const etiquetaConteoAlertas = t.inactivityAlerts || t.ansAlerts || 'Alertas';
+    const etiquetaPlazo = t.inactivityDeadline || t.ansDeadline || 'Plazo:';
 
     const { attachments, enlacesHtml, totalAdjuntos, totalSoloEnlace } =
       await prepararAdjuntosArchivosConRuta(datosAlertas.archivosConRuta || []);
@@ -983,7 +994,7 @@ export const enviarEmailAlertasAlfa = async (datosAlertas) => {
           <p style="margin: 0; color: #6b7280; font-size: 14px;">
             <strong>${t.actionRequired}</strong> ${alerta.accion || t.reviewCaseArnald}
           </p>
-          ${alerta.etiquetaLimite ? `<p style="margin: 6px 0 0 0; color: #9ca3af; font-size: 12px;">${t.ansDeadline} ${alerta.etiquetaLimite}</p>` : ''}
+          ${alerta.etiquetaLimite ? `<p style="margin: 6px 0 0 0; color: #9ca3af; font-size: 12px;">${etiquetaPlazo} ${alerta.etiquetaLimite}</p>` : ''}
         </div>`
         )
         .join('');
@@ -997,7 +1008,17 @@ export const enviarEmailAlertasAlfa = async (datosAlertas) => {
             <div>
               <strong>${t.claimLabel}</strong> ${caso.numeroSiniestro || 'N/A'}<br>
               <strong>${t.insurerLabel}</strong> ${caso.aseguradora || 'Seguros Alfa'}<br>
-              <strong>${t.insuredLabel}</strong> ${caso.asegurado || 'N/A'}
+              <strong>${t.insuredLabel}</strong> ${caso.asegurado || 'N/A'}${
+                caso.identificacion
+                  ? `<br><strong>${t.identificationLabel}</strong> ${caso.identificacion}`
+                  : ''
+              }${
+                caso.tomador &&
+                String(caso.tomador).trim() &&
+                String(caso.tomador).trim() !== String(caso.asegurado || '').trim()
+                  ? `<br><strong>${t.policyholderLabel}</strong> ${caso.tomador}`
+                  : ''
+              }
             </div>
             <div>
               <strong>${t.statusLabel}</strong> ${caso.estado || 'N/A'}<br>
@@ -1042,7 +1063,7 @@ export const enviarEmailAlertasAlfa = async (datosAlertas) => {
       from: `"Grupo Proser - Sistema de Alertas" <${process.env.EMAIL_USER}>`,
       to: datosAlertas.emailResponsable,
       subject: getEmailSubject(datosAlertas, 'subjectAlertas', {
-        tipo: t.subjectAlertasAlfa || 'SEGUROS ALFA',
+        tipo: subjectTipo,
         count: datosAlertas.alertas.casosConAlertas,
       }),
       attachments,
@@ -1067,7 +1088,7 @@ export const enviarEmailAlertasAlfa = async (datosAlertas) => {
                 </div>
                 <div style="text-align: center;">
                   <div style="font-size: 24px; font-weight: bold; color: #dc2626;">${datosAlertas.alertas.resumen?.documentosObligatorios ?? 0}</div>
-                  <div style="font-size: 12px; color: #6b7280;">${t.ansAlerts || 'Alertas'}</div>
+                  <div style="font-size: 12px; color: #6b7280;">${etiquetaConteoAlertas}</div>
                 </div>
                 <div style="text-align: center;">
                   <div style="font-size: 24px; font-weight: bold; color: #dc2626;">${datosAlertas.alertas.resumen?.casosCriticos ?? 0}</div>

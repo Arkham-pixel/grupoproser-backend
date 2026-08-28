@@ -10,8 +10,8 @@ import {
 
 export const DIAS_RECORDATORIO_INACTIVIDAD_ALFA = 30;
 
-/** Estados que cierran el caso para alertas (sin recordatorio). */
-const ESTADOS_CERRADOS_ALFA = ['CERRADO'];
+/** Estados de cierre: no se recuerdan por inactividad. */
+const ESTADOS_CERRADOS_ALFA = ['CERRADO', 'LIQUIDADO', 'ENVIADO ASEGURADORA'];
 
 function normalizarEstadoAlfa(valor) {
   return String(valor ?? '')
@@ -41,28 +41,57 @@ function diasCalendarioEntreFechas(desde, hasta = new Date()) {
   return Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-/** Base de inactividad: fechaUltimoDocumento → updatedAt → createdAt. */
-export function fechaBaseInactividadAlfa(caso) {
-  return (
-    parseFechaAlfa(caso?.fechaUltimoDocumento) ||
-    parseFechaAlfa(caso?.updatedAt) ||
-    parseFechaAlfa(caso?.createdAt)
+function textoAlfa(valor) {
+  return String(valor ?? '').trim();
+}
+
+/** Asegurado (persona) ≠ tomador (banco). Nunca usar el tomador como nombre del asegurado. */
+export function nombreAseguradoAlfa(caso) {
+  return textoAlfa(caso?.asegurado) || textoAlfa(caso?.tomador);
+}
+
+function empujarFechaActividad(lista, valor, origen) {
+  const fecha = parseFechaAlfa(valor);
+  if (!fecha) return;
+  lista.push({ fecha, origen });
+}
+
+/**
+ * Actividad más reciente (no la primera fecha que exista).
+ * Evita que un `fechaUltimoDocumento` viejo del Excel pise llamadas, inspección o updatedAt.
+ */
+export function resolverActividadInactividadAlfa(caso) {
+  const candidatas = [];
+  empujarFechaActividad(candidatas, caso?.fechaUltimoDocumento, 'último documento');
+  empujarFechaActividad(candidatas, caso?.fechaLlamada, 'última llamada');
+  empujarFechaActividad(candidatas, caso?.fechaInspeccion, 'inspección');
+  for (const archivo of caso?.archivos || []) {
+    empujarFechaActividad(candidatas, archivo?.fechaSubida, 'último documento');
+  }
+  empujarFechaActividad(candidatas, caso?.updatedAt, 'última actualización del caso');
+  empujarFechaActividad(candidatas, caso?.createdAt, 'creación del caso');
+  if (!candidatas.length) return null;
+  return candidatas.reduce((mejor, actual) =>
+    actual.fecha.getTime() > mejor.fecha.getTime() ? actual : mejor
   );
+}
+
+/** Base de inactividad: la fecha de actividad más reciente. */
+export function fechaBaseInactividadAlfa(caso) {
+  return resolverActividadInactividadAlfa(caso)?.fecha || null;
 }
 
 export function evaluarAlertaInactividadAlfa(caso, ahora = new Date()) {
   if (!caso || esEstadoAlfaCerrado(caso.estado)) return null;
 
-  const base = fechaBaseInactividadAlfa(caso);
-  if (!base) return null;
+  const actividad = resolverActividadInactividadAlfa(caso);
+  if (!actividad) return null;
 
-  const dias = diasCalendarioEntreFechas(base, ahora);
+  const dias = diasCalendarioEntreFechas(actividad.fecha, ahora);
   if (dias == null || dias < DIAS_RECORDATORIO_INACTIVIDAD_ALFA) return null;
 
   const retraso = dias - DIAS_RECORDATORIO_INACTIVIDAD_ALFA;
-  const origen = parseFechaAlfa(caso.fechaUltimoDocumento)
-    ? 'último documento'
-    : 'última actualización del caso';
+  const origen = actividad.origen;
 
   return {
     etapaId: 'recordatorioInactividadAlfa',
@@ -82,30 +111,39 @@ export function evaluarAlertaInactividadAlfa(caso, ahora = new Date()) {
 }
 
 function mapearArchivosCasoAlfa(caso) {
+  const prefijo = textoAlfa(caso?.consecutivo) || textoAlfa(caso?.siniestro) || 'ALFA';
   return (caso?.archivos || [])
     .filter((a) => a?.ruta)
-    .map((a) => ({
-      nombre: a.nombreOriginal || a.nombreArchivo || 'documento',
-      ruta: a.ruta,
-      tamaño: a.tamaño || 0,
-      tipoMime: a.tipoMime,
-      casoId: caso._id,
-      consecutivo: caso.consecutivo,
-    }));
+    .map((a) => {
+      const base = a.nombreOriginal || a.nombreArchivo || 'documento';
+      const yaPrefijado =
+        String(base).startsWith(`${prefijo} `) || String(base).startsWith(`${prefijo} - `);
+      return {
+        nombre: yaPrefijado ? base : `${prefijo} - ${base}`,
+        ruta: a.ruta,
+        tamaño: a.tamaño || 0,
+        tipoMime: a.tipoMime,
+        casoId: caso._id,
+        consecutivo: caso.consecutivo,
+      };
+    });
 }
 
 export function generarAlertasCasoAlfa(caso, ahora = new Date()) {
   if (!caso || esEstadoAlfaCerrado(caso.estado)) return [];
   const alerta = evaluarAlertaInactividadAlfa(caso, ahora);
   if (!alerta) return [];
+  const asegurado = nombreAseguradoAlfa(caso);
   return [
     {
       ...alerta,
       casoId: caso._id,
       consecutivo: caso.consecutivo,
       numeroSiniestro: caso.siniestro,
+      identificacion: caso.identificacion,
       aseguradora: 'Seguros Alfa',
-      asegurado: caso.tomador,
+      asegurado,
+      tomador: textoAlfa(caso.tomador),
       responsable: caso.ajustador,
       estado: caso.estado,
       modulo: 'alfa',
@@ -113,13 +151,18 @@ export function generarAlertasCasoAlfa(caso, ahora = new Date()) {
   ];
 }
 
-function casoAlfaAFormatoEmail(caso) {
+export function casoAlfaAFormatoEmail(caso) {
+  const asegurado = nombreAseguradoAlfa(caso);
+  const tomador = textoAlfa(caso.tomador);
   return {
-    numeroAjuste: caso.consecutivo || caso.numeroSiniestro || String(caso.casoId || ''),
+    numeroAjuste: caso.consecutivo || caso.numeroSiniestro || caso.siniestro || String(caso.casoId || ''),
     consecutivo: caso.consecutivo,
     numeroSiniestro: caso.numeroSiniestro || caso.siniestro,
+    identificacion: caso.identificacion || '',
     aseguradora: caso.aseguradora || 'Seguros Alfa',
-    asegurado: caso.asegurado || caso.tomador,
+    asegurado,
+    tomador,
+    ciudad: caso.ciudad || '',
     estado: caso.estado,
     totalAlertas: caso.totalAlertas,
     documentosFaltantes: [],
@@ -152,17 +195,20 @@ export async function obtenerTodasAlertasAlfa() {
       else media += 1;
     }
 
-    const base = fechaBaseInactividadAlfa(caso);
-    const dias = base ? diasCalendarioEntreFechas(base, ahora) : null;
+    const actividad = resolverActividadInactividadAlfa(caso);
+    const dias = actividad ? diasCalendarioEntreFechas(actividad.fecha, ahora) : null;
+    const asegurado = nombreAseguradoAlfa(caso);
 
     porCaso.push({
       casoId: caso._id,
       consecutivo: caso.consecutivo,
       numeroSiniestro: caso.siniestro,
       siniestro: caso.siniestro,
+      identificacion: caso.identificacion,
       aseguradora: 'Seguros Alfa',
-      asegurado: caso.tomador,
-      tomador: caso.tomador,
+      asegurado,
+      tomador: textoAlfa(caso.tomador),
+      ciudad: caso.ciudad,
       responsable: caso.ajustador,
       ajustador: caso.ajustador,
       estado: caso.estado,
@@ -172,9 +218,7 @@ export async function obtenerTodasAlertasAlfa() {
       inactividad:
         dias != null
           ? {
-              actividad: parseFechaAlfa(caso.fechaUltimoDocumento)
-                ? 'Último documento'
-                : 'Última actualización',
+              actividad: actividad.origen,
               dias,
               estado: dias >= DIAS_RECORDATORIO_INACTIVIDAD_ALFA * 2 ? 'CRÍTICO' : 'ALTO',
             }

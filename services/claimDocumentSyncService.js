@@ -11,7 +11,7 @@ import {
 } from '../config/sharepointSync.js';
 import { getSharePointTestRoot } from '../utils/sharepointTestPath.js';
 import { buildSharePointClaimPath } from '../utils/sharepointClaimPath.js';
-import { buildAlfaSiniestrosDocumentPath, buildAlfaCasosCerradosDocumentPath } from '../utils/alfaDocumentPath.js';
+import { buildAlfaCasosCerradosDocumentPath } from '../utils/alfaDocumentPath.js';
 import SegurosAlfaCaso from '../models/SegurosAlfaCaso.js';
 import {
   acquireSyncLock,
@@ -38,23 +38,12 @@ function logSync(event, payload = {}) {
   console.log(`[claimDocumentSync] ${JSON.stringify(safe)}`);
 }
 
-function isCasosCerradosRoot(value) {
-  const n = String(value || '')
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, ' ');
-  return (
-    n === 'CASOS ENVIADOS A LA ASEGURADORA' ||
-    n === 'CASOS_ENVIADOS_A_LA_ASEGURADORA' ||
-    n === 'CASOS CERRADOS' ||
-    n === 'CASOS_CERRADOS'
-  );
-}
-
 /**
- * Destino Alfa: SINIESTROS/{cedula}/{SUBCARPETA} o CASOS ENVIADOS A LA ASEGURADORA/{cedula}/{SUBCARPETA}
+ * Destino Alfa (único permitido para writes salientes):
+ *   SEGUROS ALFA/CASOS ENVIADOS A LA ASEGURADORA/{cedula}/{SUBCARPETA}
+ * Ya no se escribe en SINIESTROS/.
  */
-async function resolveAlfaDestinationFolder(doc, { destinationRoot } = {}) {
+async function resolveAlfaDestinationFolder(doc, _opts = {}) {
   let identificacion = doc.alfaIdentificacion;
 
   if (doc.claimId) {
@@ -66,20 +55,12 @@ async function resolveAlfaDestinationFolder(doc, { destinationRoot } = {}) {
     }
   }
 
-  const rootHint =
-    destinationRoot ||
-    doc.sharepoint?.destinationRoot ||
-    doc.destinationRoot;
-
-  const built = isCasosCerradosRoot(rootHint)
-    ? buildAlfaCasosCerradosDocumentPath({
-        identificacion,
-        documentType: doc.documentType,
-      })
-    : buildAlfaSiniestrosDocumentPath({
-        identificacion,
-        documentType: doc.documentType,
-      });
+  // destinationRoot legacy (CASOS CERRADOS) o explícito se acepta;
+  // cualquier otro (incl. vacío / SINIESTROS) → CASOS ENVIADOS.
+  const built = buildAlfaCasosCerradosDocumentPath({
+    identificacion,
+    documentType: doc.documentType,
+  });
 
   if (!built.ok) {
     const err = new Error(built.reason || 'PENDING_DESTINATION');
@@ -146,17 +127,15 @@ export async function syncClaimDocument(
     return { result: 'SKIP_MODULE_DISABLED', document: before };
   }
 
-  const forceCasosCerrados = isCasosCerradosRoot(
-    destinationRoot || before.sharepoint?.destinationRoot
-  );
-  const alreadyOnCasosCerrados = String(before.sharepoint?.path || '').includes(
+  const alreadyOnCasosEnviados = String(before.sharepoint?.path || '').includes(
     'CASOS ENVIADOS A LA ASEGURADORA'
   );
 
+  // Ya en destino correcto → no re-subir. Si estaba en SINIESTROS, reubicar.
   if (
     before.sharepoint?.syncStatus === 'synced' &&
     before.sharepoint?.itemId &&
-    !(forceCasosCerrados && !alreadyOnCasosCerrados)
+    alreadyOnCasosEnviados
   ) {
     logSync('skip', {
       documentId,
@@ -185,17 +164,10 @@ export async function syncClaimDocument(
         // seguir con snapshot
       }
     }
-    const rootHint =
-      destinationRoot || before.sharepoint?.destinationRoot;
-    const probe = isCasosCerradosRoot(rootHint)
-      ? buildAlfaCasosCerradosDocumentPath({
-          identificacion,
-          documentType: before.documentType,
-        })
-      : buildAlfaSiniestrosDocumentPath({
-          identificacion,
-          documentType: before.documentType,
-        });
+    const probe = buildAlfaCasosCerradosDocumentPath({
+      identificacion,
+      documentType: before.documentType,
+    });
     if (!probe.ok) {
       logSync('skip', {
         documentId,

@@ -497,6 +497,12 @@ const buildAllianzPayload = (data = {}, base = {}) => {
         ? data.informeUnico
         : null
       : base.informeUnico ?? null,
+  informeAgil:
+    data.informeAgil !== undefined
+      ? data.informeAgil && typeof data.informeAgil === 'object'
+        ? data.informeAgil
+        : null
+      : base.informeAgil ?? null,
   historialCatastroficoId: toStringOrNull(
     data.historialCatastroficoId,
     base.historialCatastroficoId ?? null
@@ -634,6 +640,7 @@ const mergeImportacionAllianz = (incomingPayload = {}, existente = {}) => {
     archivos: existente.archivos || [],
     liquidador: existente.liquidador ?? null,
     informeUnico: existente.informeUnico ?? null,
+    informeAgil: existente.informeAgil ?? null,
     historialCatastroficoId: existente.historialCatastroficoId ?? null,
     expressCasoId: existente.expressCasoId ?? null,
     consecutivoExpress: existente.consecutivoExpress ?? null,
