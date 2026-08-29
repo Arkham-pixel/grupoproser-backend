@@ -7,11 +7,11 @@ import {
   getResponsableResolverIndex,
   resolverResponsableConIndice,
 } from './responsableResolverService.js';
+import { esEstadoCerradoZurich } from '../utils/estadosZurich.js';
 
 export const DIAS_RECORDATORIO_INACTIVIDAD_ZURICH = 30;
 
-/** Estados que cierran el caso para alertas (sin recordatorio). */
-const ESTADOS_CERRADOS_ZURICH = ['LIQUIDADO', 'OBJETADO', 'CERRADO'];
+const ESTADOS_CERRADOS_ZURICH = ['FINALIZADO', 'LIQUIDADO', 'OBJETADO', 'CERRADO'];
 
 function normalizarEstadoZurich(valor) {
   return String(valor ?? '')
@@ -23,8 +23,7 @@ function normalizarEstadoZurich(valor) {
 }
 
 function esEstadoZurichCerrado(valorEstado) {
-  const estado = normalizarEstadoZurich(valorEstado);
-  return ESTADOS_CERRADOS_ZURICH.includes(estado);
+  return esEstadoCerradoZurich(valorEstado);
 }
 
 function parseFechaZurich(valor) {

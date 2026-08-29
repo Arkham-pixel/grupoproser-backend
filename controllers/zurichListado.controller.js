@@ -9,6 +9,7 @@ import { rutaArchivoSigueEnUsoZurich } from '../utils/espejarArchivoZurichCatEnL
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoZurich, homologarEstadoZurich } from '../utils/estadosZurich.js';
 import { homologarCiudadZurich } from '../utils/ciudadesBbvaCat.js';
+import { aplicarLiderZurich } from '../utils/filtrarCatalogoPorModulo.js';
 
 if (ZurichListadoCaso?.schema) {
   ZurichListadoCaso.schema.add({
@@ -188,11 +189,15 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       base.fechaFinPoliza ?? null
     ),
     cobertura: pick(data.cobertura ?? data.amparo ?? data.evento, base.cobertura ?? null),
-    ajustadorLider: pick(data.ajustadorLider, base.ajustadorLider ?? null),
+    ajustadorLider: aplicarLiderZurich(pick(data.ajustadorLider, base.ajustadorLider ?? null)),
     ajustador: pick(data.ajustador, base.ajustador ?? null),
     inspector: pick(data.inspector, base.inspector ?? null),
     fechaAsignacion: pickFecha(data.fechaAsignacion, base.fechaAsignacion ?? null),
     fechaVisita: pickFecha(data.fechaVisita, base.fechaVisita ?? null),
+    fechaSiniestro: pickFecha(
+      data.fechaSiniestro ?? data.fechaOcurrencia,
+      base.fechaSiniestro ?? null
+    ),
     reserva: data.reserva !== undefined ? parseNumero(data.reserva, base.reserva ?? null) : (base.reserva ?? null),
     estado: homologarEstadoZurich(pick(data.estado, base.estado ?? 'CASO NUEVO') || 'CASO NUEVO'),
     modalidadAtencion: pick(data.modalidadAtencion, base.modalidadAtencion ?? null),
@@ -212,18 +217,27 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       data.fechaRecepcionDocumento,
       base.fechaRecepcionDocumento ?? null
     ),
-    fechaObjecion: pickFecha(data.fechaObjecion, base.fechaObjecion ?? null),
-    fechaAutorizacionAnalista: pickFecha(
-      data.fechaAutorizacionAnalista,
-      base.fechaAutorizacionAnalista ?? null
-    ),
-    fechaCasoParaPago: pickFecha(data.fechaCasoParaPago, base.fechaCasoParaPago ?? null),
-    fechaLiquidado: pickFecha(data.fechaLiquidado, base.fechaLiquidado ?? null),
     fechaInformePreliminar: pickFecha(
       data.fechaInformePreliminar,
       base.fechaInformePreliminar ?? null
     ),
     fechaInformeFinal: pickFecha(data.fechaInformeFinal, base.fechaInformeFinal ?? null),
+    fechaAutoridadDelegada: pickFecha(
+      data.fechaAutoridadDelegada,
+      base.fechaAutoridadDelegada ?? null
+    ),
+    fechaAceptacionCliente: pickFecha(
+      data.fechaAceptacionCliente,
+      base.fechaAceptacionCliente ?? null
+    ),
+    fechaFinalizado: pickFecha(data.fechaFinalizado, base.fechaFinalizado ?? null),
+    fechaObjecion: pickFecha(data.fechaObjecion, base.fechaObjecion ?? null),
+    fechaLiquidado: pickFecha(data.fechaLiquidado, base.fechaLiquidado ?? null),
+    fechaAutorizacionAnalista: pickFecha(
+      data.fechaAutorizacionAnalista,
+      base.fechaAutorizacionAnalista ?? null
+    ),
+    fechaCasoParaPago: pickFecha(data.fechaCasoParaPago, base.fechaCasoParaPago ?? null),
     documentoFaltante: pick(data.documentoFaltante, base.documentoFaltante ?? null),
     observacionPendienteDocumento: pick(
       data.observacionPendienteDocumento,

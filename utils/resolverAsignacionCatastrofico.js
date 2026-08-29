@@ -32,7 +32,13 @@ const ALIAS_PERSONA = {
 
 const esPlaceholderPersona = (valor) => {
   const n = normPersonaCatastrofico(valor);
-  return !n || /^(PENDIENTE|N A|NA|SIN ASIGNAR|POR CONFIRMAR|-)$/.test(n);
+  return (
+    !n ||
+    /^(PENDIENTE|N A|NA|SIN ASIGNAR|POR CONFIRMAR|-|PROSER|PROSERAJUSTES|PROSER AJUSTES|GRUPO PROSER|PROSER PUERTOS)$/.test(
+      n
+    ) ||
+    (/PROSER/.test(n) && /ARNALDO/.test(n))
+  );
 };
 
 const tokens = (norm) => norm.split(' ').filter(Boolean);

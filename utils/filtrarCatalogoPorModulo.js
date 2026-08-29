@@ -22,6 +22,21 @@ export function esModuloAlfa(modulo = '') {
   return c === 'alfa' || c === 'segurosalfa';
 }
 
+export function esModuloZurich(modulo = '') {
+  const c = claveModuloCatalogo(modulo);
+  return c === 'zurich' || c === 'zurichlistado';
+}
+
+/** Arnaldo Tapia no opera el equipo Zurich. */
+export function esExcluidoCatalogoZurich(nombre) {
+  const n = String(nombre || '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toUpperCase();
+  return n.includes('ARNALDO') && n.includes('TAPIA');
+}
+
 /**
  * Equipos cerrados: BBVA y Alfa solo listan a quienes tienen ese módulo.
  * El resto (Zurich, Sura, Previsora, Allianz) usa el catálogo general
@@ -35,6 +50,9 @@ export function catalogoPerteneceAModulo(doc, modulo = '') {
   if (esModuloAlfa(modulo)) {
     return mods.some((m) => m === 'alfa' || m === 'segurosalfa');
   }
+  if (esModuloZurich(modulo) && esExcluidoCatalogoZurich(doc.nombre || doc.label || doc.nmbrRespnsble)) {
+    return false;
+  }
   if (!mods.length) return true;
   const clave = claveModuloCatalogo(modulo);
   if (!clave) {
@@ -43,4 +61,12 @@ export function catalogoPerteneceAModulo(doc, modulo = '') {
     );
   }
   return mods.includes(clave);
+}
+
+/** Ajustadora líder de Zurich (quien asigna). Independiente del rol de ajustadora de campo. */
+export const LIDER_ZURICH = 'Ladys Andrea Escalante';
+
+export function aplicarLiderZurich(valor) {
+  const t = String(valor || '').trim();
+  return t || LIDER_ZURICH;
 }

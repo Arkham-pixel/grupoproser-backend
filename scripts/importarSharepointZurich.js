@@ -24,6 +24,7 @@ import ZurichListadoCaso from '../models/ZurichListadoCaso.js';
 import InspectorCatastrofico from '../models/InspectorCatastrofico.js';
 import AjustadorCatastrofico from '../models/AjustadorCatastrofico.js';
 import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatastrofico.js';
+import { catalogoPerteneceAModulo, LIDER_ZURICH } from '../utils/filtrarCatalogoPorModulo.js';
 import { homologarEstadoZurich } from '../utils/estadosZurich.js';
 import { homologarCiudadZurich } from '../utils/ciudadesBbvaCat.js';
 
@@ -153,6 +154,10 @@ const splitCiudadDepto = (valor) => {
   const parts = t.split(',').map((p) => p.trim()).filter(Boolean);
   if (parts.length >= 2) {
     return { ciudad: parts[0], departamento: parts.slice(1).join(', ') };
+  }
+  const homologada = homologarCiudadZurich(t);
+  if (homologada === 'CALI') {
+    return { ciudad: 'CALI', departamento: 'VALLE DEL CAUCA' };
   }
   return { ciudad: t, departamento: '' };
 };
@@ -324,6 +329,10 @@ const [inspectores, ajustadores, catExistentes, listadoExistentes] = await Promi
   ZurichCaso.find({}).lean(),
   ZurichListadoCaso.find({}).lean(),
 ]);
+const inspectoresZurich = inspectores.filter((d) => catalogoPerteneceAModulo(d, 'zurich'));
+const ajustadoresZurich = ajustadores.filter((d) => catalogoPerteneceAModulo(d, 'zurich'));
+const liderZurich =
+  ajustadoresZurich.find((a) => /ladys/i.test(a.nombre || ''))?.nombre || LIDER_ZURICH;
 
 const catIdx = new Map();
 const catPersona = [];
@@ -386,8 +395,8 @@ const resumen = {
 for (const fila of casosExcel) {
   const asignacion = resolverAsignacionCatastrofico({
     ajustadorExcel: fila.ajustador,
-    inspectores,
-    ajustadores,
+    inspectores: inspectoresZurich,
+    ajustadores: ajustadoresZurich,
   });
   const inspeccionSi = fila.inspeccion === 'SI';
   const estadoNuevo = homologarEstadoZurich(
@@ -424,7 +433,8 @@ for (const fila of casosExcel) {
       tipoIdentificacion: fila.tipoIdentificacion || null,
       numeroPoliza: fila.numeroPoliza || null,
       asegurado: fila.asegurado || null,
-      ajustador: asignacion.ajustador || fila.ajustador || null,
+      ajustador: asignacion.ajustador || null,
+      ajustadorLider: liderZurich,
       direccionPredio: fila.direccionPredio || null,
       ciudad: fila.ciudad || null,
       departamento: fila.departamento || null,
@@ -487,7 +497,8 @@ for (const fila of casosExcel) {
       ciudad: completar(fila.ciudad, hitLst.ciudad),
       departamento: completar(fila.departamento, hitLst.departamento),
       direccionPredio: completar(fila.direccionPredio, hitLst.direccionPredio),
-      ajustador: completar(asignacion.ajustador || fila.ajustador, hitLst.ajustador),
+      ajustador: completar(asignacion.ajustador, hitLst.ajustador),
+      ajustadorLider: completar(liderZurich, hitLst.ajustadorLider),
       telefonoAsegurado: completar(fila.telefonoAsegurado, hitLst.telefonoAsegurado),
       correoAsegurado: completar(fila.correoAsegurado, hitLst.correoAsegurado),
       contactoAsegurado: completar(fila.contactoAsegurado, hitLst.contactoAsegurado),
@@ -523,7 +534,8 @@ for (const fila of casosExcel) {
       ciudad: fila.ciudad || null,
       departamento: fila.departamento || null,
       direccionPredio: fila.direccionPredio || null,
-      ajustador: asignacion.ajustador || fila.ajustador || null,
+      ajustador: asignacion.ajustador || null,
+      ajustadorLider: liderZurich,
       telefonoAsegurado: fila.telefonoAsegurado || null,
       correoAsegurado: fila.correoAsegurado || null,
       contactoAsegurado: fila.contactoAsegurado || null,

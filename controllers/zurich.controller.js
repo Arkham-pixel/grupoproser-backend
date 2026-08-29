@@ -12,6 +12,7 @@ import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoZurich, homologarEstadoZurich } from '../utils/estadosZurich.js';
 import { homologarCiudadZurich } from '../utils/ciudadesBbvaCat.js';
+import { aplicarLiderZurich } from '../utils/filtrarCatalogoPorModulo.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -333,7 +334,9 @@ const buildZurichPayload = (data = {}, base = {}) => {
   contactoAsegurado: toStringOrNull(data.contactoAsegurado, base.contactoAsegurado ?? null),
   observaciones: toStringOrNull(data.observaciones, base.observaciones ?? null),
   tomador: toStringOrNull(data.tomador, base.tomador ?? null),
-  ajustadorLider: toStringOrNull(data.ajustadorLider, base.ajustadorLider ?? null),
+  ajustadorLider: aplicarLiderZurich(
+    toStringOrNull(data.ajustadorLider, base.ajustadorLider ?? null)
+  ),
   ajustador: toStringOrNull(data.ajustador, base.ajustador ?? null),
   inspector: toStringOrNull(data.inspector, base.inspector ?? null),
   numeroPoliza: toStringOrNull(data.numeroPoliza, base.numeroPoliza ?? null),
@@ -425,6 +428,15 @@ const buildZurichPayload = (data = {}, base = {}) => {
   fechaRecepcionDocumento: parseDateFlexible(
     data.fechaRecepcionDocumento,
     base.fechaRecepcionDocumento ?? null
+  ),
+  fechaFinalizado: parseDateFlexible(data.fechaFinalizado, base.fechaFinalizado ?? null),
+  fechaAutoridadDelegada: parseDateFlexible(
+    data.fechaAutoridadDelegada,
+    base.fechaAutoridadDelegada ?? null
+  ),
+  fechaAceptacionCliente: parseDateFlexible(
+    data.fechaAceptacionCliente,
+    base.fechaAceptacionCliente ?? null
   ),
   fechaObjecion: parseDateFlexible(data.fechaObjecion, base.fechaObjecion ?? null),
   fechaAutorizacionAnalista: parseDateFlexible(
@@ -636,11 +648,12 @@ const mergeImportacionZurich = (incomingPayload = {}, existente = {}) => {
     'fechaAnalisisCaso',
     'fechaSolicitudDocumento',
     'fechaRecepcionDocumento',
+    'fechaFinalizado',
+    'fechaAutoridadDelegada',
+    'fechaAceptacionCliente',
     'fechaObjecion',
     'fechaAutorizacionAnalista',
     'fechaCasoParaPago',
-    'fechaInformePreliminar',
-    'fechaInformeFinal',
     'documentoFaltante',
     'observacionPendienteDocumento',
     'motivoObjecion',

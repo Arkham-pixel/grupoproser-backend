@@ -1,5 +1,6 @@
 import ZurichCaso from '../models/ZurichCaso.js';
 import ZurichListadoCaso from '../models/ZurichListadoCaso.js';
+import { ESTADO_ZURICH_ANALISIS, homologarEstadoZurich } from './estadosZurich.js';
 
 const clonarMetaArchivo = (archivo) => {
   const obj = typeof archivo?.toObject === 'function' ? archivo.toObject() : { ...archivo };
@@ -90,7 +91,7 @@ export async function espejarArchivosCasoZurichCatEnListado(casoCat, casoListado
   return resumen;
 }
 
-export const ESTADO_VERIFICADO_ZURICH = 'VERIFICADO';
+export const ESTADO_VERIFICADO_ZURICH = ESTADO_ZURICH_ANALISIS;
 
 const EVIDENCIA_LABEL_ZURICH = {
   fotoGeneral: 'Foto general',
@@ -156,18 +157,18 @@ export async function aplicarObservacionesYEstadoVerificadoZurich(casoCat, casoL
   const observaciones = fusionarObservacionesZurich(doc.observaciones, texto);
   const observacionesCat =
     String(casoCat?.observacionesCat || '').trim() || texto || String(doc.observacionesCat || '').trim();
-  const yaVerificado = String(doc.estado || '') === ESTADO_VERIFICADO_ZURICH;
+  const estadoActual = homologarEstadoZurich(doc.estado);
+  const esTemprano = ['CASO NUEVO', 'ASIGNADO', 'INSPECCIÓN COORDINADA'].includes(estadoActual);
   const obsIgual = String(doc.observaciones || '').trim() === observaciones;
   const catIgual = String(doc.observacionesCat || '').trim() === observacionesCat;
 
   const set = {};
   if (!obsIgual) set.observaciones = observaciones || null;
   if (observacionesCat && !catIgual) set.observacionesCat = observacionesCat;
-  if (!yaVerificado) {
-    set.estado = ESTADO_VERIFICADO_ZURICH;
+  if (esTemprano) {
+    set.estado = ESTADO_ZURICH_ANALISIS;
+    if (!doc.fechaAnalisisCaso) set.fechaAnalisisCaso = new Date();
     if (!doc.fechaVerificado) set.fechaVerificado = new Date();
-  } else if (!doc.fechaVerificado) {
-    set.fechaVerificado = new Date();
   }
 
   if (!Object.keys(set).length) {
@@ -184,10 +185,10 @@ export async function aplicarObservacionesYEstadoVerificadoZurich(casoCat, casoL
   await doc.save();
   return {
     ok: true,
-    estadoCambiado: !yaVerificado,
+    estadoCambiado: esTemprano,
     observacionesCopiadas: Boolean(texto) && !obsIgual,
     observacionesVacias: !texto,
-    estado: ESTADO_VERIFICADO_ZURICH,
+    estado: String(doc.estado || ESTADO_ZURICH_ANALISIS),
   };
 }
 

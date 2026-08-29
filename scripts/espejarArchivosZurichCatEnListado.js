@@ -23,6 +23,7 @@ import {
   espejarArchivosCasoZurichCatEnListado,
   textoObservacionesDesdeCatZurich,
 } from '../utils/espejarArchivoZurichCatEnListado.js';
+import { ESTADO_ZURICH_ANALISIS } from '../utils/estadosZurich.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '../.env') });
@@ -279,7 +280,7 @@ for (const row of rows) {
     resumen.duplicados += duplicados;
     if (textoObs) resumen.observacionesCopiadas += 1;
     else resumen.observacionesVacias += 1;
-    if (String(lstHits[0].estado || '') !== 'VERIFICADO') resumen.estadosVerificado += 1;
+    if (String(lstHits[0].estado || '') !== ESTADO_ZURICH_ANALISIS) resumen.estadosVerificado += 1;
   }
 
   resumen.pares.push({
