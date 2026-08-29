@@ -47,6 +47,7 @@ export function moduloDesdeRuta(ruta = '') {
     ['/api/allias', 'allianz'],
     ['/api/previsora-listado', 'previsora'],
     ['/api/previsora', 'previsora'],
+    ['/api/equidad-cat', 'equidad-cat'],
     ['/api/equidad-fdm', 'equidad-fdm'],
     ['/api/siniestros-express', 'express'],
     ['/api/express-catalogos', 'express'],

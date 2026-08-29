@@ -46,6 +46,30 @@ export function contarOtrosAmparosAlfa(liquidador) {
   }).length;
 }
 
+export function contarItemsFdm(liquidador) {
+  const filas = [
+    ...(Array.isArray(liquidador?.contenidos) ? liquidador.contenidos : []),
+    ...(Array.isArray(liquidador?.edificios) ? liquidador.edificios : []),
+  ];
+  const conValor = filas.filter((it) => {
+    const texto = String(it?.item || it?.descripcion || it?.concepto || '').trim();
+    const valor = String(it?.valor ?? '').trim();
+    return Boolean(texto || valor);
+  }).length;
+  if (conValor) return conValor;
+  const enc = liquidador?.encabezado || {};
+  const hayEncabezado = Boolean(
+    String(enc.asegurado || '').trim() ||
+      String(enc.siniestro || '').trim() ||
+      String(enc.poliza || '').trim()
+  );
+  const pareceFdm =
+    Array.isArray(liquidador?.contenidos) &&
+    Array.isArray(liquidador?.edificios) &&
+    !liquidador?.evaluacionSismicaNSR10;
+  return pareceFdm && hayEncabezado ? 1 : 0;
+}
+
 /** Peso de contenido real del liquidador (0 = cascarón vacío). */
 export function scoreContenidoLiquidadorNsr(liquidador) {
   if (!liquidador || typeof liquidador !== 'object') return 0;
@@ -53,7 +77,8 @@ export function scoreContenidoLiquidadorNsr(liquidador) {
     contarPresupuestoNsr(liquidador) +
     contarContenidosNsr(liquidador) +
     contarDetalleCat(liquidador) +
-    contarOtrosAmparosAlfa(liquidador)
+    contarOtrosAmparosAlfa(liquidador) +
+    contarItemsFdm(liquidador)
   );
 }
 

@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { DOCUMENT_TYPE_KEYS } from '../config/claimDocumentTypes.js';
 
-const SOURCE_MODULES = ['complex', 'express', 'alfa', 'zurich', 'bbva-cat', 'allianz', 'allias', 'previsora', 'puertos', 'other'];
+const SOURCE_MODULES = ['complex', 'express', 'alfa', 'zurich', 'bbva-cat', 'allianz', 'allias', 'previsora', 'equidad-cat', 'equidad-fdm', 'puertos', 'other'];
 const SYNC_STATUSES = ['pending', 'syncing', 'synced', 'failed', 'disabled'];
 const DOC_STATUSES = ['active', 'deleted', 'archived'];
 

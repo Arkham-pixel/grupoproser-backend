@@ -41,6 +41,7 @@ export const STORAGE_CATEGORIES = Object.freeze({
   BBVA_CAT: 'bbva-cat',
   ALLIANZ: 'allianz',
   PREVISORA: 'previsora',
+  EQUIDAD_CAT: 'equidad-cat',
   EQUIDAD_FDM: 'equidad-fdm',
   GENERAL: 'general',
 });
@@ -112,6 +113,9 @@ export function buildStoredPublicPath({ driver, category, filename, s3Key }) {
   }
   if (category === STORAGE_CATEGORIES.PREVISORA) {
     return `/uploads/previsora/${filename}`;
+  }
+  if (category === STORAGE_CATEGORIES.EQUIDAD_CAT) {
+    return `/uploads/equidad-cat/${filename}`;
   }
   if (category === STORAGE_CATEGORIES.EQUIDAD_FDM) {
     return `/uploads/equidad-fdm/${filename}`;
@@ -437,6 +441,7 @@ export function getLocalMulterDestination(category, subfolder) {
     [STORAGE_CATEGORIES.BBVA_CAT]: path.join(UPLOADS_ROOT, 'bbva-cat'),
     [STORAGE_CATEGORIES.ALLIANZ]: path.join(UPLOADS_ROOT, 'allianz'),
     [STORAGE_CATEGORIES.PREVISORA]: path.join(UPLOADS_ROOT, 'previsora'),
+    [STORAGE_CATEGORIES.EQUIDAD_CAT]: path.join(UPLOADS_ROOT, 'equidad-cat'),
     [STORAGE_CATEGORIES.EQUIDAD_FDM]: path.join(UPLOADS_ROOT, 'equidad-fdm'),
   };
   return map[category] || UPLOADS_ROOT;

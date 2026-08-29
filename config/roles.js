@@ -90,6 +90,7 @@ const APIS_CATASTROFICOS = [
   '/api/sura',
   '/api/allianz',
   '/api/allianz-listado',
+  '/api/equidad-cat',
   '/api/historial-formularios',
   '/api/tareas',
 ];
@@ -126,7 +127,7 @@ export const CONTRATISTAS_MODULO = {
   },
   contractor_catastroficos: {
     apis: APIS_CATASTROFICOS,
-    mensaje: 'Su rol Catastróficos solo permite Previsora, Zurich, BBVA, Alfa, Sura y Allianz.',
+    mensaje: 'Su rol Catastróficos solo permite Previsora, Zurich, BBVA, Alfa, Sura, Allianz y Equidad CAT.',
   },
 };
 

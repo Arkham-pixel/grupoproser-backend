@@ -43,6 +43,7 @@ import intermediarioRoutes from './routes/intermediario.routes.js';
 import expressCatalogoRoutes from './routes/expressCatalogo.routes.js';
 import siniestroExpressRoutes from './routes/siniestroExpress.routes.js';
 import equidadFdmRoutes from './routes/equidadFdm.routes.js';
+import equidadCatRoutes from './routes/equidadCat.routes.js';
 import segurosAlfaRoutes from './routes/segurosAlfa.routes.js';
 import segurosSuraRoutes from './routes/segurosSura.routes.js';
 import zurichRoutes from './routes/zurich.routes.js';
@@ -196,6 +197,12 @@ if (!fs.existsSync(equidadFdmUploadsDir)) {
   console.log("📁 Carpeta 'uploads/equidad-fdm/' creada... ✅");
 }
 
+const equidadCatUploadsDir = path.join(uploadsDir, "equidad-cat");
+if (!fs.existsSync(equidadCatUploadsDir)) {
+  fs.mkdirSync(equidadCatUploadsDir, { recursive: true });
+  console.log("📁 Carpeta 'uploads/equidad-cat/' creada... ✅");
+}
+
 const suraUploadsDir = path.join(uploadsDir, "sura");
 if (!fs.existsSync(suraUploadsDir)) {
   fs.mkdirSync(suraUploadsDir, { recursive: true });
@@ -268,6 +275,7 @@ try {
 app.use('/api/express-catalogos', expressCatalogoRoutes);
 app.use('/api/siniestros-express', siniestroExpressRoutes);
 app.use('/api/equidad-fdm', equidadFdmRoutes);
+app.use('/api/equidad-cat', equidadCatRoutes);
 app.use('/api/seguros-alfa', segurosAlfaRoutes);
 app.use('/api/sura', segurosSuraRoutes);
 // /api/zurich-listado ANTES de /api/zurich: Express trata /api/zurich como prefijo

@@ -128,6 +128,13 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
     /** Borrador del informe único (texto evento, conclusiones, fotos) */
     informeUnico: { type: mongoose.Schema.Types.Mixed, default: null },
     archivos: { type: [ArchivoAlfaSchema], default: [] },
+    /**
+     * Soft-archive: caso retirado de la base limpia Alfa (duplicados eliminados por la aseguradora).
+     * No borra documentos ni avance; se oculta del listado operativo.
+     */
+    excluidoBaseAlfa: { type: Boolean, default: false, index: true },
+    excluidoBaseAlfaAt: Date,
+    excluidoBaseAlfaReason: String,
   },
   {
     collection: 'gsk3cAppsegurosAlfaCasos',

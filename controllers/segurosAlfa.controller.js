@@ -454,7 +454,10 @@ export const listarCasosAlfa = async (req, res) => {
     const skip = (pageNum - 1) * limitNum;
     const identidad = await obtenerIdentidadUsuarioReq(req);
     const filtroAsignacion = construirFiltroVistaAsignacion(identidad);
-    const filtro = combinarFiltrosMongo(filtroAsignacion);
+    const filtroExcluidos = {
+      $or: [{ excluidoBaseAlfa: { $exists: false } }, { excluidoBaseAlfa: false }],
+    };
+    const filtro = combinarFiltrosMongo(filtroAsignacion, filtroExcluidos);
     const collation = filtroAsignacion ? collationVistaAsignacion() : undefined;
     const countQuery = SegurosAlfaCaso.countDocuments(filtro);
     const listQuery = SegurosAlfaCaso.aggregate(

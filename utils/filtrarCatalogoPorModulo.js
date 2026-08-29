@@ -39,7 +39,7 @@ export function esExcluidoCatalogoZurich(nombre) {
 
 /**
  * Equipos cerrados: BBVA y Alfa solo listan a quienes tienen ese módulo.
- * El resto (Zurich, Sura, Previsora, Allianz) usa el catálogo general
+ * El resto (Zurich, Sura, Previsora, Allianz, Equidad CAT) usa el catálogo general
  * (sin `modulos`) o el tag explícito del módulo.
  */
 export function catalogoPerteneceAModulo(doc, modulo = '') {
