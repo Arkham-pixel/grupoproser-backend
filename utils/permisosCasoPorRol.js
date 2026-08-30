@@ -82,6 +82,7 @@ export function rolConVistaRestringidaAsignacion(rol, opts = {}) {
 
 export function normalizarClavePersona(valor) {
   return String(valor ?? '')
+    .replace(/\s*\([^)]*\)/g, ' ')
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
     .trim()
@@ -89,11 +90,22 @@ export function normalizarClavePersona(valor) {
     .replace(/\s+/g, ' ');
 }
 
+export function tokensPersona(valor) {
+  return normalizarClavePersona(valor)
+    .split(/[^A-Z0-9]+/)
+    .filter((t) => t.length >= 4);
+}
+
 export function coincidenPersonas(a, b) {
   const na = normalizarClavePersona(a);
   const nb = normalizarClavePersona(b);
   if (!na || !nb) return false;
-  return na === nb || na.includes(nb) || nb.includes(na);
+  if (na === nb || na.includes(nb) || nb.includes(na)) return true;
+  const tokA = tokensPersona(na);
+  const tokB = tokensPersona(nb);
+  if (!tokA.length || !tokB.length) return false;
+  const setB = new Set(tokB);
+  return tokA.filter((t) => setB.has(t)).length >= 2;
 }
 
 function escapeRegex(texto) {
@@ -147,16 +159,38 @@ export function construirFiltroVistaAsignacion(identidad, opts = {}) {
     return null;
   }
   const campo = identidad.rol === ROL_INSPECTOR ? 'inspector' : 'ajustador';
-  const claves = [...new Set([identidad.name, identidad.login].map((s) => String(s || '').trim()).filter(Boolean))];
+  const claves = [
+    ...new Set(
+      [identidad.name, identidad.login, identidad.cedula]
+        .map((s) => String(s || '').trim())
+        .filter(Boolean)
+    ),
+  ];
   if (!claves.length) {
     return { _id: { $exists: false } };
   }
   return {
-    $or: claves.flatMap((k) => [
-      { [campo]: k },
-      { [campo]: new RegExp(`^${escapeRegex(k)}$`, 'i') },
-    ]),
+    $or: claves.flatMap((k) => ramasFiltroCampoPersona(campo, k)),
   };
+}
+
+function ramasFiltroCampoPersona(campo, valor) {
+  const ramas = [
+    { [campo]: valor },
+    { [campo]: new RegExp(`^${escapeRegex(valor)}$`, 'i') },
+  ];
+  const toks = tokensPersona(valor);
+  if (toks.length >= 2) {
+    for (let i = 1; i < toks.length; i += 1) {
+      ramas.push({
+        $and: [
+          { [campo]: new RegExp(escapeRegex(toks[0]), 'i') },
+          { [campo]: new RegExp(escapeRegex(toks[i]), 'i') },
+        ],
+      });
+    }
+  }
+  return ramas;
 }
 
 export function casoVisibleParaIdentidad(caso, identidad, opts = {}) {
@@ -173,7 +207,7 @@ export function casoVisibleParaIdentidad(caso, identidad, opts = {}) {
   }
   const campo = identidad.rol === ROL_INSPECTOR ? 'inspector' : 'ajustador';
   const valor = caso?.[campo];
-  const claves = [identidad.name, identidad.login].filter(Boolean);
+  const claves = [identidad.name, identidad.login, identidad.cedula].filter(Boolean);
   if (!claves.length) return false;
   return claves.some((k) => coincidenPersonas(valor, k));
 }

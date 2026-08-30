@@ -40,6 +40,29 @@ assert(
 );
 
 assert(coincidenPersonas('José Pérez', 'Jose Perez'), 'acentos');
+assert(
+  coincidenPersonas(
+    'FABIAN BRAVO',
+    'Fabián Alexis Bravo Ayala (Zurich, Alfa, Sura y BBVA)'
+  ),
+  'fabian catalogo vs nombre de sesion con módulos'
+);
+assert(
+  !coincidenPersonas('FABIAN BRAVO', 'Sandra Patricia Sánchez Cañas'),
+  'fabian no coincide con sandra'
+);
+assert(
+  casoVisibleParaIdentidad(
+    { ajustador: 'FABIAN BRAVO' },
+    {
+      rol: 'ajustador',
+      name: 'Fabián Alexis Bravo Ayala (Zurich, Alfa, Sura y BBVA)',
+      login: '1094269632',
+      cedula: '1094269632',
+    }
+  ),
+  'ajustador ve caso FABIAN BRAVO con nombre largo'
+);
 
 // Mario Pinilla (72288319): poderes de líder SOLO en SURA
 assert(esLoginConPermisoLiderSura('72.288.319', 'sura'), 'mario login con puntos');
