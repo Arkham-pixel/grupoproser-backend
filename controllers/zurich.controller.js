@@ -13,6 +13,7 @@ import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.
 import { aplicarFechaAccionEstadoZurich, homologarEstadoZurich } from '../utils/estadosZurich.js';
 import { homologarCiudadZurich } from '../utils/ciudadesBbvaCat.js';
 import { homologarCausaZurich } from '../utils/causasZurich.js';
+import { aplicarReservaDesdePresupuestoZurich } from '../utils/reservaPresupuestoZurich.js';
 import { aplicarLiderZurich } from '../utils/filtrarCatalogoPorModulo.js';
 
 const esValorVacio = (valor) =>
@@ -542,7 +543,7 @@ const buildZurichPayload = (data = {}, base = {}) => {
   ),
   };
   payload.checklistCatCompleto = esChecklistCatLleno(payload);
-  return aplicarFechaAccionEstadoZurich(payload, base);
+  return aplicarReservaDesdePresupuestoZurich(aplicarFechaAccionEstadoZurich(payload, base));
 };
 
 /** Mapea un SiniestroExpress → campos Zurich (estructura Alfa). */

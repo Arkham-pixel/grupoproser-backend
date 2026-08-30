@@ -10,6 +10,7 @@ import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.
 import { aplicarFechaAccionEstadoZurich, homologarEstadoZurich } from '../utils/estadosZurich.js';
 import { homologarCiudadZurich } from '../utils/ciudadesBbvaCat.js';
 import { homologarCausaZurich } from '../utils/causasZurich.js';
+import { aplicarReservaDesdePresupuestoZurich } from '../utils/reservaPresupuestoZurich.js';
 import { aplicarLiderZurich } from '../utils/filtrarCatalogoPorModulo.js';
 import { TORRE_CONFIG_ZURICH } from '../config/zurichListadoTorre.js';
 
@@ -259,9 +260,11 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
   if (!toStr(payload.departamento) && homologarCiudadZurich(payload.ciudad) === 'CALI') {
     payload.departamento = 'VALLE DEL CAUCA';
   }
-  return aplicarFechaAccionEstadoZurich(
-    armarContactoAsegurado(armarContactoIntermediario(payload)),
-    base
+  return aplicarReservaDesdePresupuestoZurich(
+    aplicarFechaAccionEstadoZurich(
+      armarContactoAsegurado(armarContactoIntermediario(payload)),
+      base
+    )
   );
 };
 
