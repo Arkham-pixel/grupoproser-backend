@@ -12,6 +12,7 @@ import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoZurich, homologarEstadoZurich } from '../utils/estadosZurich.js';
 import { homologarCiudadZurich } from '../utils/ciudadesBbvaCat.js';
+import { homologarCausaZurich } from '../utils/causasZurich.js';
 import { aplicarLiderZurich } from '../utils/filtrarCatalogoPorModulo.js';
 
 const esValorVacio = (valor) =>
@@ -342,7 +343,7 @@ const buildZurichPayload = (data = {}, base = {}) => {
   numeroPoliza: toStringOrNull(data.numeroPoliza, base.numeroPoliza ?? null),
   tipoPoliza: toStringOrNull(data.tipoPoliza, base.tipoPoliza ?? null),
   tipoPolizaOtro: toStringOrNull(data.tipoPolizaOtro, base.tipoPolizaOtro ?? null),
-  causa: toStringOrNull(data.causa, base.causa ?? null),
+  causa: homologarCausaZurich(toStringOrNull(data.causa, base.causa ?? null)),
   direccionPredio: toStringOrNull(
     data.direccionPredio ?? data.direccion ?? data.direccionRiesgo,
     base.direccionPredio ?? null

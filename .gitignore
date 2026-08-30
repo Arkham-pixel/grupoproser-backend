@@ -22,6 +22,26 @@ scripts/.lock_*
 uploads/
 temp/
 tmp/
+tmp-informes-ia/
+tmp-fotos-*/
+tmp-inventario-*.mjs
+
+# One-shot CAT / Excel / HEIC pipeline (keep local, never deploy)
+scripts/_*.mjs
+scripts/_*.js
+scripts/aplicarLotesInformeIa.mjs
+scripts/llenarInformesPreliminaresZurichDesdeFotos.mjs
+scripts/syncReservaDesdePresupuestoZurich.mjs
+scripts/corregirAllianzDepartamentoEnCiudad.js
+scripts/corregirAllianzOscarCiudadesYLadys.js
+scripts/findAlfaAmbiguousPairs.js
+scripts/homologarCausaZurichTerremoto.js
+scripts/limpiarAjustadorProserZurich.js
+scripts/listAlfaAmbiguousFromBaseLimpia.js
+scripts/llenarLiderZurich.js
+scripts/quitarArnaldoZurich.js
+scripts/rebuildAlfaExcelFromBaseLimpia.js
+scripts/syncAlfaBaseLimpiaProser.js
 
 # Testing / coverage
 coverage/

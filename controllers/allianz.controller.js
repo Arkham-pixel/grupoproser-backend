@@ -9,6 +9,7 @@ import {
 import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoAllianz, homologarEstadoAllianz } from '../utils/estadosAllianz.js';
+import { homologarCiudadAllianz, resolverUbicacionCatastrofico } from '../utils/ciudadesBbvaCat.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -339,7 +340,9 @@ const buildAllianzPayload = (data = {}, base = {}) => {
   correo: toStringOrNull(data.correo, base.correo ?? null),
   celular: toStringOrNull(data.celular, base.celular ?? null),
   canalRadicacion: toStringOrNull(data.canalRadicacion, base.canalRadicacion ?? null),
-  ciudad: toStringOrNull(data.ciudad, base.ciudad ?? null),
+  ciudad:
+    homologarCiudadAllianz(toStringOrNull(data.ciudad, base.ciudad ?? null)) ||
+    toStringOrNull(data.ciudad, base.ciudad ?? null),
   departamento: toStringOrNull(data.departamento, base.departamento ?? null),
   fechaSiniestro: parseDateFlexible(data.fechaSiniestro, base.fechaSiniestro ?? null),
   fechaInicioPoliza: parseDateFlexible(data.fechaInicioPoliza, base.fechaInicioPoliza ?? null),
@@ -509,11 +512,16 @@ const buildAllianzPayload = (data = {}, base = {}) => {
   ),
   };
   payload.checklistCatCompleto = esChecklistCatLleno(payload);
+  const ub = resolverUbicacionCatastrofico(payload.ciudad, payload.departamento);
+  if (ub.ciudad) payload.ciudad = ub.ciudad;
+  if (ub.departamento) payload.departamento = ub.departamento;
   return aplicarFechaAccionEstadoAllianz(payload, base);
 };
 
 /** Mapea un SiniestroExpress → campos Allianz (estructura Alfa). */
-export const mapExpressAAllianz = (express = {}) => ({
+export const mapExpressAAllianz = (express = {}) => {
+  const ub = resolverUbicacionCatastrofico(express.ciudadSiniestro, null);
+  return {
   expressCasoId: express._id || null,
   consecutivoExpress: express.consecutivo || null,
   siniestro: express.numeroSiniestro || null,
@@ -528,8 +536,8 @@ export const mapExpressAAllianz = (express = {}) => ({
   correo: express.correoNotificacion || null,
   celular: null,
   canalRadicacion: 'EXPRESS',
-  ciudad: express.ciudadSiniestro || null,
-  departamento: null,
+  ciudad: ub.ciudad || homologarCiudadAllianz(express.ciudadSiniestro) || express.ciudadSiniestro || null,
+  departamento: ub.departamento || null,
   fechaSiniestro: express.fechaSiniestro || null,
   fechaInicioPoliza: null,
   fechaFinPoliza: null,
@@ -552,7 +560,8 @@ export const mapExpressAAllianz = (express = {}) => ({
   fechaEnvioAseguradora: express.fechaEnvioAutorizacion || null,
   estado: homologarEstadoAllianz(express.estadoProceso),
   liquidador: express.liquidador && typeof express.liquidador === 'object' ? express.liquidador : null,
-});
+  };
+};
 
 /** Une fila Excel con caso existente: solo pisa placeholders / vacíos / errores parseados. */
 const mergeImportacionAllianz = (incomingPayload = {}, existente = {}) => {

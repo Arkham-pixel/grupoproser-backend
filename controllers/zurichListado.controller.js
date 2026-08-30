@@ -9,7 +9,9 @@ import { rutaArchivoSigueEnUsoZurich } from '../utils/espejarArchivoZurichCatEnL
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoZurich, homologarEstadoZurich } from '../utils/estadosZurich.js';
 import { homologarCiudadZurich } from '../utils/ciudadesBbvaCat.js';
+import { homologarCausaZurich } from '../utils/causasZurich.js';
 import { aplicarLiderZurich } from '../utils/filtrarCatalogoPorModulo.js';
+import { TORRE_CONFIG_ZURICH } from '../config/zurichListadoTorre.js';
 
 if (ZurichListadoCaso?.schema) {
   ZurichListadoCaso.schema.add({
@@ -162,7 +164,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     numeroPoliza: pick(data.numeroPoliza, base.numeroPoliza ?? null),
     tipoPoliza: pick(data.tipoPoliza, base.tipoPoliza ?? null),
     tipoPolizaOtro: pick(data.tipoPolizaOtro, base.tipoPolizaOtro ?? null),
-    causa: pick(data.causa, base.causa ?? null),
+    causa: homologarCausaZurich(pick(data.causa, base.causa ?? null)),
     asegurado: pick(data.asegurado, base.asegurado ?? null),
     intermediario: pick(data.intermediario, base.intermediario ?? null),
     correoIntermediario: pick(data.correoIntermediario, base.correoIntermediario ?? null),
@@ -199,6 +201,9 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       base.fechaSiniestro ?? null
     ),
     reserva: data.reserva !== undefined ? parseNumero(data.reserva, base.reserva ?? null) : (base.reserva ?? null),
+    valorAseguradoInmueble: parseNumero(data.valorAseguradoInmueble, base.valorAseguradoInmueble ?? null),
+    valorReclamado: parseNumero(data.valorReclamado, base.valorReclamado ?? null),
+    valorLiquidado: parseNumero(data.valorLiquidado, base.valorLiquidado ?? null),
     estado: homologarEstadoZurich(pick(data.estado, base.estado ?? 'CASO NUEVO') || 'CASO NUEVO'),
     modalidadAtencion: pick(data.modalidadAtencion, base.modalidadAtencion ?? null),
     fechaCasoNuevo: pickFecha(data.fechaCasoNuevo, base.fechaCasoNuevo ?? null),
@@ -335,23 +340,109 @@ export const crearCasoListadoZurich = async (req, res) => {
   }
 };
 
+/**
+ * Listado / dashboard / reporte: no mandar blobs Mixed.
+ * Con strict:false, `.select('-informeUnico')` de Mongoose no recorta el documento
+ * y un GET de 170 casos llega a ~20 MB (informes NSR-10) → Failed to fetch en el navegador.
+ * Proyección nativa de inclusión: solo campos de cartera.
+ */
+const PROYECCION_LISTA_ZURICH = {
+  consecutivo: 1,
+  zc: 1,
+  siniestro: 1,
+  identificacion: 1,
+  tipoIdentificacion: 1,
+  numeroPoliza: 1,
+  tipoPoliza: 1,
+  tipoPolizaOtro: 1,
+  causa: 1,
+  asegurado: 1,
+  intermediario: 1,
+  correoIntermediario: 1,
+  telefonoIntermediario: 1,
+  contactoIntermediario: 1,
+  correoAsegurado: 1,
+  telefonoAsegurado: 1,
+  contactoAsegurado: 1,
+  observaciones: 1,
+  observacionesCat: 1,
+  ciudad: 1,
+  departamento: 1,
+  tomador: 1,
+  direccionPredio: 1,
+  fechaInicioPoliza: 1,
+  fechaFinPoliza: 1,
+  cobertura: 1,
+  ajustadorLider: 1,
+  ajustador: 1,
+  inspector: 1,
+  fechaAsignacion: 1,
+  fechaVisita: 1,
+  fechaSiniestro: 1,
+  fechaLlamada: 1,
+  fechaInspeccion: 1,
+  fechaUltimoDocumento: 1,
+  reserva: 1,
+  valorAseguradoInmueble: 1,
+  valorReclamado: 1,
+  valorLiquidado: 1,
+  estado: 1,
+  modalidadAtencion: 1,
+  fechaCasoNuevo: 1,
+  fechaCoordinandoInspeccion: 1,
+  fechaInspeccionado: 1,
+  fechaVerificado: 1,
+  fechaAnalisisCaso: 1,
+  fechaSolicitudDocumento: 1,
+  fechaRecepcionDocumento: 1,
+  fechaInformePreliminar: 1,
+  fechaInformeFinal: 1,
+  fechaAutoridadDelegada: 1,
+  fechaAceptacionCliente: 1,
+  fechaAceptacionLiquidacion: 1,
+  fechaFinalizado: 1,
+  fechaObjecion: 1,
+  fechaLiquidado: 1,
+  fechaCasoParaPago: 1,
+  documentoFaltante: 1,
+  observacionPendienteDocumento: 1,
+  motivoObjecion: 1,
+  responsableAporteDocumento: 1,
+  createdAt: 1,
+  updatedAt: 1,
+};
+
+const omitirBlobsListadoZurich = (doc) => {
+  if (!doc || typeof doc !== 'object') return doc;
+  const { liquidador, informeUnico, archivos, ...resto } = doc;
+  return resto;
+};
+
 export const listarCasosListadoZurich = async (req, res) => {
   try {
-    const { limit = 25, page = 1 } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
+    const { limit = 25, page = 1, completo } = req.query;
+    const limite = Math.max(1, Number(limit) || 25);
+    const pagina = Math.max(1, Number(page) || 1);
+    const skip = (pagina - 1) * limite;
+    const quiereCompleto = String(completo || '') === '1' || String(completo || '') === 'true';
+
     const [total, documentos] = await Promise.all([
       ZurichListadoCaso.countDocuments({}),
-      ZurichListadoCaso.find({})
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(Number(limit))
-        .lean(),
+      quiereCompleto
+        ? ZurichListadoCaso.find({}).sort({ createdAt: -1 }).skip(skip).limit(limite).lean()
+        : ZurichListadoCaso.collection
+            .find({}, { projection: PROYECCION_LISTA_ZURICH })
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limite)
+            .toArray()
+            .then((rows) => rows.map(omitirBlobsListadoZurich)),
     ]);
     res.json({
       success: true,
       total,
-      page: Number(page),
-      limit: Number(limit),
+      page: pagina,
+      limit: limite,
       data: documentos,
     });
   } catch (error) {
@@ -362,6 +453,10 @@ export const listarCasosListadoZurich = async (req, res) => {
       detalle: error.message,
     });
   }
+};
+
+export const obtenerTorreConfigZurich = async (_req, res) => {
+  res.json({ success: true, data: TORRE_CONFIG_ZURICH });
 };
 
 export const obtenerCasoListadoZurich = async (req, res) => {

@@ -3,6 +3,7 @@ import {
   crearCasoListadoZurich,
   listarCasosListadoZurich,
   obtenerCasoListadoZurich,
+  obtenerTorreConfigZurich,
   actualizarCasoListadoZurich,
   eliminarCasoListadoZurich,
   importarCasosListadoZurich,
@@ -28,7 +29,8 @@ const persistListado = attachPersistedFileMiddleware({
   ownerIdFromReq: (req) => req.params.id,
 });
 
-router.get('/', listarCasosListadoZurich);
+router.get('/torre-config', verificarToken, obtenerTorreConfigZurich);
+router.get('/', verificarToken, listarCasosListadoZurich);
 router.post('/importar', importarCasosListadoZurich);
 
 router.post(
@@ -39,7 +41,7 @@ router.post(
 );
 router.delete(`/:id(${ID_MONGO})/archivos/:archivoId`, eliminarArchivoListadoZurich);
 
-router.get('/:id', obtenerCasoListadoZurich);
+router.get(`/:id(${ID_MONGO})`, verificarToken, obtenerCasoListadoZurich);
 router.post('/', crearCasoListadoZurich);
 router.put('/:id', verificarToken, actualizarCasoListadoZurich);
 router.delete('/:id', eliminarCasoListadoZurich);

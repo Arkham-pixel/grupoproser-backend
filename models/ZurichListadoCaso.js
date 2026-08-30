@@ -64,6 +64,9 @@ const ZurichListadoCasoSchema = new mongoose.Schema(
     fechaSiniestro: Date,
     /** Reserva entregada por el perito (informe). */
     reserva: Number,
+    valorAseguradoInmueble: Number,
+    valorReclamado: Number,
+    valorLiquidado: Number,
     estado: { type: String, required: true, default: 'CASO NUEVO' },
     modalidadAtencion: String,
     fechaCasoNuevo: Date,
@@ -109,6 +112,9 @@ ZurichListadoCasoSchema.add({
   fechaFinPoliza: Date,
   cobertura: String,
   departamento: String,
+  valorAseguradoInmueble: Number,
+  valorReclamado: Number,
+  valorLiquidado: Number,
 });
 
 const ZurichListadoCaso =
@@ -123,6 +129,9 @@ if (ZurichListadoCaso?.schema) {
     fechaFinPoliza: Date,
     cobertura: String,
     departamento: String,
+    valorAseguradoInmueble: Number,
+    valorReclamado: Number,
+    valorLiquidado: Number,
   });
   ZurichListadoCaso.schema.set('strict', false);
 }

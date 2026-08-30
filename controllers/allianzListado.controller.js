@@ -6,6 +6,7 @@ import { catalogoPerteneceAModulo } from '../utils/filtrarCatalogoPorModulo.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoAllianz, homologarEstadoAllianz } from '../utils/estadosAllianz.js';
 import { crearControladoresArchivosListado } from '../utils/archivosCasoListado.js';
+import { homologarCiudadAllianz, resolverUbicacionCatastrofico } from '../utils/ciudadesBbvaCat.js';
 
 const esVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null';
@@ -156,7 +157,9 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     telefonoAsegurado: pick(data.telefonoAsegurado, base.telefonoAsegurado ?? null),
     contactoAsegurado: pick(data.contactoAsegurado, base.contactoAsegurado ?? null),
     observaciones: pick(data.observaciones, base.observaciones ?? null),
-    ciudad: pick(data.ciudad, base.ciudad ?? null),
+    ciudad:
+      homologarCiudadAllianz(pick(data.ciudad, base.ciudad ?? null)) ||
+      pick(data.ciudad, base.ciudad ?? null),
     departamento: pick(data.departamento, base.departamento ?? null),
     valorAseguradoInmueble: parseNumero(
       data.valorAseguradoInmueble,
@@ -219,6 +222,9 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     informeUnico: pickObjeto(data.informeUnico, base.informeUnico ?? null),
     informeAgil: pickObjeto(data.informeAgil, base.informeAgil ?? null),
   });
+  const ub = resolverUbicacionCatastrofico(payload.ciudad, payload.departamento);
+  if (ub.ciudad) payload.ciudad = ub.ciudad;
+  if (ub.departamento) payload.departamento = ub.departamento;
   return aplicarFechaAccionEstadoAllianz(
     armarContactoAsegurado(armarContactoIntermediario(payload)),
     base

@@ -807,6 +807,7 @@ const buildArchivoFromUpload = (req, etiqueta) => {
       tamaño: req.fileStorage.size,
       tipoMime: req.fileStorage.mimetype,
       etiqueta: etiqueta || 'GENERAL',
+      descripcion: toStringOrNull(req.body?.descripcion, '') || '',
       subidoPor: usuario,
       fechaSubida: new Date(),
     };
@@ -818,6 +819,7 @@ const buildArchivoFromUpload = (req, etiqueta) => {
     tamaño: file.size,
     tipoMime: file.mimetype,
     etiqueta: etiqueta || 'GENERAL',
+    descripcion: toStringOrNull(req.body?.descripcion, '') || '',
     subidoPor: usuario,
     fechaSubida: new Date(),
   };

@@ -17,7 +17,7 @@ import { syncClaimDocument } from '../services/claimDocumentSyncService.js';
 const DESTINO = 'CASOS ENVIADOS A LA ASEGURADORA';
 
 const CASOS = [
-  { consecutivo: 'ALFA-2026-08-11', cedula: '66923951', nombre: 'Yenny Rios Garcia' },
+  { consecutivo: 'ALFA-2026-08-1533', cedula: '1144057937', nombre: 'DAVID JOSE TORRES PORTOCARRERO' },
 ];
 
 const CONSECUTIVOS = CASOS.map((c) => c.consecutivo);
@@ -34,15 +34,17 @@ function sanitizeFileName(name) {
 }
 
 function inferTypeFromArchivo(archivo, claim) {
-  const etiqueta = String(archivo?.etiqueta || '').trim().toUpperCase();
-  if (etiqueta) {
-    return mapAlfaDocumentType(etiqueta).documentType;
-  }
   const name = String(claim?.originalName || archivo?.nombreOriginal || '').toUpperCase();
+  // Nombre gana cuando deja clara la carpeta (evita GENERAL mal etiquetado)
   if (name.includes('FINIQUITO')) return 'liquidacion';
   if (name.includes('LIQUID') && !name.includes('INFORME')) return 'liquidacion';
   if (name.includes('INFORME')) return 'informe';
   if (/\.(JPG|JPEG|PNG|WEBP|HEIC|GIF)$/i.test(name)) return 'fotografia';
+
+  const etiqueta = String(archivo?.etiqueta || '').trim().toUpperCase();
+  if (etiqueta) {
+    return mapAlfaDocumentType(etiqueta).documentType;
+  }
   return claim?.documentType && claim.documentType !== 'otro'
     ? claim.documentType
     : 'general';

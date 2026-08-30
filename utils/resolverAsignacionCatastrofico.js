@@ -22,6 +22,7 @@ const ALIAS_PERSONA = {
   'LADYS ESCALANTE': 'LADYS ANDREA ESCALANTE',
   'LADYS ESCALALNTE': 'LADYS ANDREA ESCALANTE',
   'LADYS ANDREA ESCALANTE': 'LADYS ANDREA ESCALANTE',
+  'LADYS ANDREA ESCALANTE BOSSIO': 'LADYS ANDREA ESCALANTE',
   'MARIA P': 'MARIA GARCIA MANJARRES',
   'MARIA T': 'MARIA GARCIA MANJARRES',
   'MARIA TRINIDAD': 'MARIA GARCIA MANJARRES',
@@ -110,6 +111,21 @@ export const resolverAsignacionCatastrofico = ({
   }
   if (!ajustador && ajustadorExcel && !esPlaceholderPersona(ajustadorExcel) && !ajustadorEnInspectores) {
     ajustador = String(ajustadorExcel).trim();
+  }
+
+  const mismaPersona =
+    inspector &&
+    ajustador &&
+    (normPersonaCatastrofico(inspector) === normPersonaCatastrofico(ajustador) ||
+      buscarEnCatalogo(inspector, ajustadores) === ajustador ||
+      buscarEnCatalogo(ajustador, inspectores) === inspector);
+  if (mismaPersona) {
+    if (ajustadorEnAjustadores || inspectorEnAjustadores) {
+      inspector = null;
+      if (!ajustador) ajustador = inspectorEnAjustadores || ajustadorEnAjustadores;
+    } else {
+      ajustador = null;
+    }
   }
 
   return {
