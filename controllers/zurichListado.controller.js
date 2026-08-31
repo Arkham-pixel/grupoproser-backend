@@ -418,10 +418,14 @@ const PROYECCION_LISTA_ZURICH = {
   updatedAt: 1,
 };
 
-const omitirBlobsListadoZurich = (doc) => {
-  if (!doc || typeof doc !== 'object') return doc;
-  const { liquidador, informeUnico, archivos, ...resto } = doc;
-  return resto;
+const PIPELINE_BANDERAS_LISTA_ZURICH = {
+  $addFields: {
+    tieneInforme: { $eq: [{ $type: '$informeUnico' }, 'object'] },
+    tieneLiquidador: { $eq: [{ $type: '$liquidador' }, 'object'] },
+    nArchivos: {
+      $cond: [{ $isArray: '$archivos' }, { $size: '$archivos' }, 0],
+    },
+  },
 };
 
 export const listarCasosListadoZurich = async (req, res) => {
@@ -436,13 +440,20 @@ export const listarCasosListadoZurich = async (req, res) => {
       ZurichListadoCaso.countDocuments({}),
       quiereCompleto
         ? ZurichListadoCaso.find({}).sort({ createdAt: -1 }).skip(skip).limit(limite).lean()
-        : ZurichListadoCaso.collection
-            .find({}, { projection: PROYECCION_LISTA_ZURICH })
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(limite)
-            .toArray()
-            .then((rows) => rows.map(omitirBlobsListadoZurich)),
+        : ZurichListadoCaso.aggregate([
+            { $sort: { createdAt: -1 } },
+            { $skip: skip },
+            { $limit: limite },
+            PIPELINE_BANDERAS_LISTA_ZURICH,
+            {
+              $project: {
+                ...PROYECCION_LISTA_ZURICH,
+                tieneInforme: 1,
+                tieneLiquidador: 1,
+                nArchivos: 1,
+              },
+            },
+          ]),
     ]);
     res.json({
       success: true,
