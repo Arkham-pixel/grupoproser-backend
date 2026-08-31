@@ -176,19 +176,21 @@ export function resolverLiquidadorParaUpdate(incoming, actual) {
  */
 export function scoreContenidoInforme(informe) {
   if (!informe || typeof informe !== 'object') return 0;
-  const ag = informe.analisisGeneral || {};
+  const t = (v) => String(v || '').trim();
   const textos = [
-    informe.infoEvento,
+    informe.descripcionDanios,
     informe.conclusiones,
     informe.recomendacion,
-    ag.descripcionEvento,
-    ag.ubicacionEvento,
-    ag.conclusiones,
+    informe.analisisCobertura,
+    informe.analisisGeneral?.descripcionEvento,
+    informe.analisisGeneral?.conclusiones,
   ]
-    .map((t) => String(t || '').trim())
-    .filter(Boolean);
-  const fotos = Array.isArray(informe.fotosInspeccion) ? informe.fotosInspeccion.length : 0;
-  return textos.length + fotos;
+    .map((s) => t(s))
+    .filter((s) => s.length > 40);
+  const filasD = (Array.isArray(informe.filasDanios) ? informe.filasDanios : []).filter(
+    (f) => t(f?.condicion || f?.observacion || f?.descripcion).length > 15
+  ).length;
+  return textos.reduce((n, s) => n + s.length, 0) + filasD * 40;
 }
 
 export function resolverInformeUnicoParaUpdate(incoming, actual) {

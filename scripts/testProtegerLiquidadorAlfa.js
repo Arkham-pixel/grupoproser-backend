@@ -85,8 +85,11 @@ assert(
   'preservar (viejo) sí restauraría la copia inicial; por eso CAT no debe usarlo al editar'
 );
 
-const informeLleno = { analisisGeneral: { descripcionEvento: 'Terremoto' }, fotosInspeccion: [{}] };
-const informeVacio = { analisisGeneral: {} };
+const informeLleno = {
+  descripcionDanios: 'Daños estructurales observados en muros y cubiertas del predio asegurado.',
+  conclusiones: 'Se recomienda continuar con la recolección documental y la liquidación.',
+};
+const informeVacio = { analisisGeneral: {}, descripcionDanios: '' };
 assert(
   resolverInformeUnicoParaUpdate(informeVacio, informeLleno) === informeLleno,
   'informe vacio no pisa'
