@@ -118,6 +118,15 @@ export function estadoZurichPorTipoInforme(tipoInforme, estadoActual) {
 }
 
 export function aplicarEstadoDesdeTipoInformeZurich(payload = {}, base = {}) {
+  const estadoEnviado = payload.estado;
+  const estadoBase = base.estado;
+  if (
+    estadoEnviado != null &&
+    String(estadoEnviado).trim() !== '' &&
+    homologarEstadoZurich(estadoEnviado) !== homologarEstadoZurich(estadoBase)
+  ) {
+    return payload;
+  }
   const tipo = payload?.informeUnico?.tipoInforme ?? base?.informeUnico?.tipoInforme;
   const siguiente = estadoZurichPorTipoInforme(tipo, payload.estado || base.estado);
   if (!siguiente || siguiente === homologarEstadoZurich(payload.estado || base.estado)) {

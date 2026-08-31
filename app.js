@@ -70,6 +70,7 @@ import { mapS3ErrorMessage, isS3AccessDeniedError } from './services/s3StorageSe
 import { UPLOADS_ROOT } from './config/uploadsRoot.js';
 import { logStorageStatusOnBoot } from './config/storage.js';
 import { logSharePointStatusOnBoot } from './config/sharepoint.js';
+import { servirHeicLocalComoJpeg } from './utils/heicToJpeg.js';
 
 console.log('📦 Importando rutas de intermediarios...');
 console.log('📦 Tipo de intermediarioRoutes:', typeof intermediarioRoutes);
@@ -135,6 +136,9 @@ logSharePointStatusOnBoot();
 // 3️ Sirve los archivos subidos de forma estática
 // En desarrollo: /uploads desde localhost:3000
 // En producción: /uploads desde el mismo dominio del frontend
+app.use('/uploads', (req, res, next) => {
+  servirHeicLocalComoJpeg(req, res, next, uploadsDir);
+});
 app.use("/uploads", express.static(uploadsDir));
 
 // Asegurar que también exista la carpeta de historial

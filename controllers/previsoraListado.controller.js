@@ -26,6 +26,14 @@ const toStr = (valor, fallback = null) => {
   return String(valor).replace(/\t/g, ' ').replace(/\s+/g, ' ').trim() || fallback || null;
 };
 
+const parseNumero = (valor, fallback = null, { pisar = false } = {}) => {
+  if (valor === undefined) return fallback ?? null;
+  if (valor === null || valor === '') return pisar ? null : fallback ?? null;
+  if (typeof valor === 'number' && Number.isFinite(valor)) return valor;
+  const n = Number(String(valor).replace(/\./g, '').replace(/[^\d-]/g, ''));
+  return Number.isNaN(n) ? fallback ?? null : n;
+};
+
 /** Incoming útil completa huecos; no pisa un dato ya guardado. */
 const completarCampo = (incoming, existing) => {
   const a = toStr(incoming, null);
@@ -151,6 +159,30 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     observaciones: pick(data.observaciones, base.observaciones ?? null),
     ciudad: pick(data.ciudad, base.ciudad ?? null),
     departamento: pick(data.departamento, base.departamento ?? null),
+    valorAseguradoInmueble: parseNumero(
+      data.valorAseguradoInmueble,
+      base.valorAseguradoInmueble ?? null,
+      { pisar }
+    ),
+    valorAseguradoContenidos: parseNumero(
+      data.valorAseguradoContenidos,
+      base.valorAseguradoContenidos ?? null,
+      { pisar }
+    ),
+    valorReservaPreventivaPromedio: parseNumero(
+      data.valorReservaPreventivaPromedio,
+      base.valorReservaPreventivaPromedio ?? null,
+      { pisar }
+    ),
+    valorComercialInmueble: parseNumero(
+      data.valorComercialInmueble,
+      base.valorComercialInmueble ?? null,
+      { pisar }
+    ),
+    reserva: parseNumero(data.reserva, base.reserva ?? null, { pisar }),
+    observacionReserva: pick(data.observacionReserva, base.observacionReserva ?? null),
+    valorReclamado: parseNumero(data.valorReclamado, base.valorReclamado ?? null, { pisar }),
+    valorLiquidado: parseNumero(data.valorLiquidado, base.valorLiquidado ?? null, { pisar }),
     ajustadorLider: pick(data.ajustadorLider, base.ajustadorLider ?? null),
     ajustador: pick(data.ajustador, base.ajustador ?? null),
     inspector: pick(data.inspector, base.inspector ?? null),

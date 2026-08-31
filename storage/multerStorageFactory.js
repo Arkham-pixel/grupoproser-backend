@@ -8,6 +8,7 @@ import {
   generateUniqueFilename,
   persistAllUploadedFiles,
 } from '../services/fileStorageService.js';
+import { normalizarHeicEnArchivoMulter } from '../utils/heicToJpeg.js';
 
 /**
  * Factory de multer para almacenamiento local o S3.
@@ -50,10 +51,26 @@ export function createMulterUpload(opts = {}) {
 /**
  * Middleware post-multer: sube a S3 y adjunta metadata en req.fileStorage / req.filesStorage.
  */
+async function normalizarHeicDelRequest(req) {
+  if (req.file) {
+    req.file = await normalizarHeicEnArchivoMulter(req.file);
+  }
+  if (Array.isArray(req.files)) {
+    req.files = await Promise.all(req.files.map((f) => normalizarHeicEnArchivoMulter(f)));
+    return;
+  }
+  if (req.files && typeof req.files === 'object') {
+    for (const [field, fileList] of Object.entries(req.files)) {
+      if (!Array.isArray(fileList)) continue;
+      req.files[field] = await Promise.all(
+        fileList.map((f) => normalizarHeicEnArchivoMulter(f))
+      );
+    }
+  }
+}
+
 export function attachPersistedFileMiddleware({ category, ownerType, ownerIdFromReq }) {
   return async (req, res, next) => {
-    if (!isS3StorageEnabled()) return next();
-
     const hasFiles =
       req.file ||
       (Array.isArray(req.files) && req.files.length > 0) ||
@@ -62,6 +79,8 @@ export function attachPersistedFileMiddleware({ category, ownerType, ownerIdFrom
     if (!hasFiles) return next();
 
     try {
+      await normalizarHeicDelRequest(req);
+      if (!isS3StorageEnabled()) return next();
       await persistAllUploadedFiles(req, { category, ownerType, ownerIdFromReq });
       next();
     } catch (err) {

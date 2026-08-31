@@ -67,6 +67,15 @@ export function estadoSuraPorTipoInforme(tipoInforme, estadoActual) {
 }
 
 export function aplicarEstadoDesdeTipoInformeSura(payload = {}, base = {}) {
+  const estadoEnviado = payload.estado;
+  const estadoBase = base.estado;
+  if (
+    estadoEnviado != null &&
+    String(estadoEnviado).trim() !== '' &&
+    normalizarEstadoSura(estadoEnviado) !== normalizarEstadoSura(estadoBase)
+  ) {
+    return payload;
+  }
   const tipo = payload?.informeUnico?.tipoInforme ?? base?.informeUnico?.tipoInforme;
   const siguiente = estadoSuraPorTipoInforme(tipo, payload.estado || base.estado);
   if (!siguiente || siguiente === normalizarEstadoSura(payload.estado || base.estado)) {

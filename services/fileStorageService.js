@@ -23,6 +23,7 @@ import {
   UPLOADS_ROOT,
   resolveUploadRelativePath,
 } from '../config/uploadsRoot.js';
+import { normalizarHeicEnArchivoMulter } from '../utils/heicToJpeg.js';
 
 /** Categorías alineadas con carpetas actuales en uploads/ */
 export const STORAGE_CATEGORIES = Object.freeze({
@@ -136,6 +137,12 @@ export async function persistUploadedFile({
 }) {
   if (!file) {
     throw new Error('No se proporcionó archivo');
+  }
+
+  try {
+    file = await normalizarHeicEnArchivoMulter(file);
+  } catch (err) {
+    console.error('❌ No se pudo convertir HEIC al guardar:', err.message);
   }
 
   if (isLocalStorageEnabled()) {

@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { resolveFileForRead } from '../services/fileStorageService.js';
+import { enviarArchivoCompatibleNavegador } from '../utils/heicToJpeg.js';
 
 const router = express.Router();
 
@@ -17,6 +18,9 @@ router.get('/file', async (req, res) => {
     }
 
     const resolved = await resolveFileForRead(ref);
+
+    const enviado = await enviarArchivoCompatibleNavegador(resolved, res);
+    if (enviado) return;
 
     if (resolved.driver === 's3' && resolved.stream) {
       res.setHeader('Content-Type', resolved.contentType || 'application/octet-stream');

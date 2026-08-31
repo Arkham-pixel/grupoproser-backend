@@ -1,8 +1,5 @@
 /**
- * Sube casos listos a:
- *   SEGUROS ALFA/CASOS ENVIADOS A LA ASEGURADORA/{CEDULA}/{INFORMES|LIQUIDACION|FOTOS|GENERAL|…}
- *
- * Uso:
+ * Inspección rápida + sync de un caso Alfa a CASOS ENVIADOS.
  *   node scripts/syncAlfaCasosEnviadosBatch.js
  *   node scripts/syncAlfaCasosEnviadosBatch.js --dry-run
  */
@@ -17,7 +14,7 @@ import { syncClaimDocument } from '../services/claimDocumentSyncService.js';
 const DESTINO = 'CASOS ENVIADOS A LA ASEGURADORA';
 
 const CASOS = [
-  { consecutivo: 'ALFA-2026-08-1533', cedula: '1144057937', nombre: 'DAVID JOSE TORRES PORTOCARRERO' },
+  { consecutivo: 'ALFA-2026-08-295', cedula: null, nombre: 'Valentina Espinosa' },
 ];
 
 const CONSECUTIVOS = CASOS.map((c) => c.consecutivo);
@@ -35,7 +32,6 @@ function sanitizeFileName(name) {
 
 function inferTypeFromArchivo(archivo, claim) {
   const name = String(claim?.originalName || archivo?.nombreOriginal || '').toUpperCase();
-  // Nombre gana cuando deja clara la carpeta (evita GENERAL mal etiquetado)
   if (name.includes('FINIQUITO')) return 'liquidacion';
   if (name.includes('LIQUID') && !name.includes('INFORME')) return 'liquidacion';
   if (name.includes('INFORME')) return 'informe';
@@ -86,7 +82,9 @@ for (const caso of casos) {
       consecutivo: caso.consecutivo,
       cedula: caso.identificacion,
       expectedCedula: expected?.cedula,
-      idMatch: String(caso.identificacion) === String(expected?.cedula),
+      idMatch:
+        expected?.cedula == null ||
+        String(caso.identificacion) === String(expected?.cedula),
       asegurado: caso.asegurado || caso.tomador,
       claims: claims.length,
     })
