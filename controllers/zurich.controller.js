@@ -10,7 +10,11 @@ import {
 import { ROL_SOLO_ZURICH, normalizarRol } from '../config/roles.js';
 import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
-import { aplicarFechaAccionEstadoZurich, homologarEstadoZurich } from '../utils/estadosZurich.js';
+import {
+  aplicarEstadoDesdeTipoInformeZurich,
+  aplicarFechaAccionEstadoZurich,
+  homologarEstadoZurich,
+} from '../utils/estadosZurich.js';
 import { homologarCiudadZurich } from '../utils/ciudadesBbvaCat.js';
 import { homologarCausaZurich } from '../utils/causasZurich.js';
 import { aplicarReservaDesdePresupuestoZurich, fusionarInformeUnicoZurich } from '../utils/reservaPresupuestoZurich.js';
@@ -545,7 +549,9 @@ const buildZurichPayload = (data = {}, base = {}) => {
   ),
   };
   payload.checklistCatCompleto = esChecklistCatLleno(payload);
-  return aplicarReservaDesdePresupuestoZurich(aplicarFechaAccionEstadoZurich(payload, base));
+  return aplicarReservaDesdePresupuestoZurich(
+    aplicarFechaAccionEstadoZurich(aplicarEstadoDesdeTipoInformeZurich(payload, base), base)
+  );
 };
 
 /** Mapea un SiniestroExpress → campos Zurich (estructura Alfa). */

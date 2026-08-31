@@ -7,7 +7,11 @@ import { catalogoPerteneceAModulo } from '../utils/filtrarCatalogoPorModulo.js';
 import { deleteStoredFile } from '../services/fileStorageService.js';
 import { rutaArchivoSigueEnUsoZurich } from '../utils/espejarArchivoZurichCatEnListado.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
-import { aplicarFechaAccionEstadoZurich, homologarEstadoZurich } from '../utils/estadosZurich.js';
+import {
+  aplicarEstadoDesdeTipoInformeZurich,
+  aplicarFechaAccionEstadoZurich,
+  homologarEstadoZurich,
+} from '../utils/estadosZurich.js';
 import { homologarCiudadZurich } from '../utils/ciudadesBbvaCat.js';
 import { homologarCausaZurich } from '../utils/causasZurich.js';
 import { aplicarReservaDesdePresupuestoZurich, fusionarInformeUnicoZurich } from '../utils/reservaPresupuestoZurich.js';
@@ -265,7 +269,10 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
   }
   return aplicarReservaDesdePresupuestoZurich(
     aplicarFechaAccionEstadoZurich(
-      armarContactoAsegurado(armarContactoIntermediario(payload)),
+      aplicarEstadoDesdeTipoInformeZurich(
+        armarContactoAsegurado(armarContactoIntermediario(payload)),
+        base
+      ),
       base
     )
   );
@@ -425,6 +432,7 @@ const PIPELINE_BANDERAS_LISTA_ZURICH = {
     nArchivos: {
       $cond: [{ $isArray: '$archivos' }, { $size: '$archivos' }, 0],
     },
+    tipoInforme: '$informeUnico.tipoInforme',
   },
 };
 
@@ -451,6 +459,7 @@ export const listarCasosListadoZurich = async (req, res) => {
                 tieneInforme: 1,
                 tieneLiquidador: 1,
                 nArchivos: 1,
+                tipoInforme: 1,
               },
             },
           ]),

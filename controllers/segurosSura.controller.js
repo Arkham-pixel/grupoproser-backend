@@ -31,7 +31,7 @@ import {
 } from '../services/facturacionBandejaService.js';
 import { aplicarRestriccionRolCaso, obtenerIdentidadUsuarioReq, construirFiltroVistaAsignacion, casoVisibleParaIdentidad, collationVistaAsignacion, combinarFiltrosMongo } from '../utils/permisosCasoPorRol.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
-import { normalizarEstadoSura } from '../utils/estadosSura.js';
+import { aplicarEstadoDesdeTipoInformeSura, normalizarEstadoSura } from '../utils/estadosSura.js';
 import {
   normalizarClaveGerente,
   resolverGerenteDesdeLogin,
@@ -393,7 +393,7 @@ export const buildSuraPayload = (data = {}, base = {}) => {
     payload.nombreAseguradora = SURA_RAZON_SOCIAL;
   }
 
-  return payload;
+  return aplicarEstadoDesdeTipoInformeSura(payload, base);
 };
 
 /** Une fila Excel con caso existente: solo pisa placeholders / vacíos / errores parseados. */

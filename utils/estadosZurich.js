@@ -95,6 +95,37 @@ export function esEstadoPendienteDocsZurich(estado) {
   return homologarEstadoZurich(estado) === ESTADO_ZURICH_PENDIENTE_DOCS;
 }
 
+function tipoInformeZurich(valor) {
+  const t = String(valor ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim();
+  if (t === 'preliminar' || t === 'final' || t === 'unico') return t;
+  return '';
+}
+
+/** Único/final avanzan a LIQUIDAR si el caso aún está en un estado anterior. */
+export function estadoZurichPorTipoInforme(tipoInforme, estadoActual) {
+  const tipo = tipoInformeZurich(tipoInforme);
+  const actual = homologarEstadoZurich(estadoActual);
+  if (actual === ESTADO_ZURICH_FINALIZADO) return actual;
+  if (tipo !== 'unico' && tipo !== 'final') return actual;
+  const orden = ESTADOS_ZURICH.indexOf(actual);
+  const idxLiquidar = ESTADOS_ZURICH.indexOf(ESTADO_ZURICH_LIQUIDAR);
+  if (orden >= 0 && orden >= idxLiquidar) return actual;
+  return ESTADO_ZURICH_LIQUIDAR;
+}
+
+export function aplicarEstadoDesdeTipoInformeZurich(payload = {}, base = {}) {
+  const tipo = payload?.informeUnico?.tipoInforme ?? base?.informeUnico?.tipoInforme;
+  const siguiente = estadoZurichPorTipoInforme(tipo, payload.estado || base.estado);
+  if (!siguiente || siguiente === homologarEstadoZurich(payload.estado || base.estado)) {
+    return payload;
+  }
+  return { ...payload, estado: siguiente };
+}
+
 function campoFechaPorEstadoZurich(estado) {
   const homologado = homologarEstadoZurich(estado);
   if (FECHA_ACCION_POR_ESTADO_ZURICH[homologado]) return FECHA_ACCION_POR_ESTADO_ZURICH[homologado];
