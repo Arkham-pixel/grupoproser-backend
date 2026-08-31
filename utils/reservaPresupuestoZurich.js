@@ -3,19 +3,13 @@
  * Evita que un reservaSugerida congelado (p. ej. de la IA) pise el total al autoguardar.
  */
 
+import {
+  parsearMontoInformeSeguro,
+  sanitizarInformeUnicoCamposWord,
+} from './limpiarTextoInformeWord.js';
+
 export function parsearMontoZurich(valor) {
-  if (valor === '' || valor === null || valor === undefined) return 0;
-  if (typeof valor === 'number') return Number.isFinite(valor) ? valor : 0;
-  let numero = String(valor).replace(/[^\d.,-]/g, '');
-  if (numero.includes(',') && numero.includes('.')) {
-    numero = numero.replace(/\./g, '').replace(',', '.');
-  } else if (numero.includes('.') && !numero.includes(',')) {
-    numero = numero.replace(/\./g, '');
-  } else if (numero.includes(',')) {
-    numero = numero.replace(',', '.');
-  }
-  const n = parseFloat(numero);
-  return Number.isFinite(n) && n > 0 ? n : 0;
+  return parsearMontoInformeSeguro(valor);
 }
 
 export function sumaPresupuestoPreliminarZurich(filas = []) {
@@ -28,13 +22,16 @@ export function sumaPresupuestoPreliminarZurich(filas = []) {
 export function aplicarReservaDesdePresupuestoZurich(payload = {}) {
   const informe = payload?.informeUnico;
   if (!informe || typeof informe !== 'object') return payload;
-  const suma = Math.round(sumaPresupuestoPreliminarZurich(informe.filasPresupuestoPreliminar));
-  if (suma <= 0) return payload;
+  const limpio = sanitizarInformeUnicoCamposWord(informe);
+  const suma = Math.round(sumaPresupuestoPreliminarZurich(limpio.filasPresupuestoPreliminar));
+  if (suma <= 0) {
+    return { ...payload, informeUnico: limpio };
+  }
   return {
     ...payload,
     reserva: suma,
     informeUnico: {
-      ...informe,
+      ...limpio,
       reservaSugerida: String(suma),
     },
   };
@@ -43,7 +40,11 @@ export function aplicarReservaDesdePresupuestoZurich(payload = {}) {
 /** No dejar que un formulario en blanco pise un informe ya diligenciado. */
 export function scoreNarrativaInformeZurich(inf) {
   if (!inf || typeof inf !== 'object') return 0;
-  const t = (v) => String(v || '').trim();
+  const t = (v) => {
+    const s = String(v || '').trim();
+    if (/<w:|w:tcPr/.test(s)) return '';
+    return s;
+  };
   const filasTxt = (arr, keys) =>
     (Array.isArray(arr) ? arr : []).reduce((n, f) => {
       const s = keys.map((k) => t(f?.[k])).join(' ');
@@ -60,34 +61,40 @@ export function scoreNarrativaInformeZurich(inf) {
 }
 
 export function fusionarInformeUnicoZurich(incoming, existing) {
-  if (!incoming || typeof incoming !== 'object') return existing ?? incoming ?? null;
-  if (!existing || typeof existing !== 'object') return incoming;
-  const sIn = scoreNarrativaInformeZurich(incoming);
-  const sEx = scoreNarrativaInformeZurich(existing);
-  if (!(sEx > 120 && sIn < sEx * 0.45)) return incoming;
+  if (!incoming || typeof incoming !== 'object') {
+    return existing && typeof existing === 'object'
+      ? sanitizarInformeUnicoCamposWord(existing)
+      : existing ?? incoming ?? null;
+  }
+  const limpioIn = sanitizarInformeUnicoCamposWord(incoming);
+  if (!existing || typeof existing !== 'object') return limpioIn;
+  const limpioEx = sanitizarInformeUnicoCamposWord(existing);
+  const sIn = scoreNarrativaInformeZurich(limpioIn);
+  const sEx = scoreNarrativaInformeZurich(limpioEx);
+  if (!(sEx > 120 && sIn < sEx * 0.45)) return limpioIn;
   return {
-    ...incoming,
-    infoEvento: existing.infoEvento || incoming.infoEvento,
-    descripcionDanios: existing.descripcionDanios,
-    filasDanios: existing.filasDanios,
-    filasPolizaCobertura: existing.filasPolizaCobertura,
+    ...limpioIn,
+    infoEvento: limpioEx.infoEvento || limpioIn.infoEvento,
+    descripcionDanios: limpioEx.descripcionDanios,
+    filasDanios: limpioEx.filasDanios,
+    filasPolizaCobertura: limpioEx.filasPolizaCobertura,
     filasPresupuestoPreliminar:
-      Array.isArray(existing.filasPresupuestoPreliminar) &&
-      existing.filasPresupuestoPreliminar.length >
-        (Array.isArray(incoming.filasPresupuestoPreliminar)
-          ? incoming.filasPresupuestoPreliminar.length
+      Array.isArray(limpioEx.filasPresupuestoPreliminar) &&
+      limpioEx.filasPresupuestoPreliminar.length >
+        (Array.isArray(limpioIn.filasPresupuestoPreliminar)
+          ? limpioIn.filasPresupuestoPreliminar.length
           : 0)
-        ? existing.filasPresupuestoPreliminar
-        : incoming.filasPresupuestoPreliminar,
-    conclusiones: existing.conclusiones,
-    recomendacion: existing.recomendacion,
-    analisisCobertura: existing.analisisCobertura,
-    coordenadasRiesgo: existing.coordenadasRiesgo || incoming.coordenadasRiesgo,
-    fotosInspeccion: existing.fotosInspeccion?.length
-      ? existing.fotosInspeccion
-      : incoming.fotosInspeccion,
-    generadoPorIa: existing.generadoPorIa ?? incoming.generadoPorIa,
-    generadoPorIaEn: existing.generadoPorIaEn || incoming.generadoPorIaEn,
-    generadoPorIaNota: existing.generadoPorIaNota || incoming.generadoPorIaNota,
+        ? limpioEx.filasPresupuestoPreliminar
+        : limpioIn.filasPresupuestoPreliminar,
+    conclusiones: limpioEx.conclusiones,
+    recomendacion: limpioEx.recomendacion,
+    analisisCobertura: limpioEx.analisisCobertura,
+    coordenadasRiesgo: limpioEx.coordenadasRiesgo || limpioIn.coordenadasRiesgo,
+    fotosInspeccion: limpioEx.fotosInspeccion?.length
+      ? limpioEx.fotosInspeccion
+      : limpioIn.fotosInspeccion,
+    generadoPorIa: limpioEx.generadoPorIa ?? limpioIn.generadoPorIa,
+    generadoPorIaEn: limpioEx.generadoPorIaEn || limpioIn.generadoPorIaEn,
+    generadoPorIaNota: limpioEx.generadoPorIaNota || limpioIn.generadoPorIaNota,
   };
 }
