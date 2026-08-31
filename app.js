@@ -14,6 +14,7 @@ import { poblarUsuarioOpcional } from "./middleware/usuarioOpcional.js";
 import { registrarAuditoriaPlataforma } from "./middleware/registrarAuditoriaPlataforma.js";
 import { resolveFrontendUrl } from "./config/platformUrls.js";
 import { localeMiddleware } from './middleware/locale.js';
+import { requireMongo } from './middleware/requireMongo.js';
 
 import authRoutes from "./routes/auth.js";
 import securAuthRoutes from "./routes/securAuth.js";
@@ -231,6 +232,7 @@ app.use(restringirExterno);
 app.use(restringirContractorZurich);
 app.use(poblarUsuarioOpcional);
 app.use(registrarAuditoriaPlataforma);
+app.use('/api', requireMongo);
 
 app.use("/api", arnaldPlataformaRoutes);
 app.use("/api/auth", authRoutes);

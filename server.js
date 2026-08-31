@@ -40,22 +40,59 @@ console.log('📧 EMAIL_USER:', process.env.EMAIL_USER);
 console.log('📧 EMAIL_PASS:', process.env.EMAIL_PASS ? '***' : 'NO DEFINIDO');
 console.log('🌐 MONGO_URI:', process.env.MONGO_URI ? 'DEFINIDO' : 'NO DEFINIDO');
 
-const MONGO_URI = process.env.MONGO_URI;
+const MONGO_URI = process.env.MONGO_URI_DIRECT || process.env.MONGO_URI;
 if (!MONGO_URI) {
   console.error("❌ La variable de entorno MONGO_URI no está definida.");
   process.exit(1);
 }
 
-// Configuración mejorada de MongoDB (opciones actualizadas)
+// maxIdleTimeMS corto cierra sockets y fuerza reconexiones TLS a Atlas (ETIMEDOUT).
 const mongoOptions = {
-  serverSelectionTimeoutMS: 10000, // 10 segundos
-  socketTimeoutMS: 45000, // 45 segundos
-  maxPoolSize: 10,
-  minPoolSize: 1,
-  maxIdleTimeMS: 30000,
+  family: 4,
+  serverSelectionTimeoutMS: 20000,
+  socketTimeoutMS: 45000,
+  maxPoolSize: 30,
+  minPoolSize: 2,
+  heartbeatFrequencyMS: 10000,
   retryWrites: true,
+  retryReads: true,
   w: "majority"
 };
+
+let cronsIniciados = false;
+const CRON_DELAY_MS = Number.parseInt(process.env.CRON_START_DELAY_MS || '60000', 10);
+
+function iniciarServiciosCron() {
+  if (cronsIniciados) {
+    console.log('⚠️ Servicios de cron ya estaban iniciados');
+    return;
+  }
+  cronsIniciados = true;
+  iniciarCronAlertas();
+  console.log("✅ Servicio de cron de alertas iniciado");
+
+  const cronTareas = CronTareasService.iniciarCronTareas();
+  cronTareas.iniciar();
+  console.log("✅ Servicio de cron de tareas iniciado");
+
+  iniciarCronSesiones();
+  console.log("✅ Servicio de cron de sesiones inactivas iniciado");
+
+  iniciarCronEmailOutbox();
+  console.log("✅ Servicio de cron de cola de correos iniciado");
+
+  iniciarCronExpressCierreMensual();
+  console.log("✅ Servicio de cron de cierre mensual Express iniciado");
+
+  iniciarCronSharePointSync();
+  iniciarCronAlfaPolicyImport();
+  iniciarCronAlfaExcelSharePointImport();
+  iniciarCronAlfaExcelOutbound();
+  iniciarCronEquidadFdmExcelSharePointImport();
+  iniciarCronEquidadFdmExcelOutbound();
+  iniciarSharePointWatchdog();
+  iniciarCronEspejoArchivosBbvaCat();
+}
 
 // Iniciar el servidor independientemente del estado de MongoDB
 const rawPort = process.env.PORT ?? '3000';
@@ -83,7 +120,6 @@ mongoose
   .connect(MONGO_URI, mongoOptions)
   .then(() => {
     console.log("✅ Conectado a MongoDB");
-    console.log("Usando MONGO_URI:", MONGO_URI);
     (async () => {
       try {
         const db = mongoose.connection.db;
@@ -102,37 +138,25 @@ mongoose
         console.warn('No se pudieron renombrar colecciones Allias → Allianz:', error.message);
       }
     })();
-    
-    // Iniciar los servicios de cron después de conectar a MongoDB
-    try {
-      iniciarCronAlertas();
-      console.log("✅ Servicio de cron de alertas iniciado");
-      
-      // Iniciar cron de tareas
-      const cronTareas = CronTareasService.iniciarCronTareas();
-      cronTareas.iniciar();
-      console.log("✅ Servicio de cron de tareas iniciado");
-      
-      // Iniciar cron de sesiones inactivas
-      iniciarCronSesiones();
-      console.log("✅ Servicio de cron de sesiones inactivas iniciado");
 
-      iniciarCronEmailOutbox();
-      console.log("✅ Servicio de cron de cola de correos iniciado");
-
-      iniciarCronExpressCierreMensual();
-      console.log("✅ Servicio de cron de cierre mensual Express iniciado");
-
-      iniciarCronSharePointSync();
-      iniciarCronAlfaPolicyImport();
-      iniciarCronAlfaExcelSharePointImport();
-      iniciarCronAlfaExcelOutbound();
-      iniciarCronEquidadFdmExcelSharePointImport();
-      iniciarCronEquidadFdmExcelOutbound();
-      iniciarSharePointWatchdog();
-      iniciarCronEspejoArchivosBbvaCat();
-    } catch (error) {
-      console.error("❌ Error iniciando servicios de cron:", error.message);
+    const delayMs = Number.isFinite(CRON_DELAY_MS) ? Math.max(0, CRON_DELAY_MS) : 60000;
+    if (delayMs > 0) {
+      console.log(`⏳ Crons en ${Math.round(delayMs / 1000)}s para no saturar Mongo al arrancar`);
+      setTimeout(() => {
+        try {
+          iniciarServiciosCron();
+        } catch (error) {
+          console.error("❌ Error iniciando servicios de cron:", error.message);
+          cronsIniciados = false;
+        }
+      }, delayMs);
+    } else {
+      try {
+        iniciarServiciosCron();
+      } catch (error) {
+        console.error("❌ Error iniciando servicios de cron:", error.message);
+        cronsIniciados = false;
+      }
     }
   })
   .catch((err) => {
@@ -146,34 +170,12 @@ mongoose
         .then(() => {
           console.log("✅ Reconexión exitosa a MongoDB");
           clearInterval(reconnectInterval);
-          
-          // Iniciar los servicios de cron después de reconectar
+
           try {
-            iniciarCronAlertas();
-            console.log("✅ Servicio de cron de alertas reiniciado después de reconexión");
-            
-            // Iniciar cron de tareas
-            const cronTareas = CronTareasService.iniciarCronTareas();
-            cronTareas.iniciar();
-            console.log("✅ Servicio de cron de tareas iniciado después de reconexión");
-            
-            // Iniciar cron de sesiones inactivas
-            iniciarCronSesiones();
-            console.log("✅ Servicio de cron de sesiones inactivas reiniciado después de reconexión");
-
-            iniciarCronExpressCierreMensual();
-            console.log("✅ Servicio de cron de cierre mensual Express reiniciado después de reconexión");
-
-            iniciarCronSharePointSync();
-            iniciarCronAlfaPolicyImport();
-            iniciarCronAlfaExcelSharePointImport();
-            iniciarCronAlfaExcelOutbound();
-            iniciarCronEquidadFdmExcelSharePointImport();
-            iniciarCronEquidadFdmExcelOutbound();
-            iniciarSharePointWatchdog();
-            iniciarCronEspejoArchivosBbvaCat();
+            iniciarServiciosCron();
           } catch (error) {
             console.error("❌ Error reiniciando servicios de cron:", error.message);
+            cronsIniciados = false;
           }
         })
         .catch(() => {
@@ -196,6 +198,37 @@ mongoose.connection.on('reconnected', () => {
 });
 
 // Manejar el cierre del servidor
+function esErrorPoolMongo(err) {
+  const name = String(err?.name || '');
+  const msg = String(err?.message || '');
+  return (
+    name.includes('PoolCleared') ||
+    name.includes('MongoNetwork') ||
+    name.includes('MongoServerSelection') ||
+    msg.includes('PoolCleared') ||
+    msg.includes('connection pool') ||
+    msg.includes('ReplicaSetNoPrimary')
+  );
+}
+
+process.on('uncaughtException', (err) => {
+  if (esErrorPoolMongo(err)) {
+    console.error('⚠️ Mongo cortó el pool; el API sigue en pie:', err.message);
+    return;
+  }
+  console.error('❌ uncaughtException:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  if (esErrorPoolMongo(err)) {
+    console.error('⚠️ Mongo rechazó una operación; el API sigue en pie:', err.message);
+    return;
+  }
+  console.error('❌ unhandledRejection:', reason);
+});
+
 process.on('SIGINT', () => {
   console.log('\n🛑 Cerrando servidor...');
   process.exit(0);

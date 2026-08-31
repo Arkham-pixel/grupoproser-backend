@@ -13,7 +13,7 @@ import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.
 import { aplicarFechaAccionEstadoZurich, homologarEstadoZurich } from '../utils/estadosZurich.js';
 import { homologarCiudadZurich } from '../utils/ciudadesBbvaCat.js';
 import { homologarCausaZurich } from '../utils/causasZurich.js';
-import { aplicarReservaDesdePresupuestoZurich } from '../utils/reservaPresupuestoZurich.js';
+import { aplicarReservaDesdePresupuestoZurich, fusionarInformeUnicoZurich } from '../utils/reservaPresupuestoZurich.js';
 import { aplicarLiderZurich } from '../utils/filtrarCatalogoPorModulo.js';
 
 const esValorVacio = (valor) =>
@@ -531,12 +531,14 @@ const buildZurichPayload = (data = {}, base = {}) => {
     return normalizeEvidenciaCat(prev);
   })(),
   liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
-  informeUnico:
+  informeUnico: fusionarInformeUnicoZurich(
     data.informeUnico !== undefined
       ? data.informeUnico && typeof data.informeUnico === 'object'
         ? data.informeUnico
         : null
       : base.informeUnico ?? null,
+    base.informeUnico
+  ),
   historialCatastroficoId: toStringOrNull(
     data.historialCatastroficoId,
     base.historialCatastroficoId ?? null

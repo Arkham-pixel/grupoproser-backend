@@ -1,51 +1,48 @@
 import Responsable from '../models/Responsable.js';
 import SecurUser from '../models/SecurUser.js';
 
+function escapeRegex(valor) {
+  return String(valor).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // Obtener todos los responsables
 export const obtenerResponsables = async (req, res) => {
   try {
-    const responsables = await Responsable.find({}).sort({ nmbrRespnsble: 1 });
-    
-    // Enriquecer responsables con fotos de usuarios
-    const responsablesConFotos = await Promise.all(
-      responsables.map(async (responsable) => {
-        const responsableObj = responsable.toObject();
-        
-        // Buscar usuario por email si existe
-        if (responsable.email) {
-          try {
-            // Buscar por email exacto (case insensitive) o por login
-            const usuario = await SecurUser.findOne({ 
-              $or: [
-                { email: { $regex: new RegExp(`^${responsable.email}$`, 'i') } },
-                { login: { $regex: new RegExp(`^${responsable.email}$`, 'i') } }
-              ]
-            }).select('foto email name login');
-            
-            if (usuario) {
-              if (usuario.foto) {
-                responsableObj.fotoUsuario = usuario.foto;
-              }
-              responsableObj.nombreUsuario = usuario.name;
-              responsableObj.usuarioId = usuario._id;
-              responsableObj.usuarioLogin = usuario.login;
-              console.log(`✅ Usuario encontrado para ${responsable.email}:`, {
-                name: usuario.name,
-                tieneFoto: !!usuario.foto,
-                foto: usuario.foto
-              });
-            } else {
-              console.log(`⚠️ No se encontró usuario para email: ${responsable.email}`);
-            }
-          } catch (err) {
-            console.error(`❌ Error buscando usuario para ${responsable.email}:`, err);
-          }
-        }
-        
-        return responsableObj;
-      })
-    );
-    
+    const responsables = await Responsable.find({}).sort({ nmbrRespnsble: 1 }).lean();
+
+    const emails = [...new Set(
+      responsables.map((r) => String(r.email || '').trim()).filter(Boolean)
+    )];
+
+    let usuarios = [];
+    if (emails.length > 0) {
+      const emailOrLogin = emails.flatMap((email) => {
+        const rx = new RegExp(`^${escapeRegex(email)}$`, 'i');
+        return [{ email: rx }, { login: rx }];
+      });
+      usuarios = await SecurUser.find({ $or: emailOrLogin })
+        .select('foto email name login')
+        .lean();
+    }
+
+    const usuariosPorClave = new Map();
+    for (const usuario of usuarios) {
+      if (usuario.email) usuariosPorClave.set(String(usuario.email).toLowerCase(), usuario);
+      if (usuario.login) usuariosPorClave.set(String(usuario.login).toLowerCase(), usuario);
+    }
+
+    const responsablesConFotos = responsables.map((responsable) => {
+      const responsableObj = { ...responsable };
+      if (!responsable.email) return responsableObj;
+      const usuario = usuariosPorClave.get(String(responsable.email).toLowerCase());
+      if (!usuario) return responsableObj;
+      if (usuario.foto) responsableObj.fotoUsuario = usuario.foto;
+      responsableObj.nombreUsuario = usuario.name;
+      responsableObj.usuarioId = usuario._id;
+      responsableObj.usuarioLogin = usuario.login;
+      return responsableObj;
+    });
+
     res.json({ success: true, data: responsablesConFotos });
   } catch (error) {
     console.error('Error al obtener responsables:', error);

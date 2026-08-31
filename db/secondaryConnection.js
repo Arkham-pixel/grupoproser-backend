@@ -2,9 +2,20 @@ import mongoose from "mongoose";
 
 const SECONDARY_DB_URI = process.env.SECONDARY_DB_URI;
 
+function uriSecundariaUsable(uri) {
+  if (!uri || !String(uri).trim()) return false;
+  try {
+    const host = new URL(String(uri).replace(/^mongodb\+srv:\/\//i, 'https://')).hostname;
+    if (!host || host === 'cluster.mongodb.net') return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 let secondaryConnection;
 
-if (!SECONDARY_DB_URI) {
+if (!uriSecundariaUsable(SECONDARY_DB_URI)) {
   console.warn("⚠️ No está definida la variable SECONDARY_DB_URI en el .env");
   // Crear una conexión dummy
   secondaryConnection = {

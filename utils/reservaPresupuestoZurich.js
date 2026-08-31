@@ -39,3 +39,39 @@ export function aplicarReservaDesdePresupuestoZurich(payload = {}) {
     },
   };
 }
+
+/** No dejar que un formulario en blanco pise un informe ya diligenciado. */
+export function fusionarInformeUnicoZurich(incoming, existing) {
+  if (!incoming || typeof incoming !== 'object') return existing ?? incoming ?? null;
+  if (!existing || typeof existing !== 'object') return incoming;
+  const descIn = String(incoming.descripcionDanios || '').trim();
+  const descEx = String(existing.descripcionDanios || '').trim();
+  const daniosLlenos = (filas) =>
+    (Array.isArray(filas) ? filas : []).filter((f) => String(f?.condicion || '').trim().length > 20).length;
+  const parecePlantillaVacia =
+    descIn.length < 80 &&
+    daniosLlenos(incoming.filasDanios) < 4 &&
+    String(incoming.infoEvento || '').includes('la visita de inspección realizada al predio asegurado');
+  if (!parecePlantillaVacia || (descEx.length < 200 && daniosLlenos(existing.filasDanios) < 8)) {
+    return incoming;
+  }
+  return {
+    ...incoming,
+    infoEvento: existing.infoEvento,
+    descripcionDanios: existing.descripcionDanios,
+    filasDanios: existing.filasDanios,
+    filasPolizaCobertura: existing.filasPolizaCobertura,
+    filasPresupuestoPreliminar:
+      Array.isArray(existing.filasPresupuestoPreliminar) && existing.filasPresupuestoPreliminar.length > 3
+        ? existing.filasPresupuestoPreliminar
+        : incoming.filasPresupuestoPreliminar,
+    conclusiones: existing.conclusiones,
+    recomendacion: existing.recomendacion,
+    analisisCobertura: existing.analisisCobertura,
+    coordenadasRiesgo: existing.coordenadasRiesgo || incoming.coordenadasRiesgo,
+    fotosInspeccion: existing.fotosInspeccion?.length ? existing.fotosInspeccion : incoming.fotosInspeccion,
+    generadoPorIa: existing.generadoPorIa ?? incoming.generadoPorIa,
+    generadoPorIaEn: existing.generadoPorIaEn || incoming.generadoPorIaEn,
+    generadoPorIaNota: existing.generadoPorIaNota || incoming.generadoPorIaNota,
+  };
+}

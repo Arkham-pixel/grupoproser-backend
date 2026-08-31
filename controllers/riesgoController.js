@@ -5,9 +5,9 @@ import FuncionarioAseguradora from '../models/FuncionarioAseguradora.js';
 import Cliente from '../models/Cliente.js';
 import Estado from '../models/Estado.js';
 import ClasificacionRiesgo from '../models/ClasificacionRiesgo.js';
-import Ciudad from '../models/Ciudad.js';
 import { enviarNotificacionAsignacion, enviarNotificacionAseguradora, enviarNotificacionCreador } from '../services/emailService.js';
 import { withRecipientLocale } from '../utils/resolveUserLocale.js';
+import { getCiudadesCached } from '../services/ciudadesCache.js';
 import {
   RIESGO_ATTACHMENT_FIELDS,
   deleteAttachmentsFromRecord,
@@ -497,48 +497,15 @@ export const obtenerRiesgos = async (req, res) => {
     // Seleccionar solo campos necesarios para reducir el tamaño de la respuesta
     const riesgos = await Riesgo.find()
       .select('nmroRiesgo codiIspector codiAsgrdra asgrBenfcro nmroConsecutivo fchaAsgncion observAsignacion adjuntoAsignacion fchaInspccion observInspeccion adjuntoInspeccion codiClasificacion fchaInforme anxoInfoFnal observInforme codDireccion funcSolicita codigoPoblado ciudadSucursal codiEstdo vlorTarifaAseguradora vlorHonorarios vlorGastos nmroFactra fchaFactra totalPagado anxoFactra createdAt updatedAt _id fchaContIni observContIni adjuntoContIni')
-      .sort({ 
-        // Mostrar primero los más recientes por fecha de asignación.
-        // (Si fchaAsgncion es null, quedará hacia el final en orden descendente)
+      .sort({
         fchaAsgncion: -1,
         _id: -1
       })
       .skip(skip)
-      .limit(Math.min(limit, 2000)) // Máximo 2000 registros
-      .lean(); // Usar lean() para mejor rendimiento
-    
-    // Obtener todas las ciudades para enriquecer los datos
-    const ciudades = await Ciudad.find().lean();
-    
-    // Crear mapa de códigos de ciudad a nombres
-    const mapaCiudades = {};
-    ciudades.forEach(c => {
-      // Mapear por todos los posibles códigos
-      if (c.codiPoblado) {
-        const codigo = String(c.codiPoblado).trim();
-        mapaCiudades[codigo] = {
-          nombre: c.descCpoblado || c.descPoblado || c.descMunicipio || codigo,
-          municipio: c.descMunicipio || '',
-          departamento: c.descDepto || ''
-        };
-      }
-      if (c.codiCpoblado) {
-        const codigo = String(c.codiCpoblado).trim();
-        mapaCiudades[codigo] = {
-          nombre: c.descCpoblado || c.descPoblado || c.descMunicipio || codigo,
-          municipio: c.descMunicipio || '',
-          departamento: c.descDepto || ''
-        };
-      }
-      if (c.codiMunicipio) {
-        const codigo = String(c.codiMunicipio).trim();
-        mapaCiudades[codigo] = {
-          nombre: c.descCpoblado || c.descPoblado || c.descMunicipio || codigo,
-          municipio: c.descMunicipio || '',
-          departamento: c.descDepto || ''
-        };
-      }
-    });
+      .limit(Math.min(limit, 2000))
+      .lean();
+
+    const { mapa: mapaCiudades } = await getCiudadesCached();
     
     // Enriquecer los riesgos con datos de ciudad
     const riesgosEnriquecidos = riesgos.map(r => {
