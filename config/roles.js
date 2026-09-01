@@ -13,6 +13,7 @@ export const ROLES_VALIDOS = [
   'contractor_solo_zurich',
   'contractor_solo_bbva',
   'contractor_solo_equidad',
+  'contractor_solo_equidad_cat',
   'contractor_solo_previsora',
   'contractor_catastroficos',
 ];
@@ -26,6 +27,9 @@ export const ROL_SOLO_BBVA = 'contractor_solo_bbva';
 /** Contratista solo bandeja Equidad FDM (reporte, sin crear/liquidar). */
 export const ROL_SOLO_EQUIDAD = 'contractor_solo_equidad';
 
+/** Contratista con acceso únicamente al módulo Equidad CAT. */
+export const ROL_SOLO_EQUIDAD_CAT = 'contractor_solo_equidad_cat';
+
 /** Contratista solo módulo Previsora (Home + Previsora). */
 export const ROL_SOLO_PREVISORA = 'contractor_solo_previsora';
 
@@ -36,6 +40,7 @@ const ETIQUETA_TRES = 'Zurich, Alfa, Sura y BBVA';
 const ETIQUETA_SOLO_ZURICH = 'Zurich';
 const ETIQUETA_SOLO_BBVA = 'BBVA';
 const ETIQUETA_SOLO_EQUIDAD = 'Equidad FDM';
+const ETIQUETA_SOLO_EQUIDAD_CAT = 'Equidad CAT';
 const ETIQUETA_SOLO_PREVISORA = 'Previsora';
 const ETIQUETA_CATASTROFICOS = 'Catastróficos';
 
@@ -47,6 +52,7 @@ export const SUFIJO_NOMBRE_POR_ROL = {
   contractor_solo_zurich: ETIQUETA_SOLO_ZURICH,
   contractor_solo_bbva: ETIQUETA_SOLO_BBVA,
   contractor_solo_equidad: ETIQUETA_SOLO_EQUIDAD,
+  contractor_solo_equidad_cat: ETIQUETA_SOLO_EQUIDAD_CAT,
   contractor_solo_previsora: ETIQUETA_SOLO_PREVISORA,
   contractor_catastroficos: ETIQUETA_CATASTROFICOS,
 };
@@ -59,6 +65,7 @@ const SUFIJOS_LEGACY = [
   'Zurich, Alfa y Sura',
   'BBVA',
   'Equidad FDM',
+  'Equidad CAT',
   'Previsora',
   'Catastróficos',
 ];
@@ -74,6 +81,7 @@ const APIS_TRES = [
 const APIS_SOLO_ZURICH = ['/api/zurich', '/api/zurich-listado'];
 const APIS_SOLO_BBVA = ['/api/bbva-cat', '/api/bbva-cat-listado'];
 const APIS_SOLO_EQUIDAD = ['/api/equidad-fdm'];
+const APIS_SOLO_EQUIDAD_CAT = ['/api/equidad-cat', '/api/arnald-drafts'];
 const APIS_SOLO_PREVISORA = [
   '/api/previsora',
   '/api/previsora-listado',
@@ -120,6 +128,10 @@ export const CONTRATISTAS_MODULO = {
     apis: APIS_SOLO_EQUIDAD,
     soloLecturaApi: true,
     mensaje: 'Su rol Equidad solo permite Home, Dashboard y bandeja Fundación de la Mujer (Equidad FDM).',
+  },
+  contractor_solo_equidad_cat: {
+    apis: APIS_SOLO_EQUIDAD_CAT,
+    mensaje: 'Su rol Equidad CAT solo permite trabajar el módulo Equidad CAT.',
   },
   contractor_solo_previsora: {
     apis: APIS_SOLO_PREVISORA,
