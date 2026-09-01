@@ -15,6 +15,7 @@ const PREFIJOS_SOLO_LECTURA = [
   '/api/ajustadores-catastrofico',
   '/api/inspectores-catastrofico',
   '/api/comunicados',
+  '/api/express-catalogos',
 ];
 
 export function restringirContractorZurich(req, res, next) {
