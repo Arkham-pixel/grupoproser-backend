@@ -14,7 +14,7 @@ import { syncClaimDocument } from '../services/claimDocumentSyncService.js';
 const DESTINO = 'CASOS ENVIADOS A LA ASEGURADORA';
 
 const CASOS = [
-  { consecutivo: 'ALFA-2026-08-295', cedula: null, nombre: 'Valentina Espinosa' },
+  { consecutivo: 'ALFA-2026-08-512', cedula: null, nombre: 'JUAN CAMILO RIVERA' },
 ];
 
 const CONSECUTIVOS = CASOS.map((c) => c.consecutivo);

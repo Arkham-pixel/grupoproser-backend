@@ -10,7 +10,7 @@ import path from "path";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
 import { generateSecret, generateURI, verifySync } from "otplib";
-import QRCode from "qrcode";
+import qrcodeImport from "qrcode";
 import { JWT_SECRET } from "../config/secrets.js";
 import { aplicarSufijoNombrePorRol, esRolValido } from "../config/roles.js";
 import { UPLOADS_ROOT, ensureUploadDir } from "../config/uploadsRoot.js";
@@ -741,19 +741,66 @@ router.post("/login/2fa", async (req, res) => {
 const TOTP_EPOCH_TOLERANCE = 30;
 const TOTP_ISSUER = "ARNALD DATA FLOW";
 
+const QRCode =
+  typeof qrcodeImport?.toDataURL === "function"
+    ? qrcodeImport
+    : qrcodeImport?.default;
+
 // En la app de autenticación se muestra: "ARNALD DATA FLOW: {ID}"
-const obtenerEtiquetaTotp = (usuario) =>
-  usuario.cedula || usuario.login;
+const obtenerEtiquetaTotp = (usuario) => {
+  const raw = usuario?.cedula || usuario?.login || usuario?.email || "";
+  const label = String(raw).trim();
+  return label || String(usuario?._id || "usuario");
+};
+
+const normalizarSecretoTotp = (secret) =>
+  String(secret || "")
+    .replace(/\s+/g, "")
+    .replace(/=+$/, "");
+
+const generarImagenQrTotp = async (otpauthUrl) => {
+  if (typeof QRCode?.toDataURL !== "function") {
+    console.error("❌ El módulo qrcode no está disponible en el servidor");
+    return null;
+  }
+  try {
+    return await QRCode.toDataURL(otpauthUrl, {
+      width: 280,
+      margin: 2,
+      errorCorrectionLevel: "M",
+    });
+  } catch (err) {
+    console.error("❌ Error generando imagen QR TOTP:", err);
+    return null;
+  }
+};
 
 const generarDatosTotp = async (usuario, secret) => {
   const label = obtenerEtiquetaTotp(usuario);
+  const secretStr = normalizarSecretoTotp(secret);
+  if (!secretStr) {
+    throw new Error("No se pudo generar el secreto TOTP");
+  }
   const otpauthUrl = generateURI({
     issuer: TOTP_ISSUER,
     label,
-    secret,
+    secret: secretStr,
   });
-  const qr = await QRCode.toDataURL(otpauthUrl, { width: 280, margin: 2 });
-  return { qr, secret, label, issuer: TOTP_ISSUER };
+  const qr = await generarImagenQrTotp(otpauthUrl);
+  return { qr, otpauthUrl, secret: secretStr, label, issuer: TOTP_ISSUER };
+};
+
+const persistirCamposTotp = async (userId, { set = {}, unset = [] } = {}) => {
+  const update = {};
+  if (Object.keys(set).length) update.$set = set;
+  if (unset.length) {
+    update.$unset = Object.fromEntries(unset.map((campo) => [campo, 1]));
+  }
+  if (!Object.keys(update).length) return;
+  const resultado = await SecurUser.updateOne({ _id: userId }, update);
+  if (!resultado.matchedCount) {
+    throw new Error("No se encontró el usuario para guardar 2FA");
+  }
 };
 
 // Helper: obtener el usuario autenticado desde el token Bearer
@@ -768,7 +815,8 @@ const obtenerUsuarioDesdeToken = async (req) => {
     if (decoded.purpose === "2fa") {
       return { error: { status: 401, message: t('invalidToken') } };
     }
-    const usuario = await SecurUser.findById(decoded.id);
+    // Sin picture: es un Buffer viejo que al hacer save() del documento entero puede tumbar el QR.
+    const usuario = await SecurUser.findById(decoded.id).select("-picture");
     if (!usuario) return { error: { status: 404, message: t('userNotFound') } };
     return { usuario };
   } catch (err) {
@@ -800,13 +848,17 @@ router.post("/2fa/setup", async (req, res) => {
     }
     
     const reutilizarPendiente = Boolean(usuario.totpTempSecret);
-    const secret = usuario.totpTempSecret || generateSecret();
-    if (!reutilizarPendiente) {
-      usuario.totpTempSecret = secret;
-      await usuario.save();
+    let secret = usuario.totpTempSecret || generateSecret();
+    let datosTotp;
+    try {
+      datosTotp = await generarDatosTotp(usuario, secret);
+    } catch (genErr) {
+      console.error("❌ Error con secreto TOTP pendiente, se regenera:", genErr);
+      secret = generateSecret();
+      datosTotp = await generarDatosTotp(usuario, secret);
     }
 
-    const datosTotp = await generarDatosTotp(usuario, secret);
+    await persistirCamposTotp(usuario._id, { set: { totpTempSecret: datosTotp.secret } });
 
     console.log(
       reutilizarPendiente
@@ -820,8 +872,12 @@ router.post("/2fa/setup", async (req, res) => {
       message: req.t('scanQrThenConfirm')
     });
   } catch (err) {
-    console.error("❌ Error generando configuración 2FA:", err);
-    res.status(500).json({ message: req.t('serverError') });
+    console.error("❌ Error generando configuración 2FA:", err?.message || err);
+    console.error(err?.stack);
+    res.status(500).json({
+      message: req.t('serverError'),
+      detalle: err?.message || String(err),
+    });
   }
 });
 
@@ -847,11 +903,14 @@ router.post("/2fa/activate", async (req, res) => {
       return res.status(401).json({ message: req.t('incorrectAuthenticatorCodeRetry') });
     }
     
-    usuario.totpSecret = usuario.totpTempSecret;
-    usuario.totpTempSecret = null;
-    usuario.totpEnabled = true;
-    usuario.mfaLastUpdated = new Date().toISOString();
-    await usuario.save();
+    await persistirCamposTotp(usuario._id, {
+      set: {
+        totpSecret: usuario.totpTempSecret,
+        totpEnabled: true,
+        mfaLastUpdated: new Date().toISOString(),
+      },
+      unset: ["totpTempSecret"],
+    });
     
     console.log('✅ 2FA (TOTP) activado para:', usuario.login);
     
@@ -884,11 +943,13 @@ router.post("/2fa/disable", async (req, res) => {
       return res.status(401).json({ message: req.t('incorrectCodeTwoFactorNotDisabled') });
     }
     
-    usuario.totpSecret = null;
-    usuario.totpTempSecret = null;
-    usuario.totpEnabled = false;
-    usuario.mfaLastUpdated = new Date().toISOString();
-    await usuario.save();
+    await persistirCamposTotp(usuario._id, {
+      set: {
+        totpEnabled: false,
+        mfaLastUpdated: new Date().toISOString(),
+      },
+      unset: ["totpSecret", "totpTempSecret"],
+    });
     
     console.log('⚠️ 2FA (TOTP) desactivado para:', usuario.login);
     
