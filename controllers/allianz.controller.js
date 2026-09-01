@@ -404,11 +404,14 @@ const buildAllianzPayload = (data = {}, base = {}) => {
     base.fechaRecepcionDocumento ?? null
   ),
   fechaObjecion: parseDateFlexible(data.fechaObjecion, base.fechaObjecion ?? null),
+  fechaObjetado: parseDateFlexible(data.fechaObjetado, base.fechaObjetado ?? null),
   fechaAutorizacionAnalista: parseDateFlexible(
     data.fechaAutorizacionAnalista,
     base.fechaAutorizacionAnalista ?? null
   ),
   fechaCasoParaPago: parseDateFlexible(data.fechaCasoParaPago, base.fechaCasoParaPago ?? null),
+  fechaCasoPagado: parseDateFlexible(data.fechaCasoPagado, base.fechaCasoPagado ?? null),
+  fechaAnulado: parseDateFlexible(data.fechaAnulado, base.fechaAnulado ?? null),
   documentoFaltante: toStringOrNull(data.documentoFaltante, base.documentoFaltante ?? null),
   observacionPendienteDocumento: toStringOrNull(
     data.observacionPendienteDocumento,
@@ -623,8 +626,11 @@ const mergeImportacionAllianz = (incomingPayload = {}, existente = {}) => {
     'fechaSolicitudDocumento',
     'fechaRecepcionDocumento',
     'fechaObjecion',
+    'fechaObjetado',
     'fechaAutorizacionAnalista',
     'fechaCasoParaPago',
+    'fechaCasoPagado',
+    'fechaAnulado',
     'documentoFaltante',
     'observacionPendienteDocumento',
     'motivoObjecion',

@@ -157,6 +157,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     telefonoAsegurado: pick(data.telefonoAsegurado, base.telefonoAsegurado ?? null),
     contactoAsegurado: pick(data.contactoAsegurado, base.contactoAsegurado ?? null),
     observaciones: pick(data.observaciones, base.observaciones ?? null),
+    direccionPredio: pick(data.direccionPredio, base.direccionPredio ?? null),
     ciudad:
       homologarCiudadAllianz(pick(data.ciudad, base.ciudad ?? null)) ||
       pick(data.ciudad, base.ciudad ?? null),
@@ -203,11 +204,14 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       base.fechaRecepcionDocumento ?? null
     ),
     fechaObjecion: pickFecha(data.fechaObjecion, base.fechaObjecion ?? null),
+    fechaObjetado: pickFecha(data.fechaObjetado, base.fechaObjetado ?? null),
     fechaAutorizacionAnalista: pickFecha(
       data.fechaAutorizacionAnalista,
       base.fechaAutorizacionAnalista ?? null
     ),
     fechaCasoParaPago: pickFecha(data.fechaCasoParaPago, base.fechaCasoParaPago ?? null),
+    fechaCasoPagado: pickFecha(data.fechaCasoPagado, base.fechaCasoPagado ?? null),
+    fechaAnulado: pickFecha(data.fechaAnulado, base.fechaAnulado ?? null),
     documentoFaltante: pick(data.documentoFaltante, base.documentoFaltante ?? null),
     observacionPendienteDocumento: pick(
       data.observacionPendienteDocumento,
