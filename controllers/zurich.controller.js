@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import ZurichCaso from '../models/ZurichCaso.js';
 import { deleteStoredFile } from '../services/fileStorageService.js';
+import { rechazarSiFranjaOcupada } from '../services/agendaCatastroficoService.js';
+import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
 import { rutaArchivoSigueEnUsoZurich } from '../utils/espejarArchivoZurichCatEnListado.js';
 import {
   obtenerAlertasZurichPorAjustadores,
@@ -429,6 +431,7 @@ const buildZurichPayload = (data = {}, base = {}) => {
     data.fechaCoordinandoInspeccion,
     base.fechaCoordinandoInspeccion ?? null
   ),
+  ...mapearFranjaAgenda(data, base, toStringOrNull),
   fechaAnalisisCaso: parseDateFlexible(data.fechaAnalisisCaso, base.fechaAnalisisCaso ?? null),
   fechaSolicitudDocumento: parseDateFlexible(
     data.fechaSolicitudDocumento,
@@ -746,6 +749,7 @@ export const crearCasoZurich = async (req, res) => {
       });
     }
 
+    if (await rechazarSiFranjaOcupada(res, payload)) return;
     const documento = await ZurichCaso.create(payload);
     res.status(201).json({ success: true, data: documento });
   } catch (error) {
@@ -827,6 +831,7 @@ export const actualizarCasoZurich = async (req, res) => {
       });
     }
 
+    if (await rechazarSiFranjaOcupada(res, payload, { excludeId: registroActual._id })) return;
     const actualizado = await ZurichCaso.findByIdAndUpdate(
       registroActual._id,
       { $set: payload },

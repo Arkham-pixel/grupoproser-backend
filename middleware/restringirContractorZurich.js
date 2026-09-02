@@ -6,6 +6,7 @@ const PREFIJOS_COMUNES = [
   '/api/storage',
   '/api/health',
   '/api/secur-auth',
+  '/api/notificaciones-operativas',
   '/uploads',
 ];
 

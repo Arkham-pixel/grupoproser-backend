@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { aplicarPluginNotificacionesOperativas } from '../services/notificacionesOperativasService.js';
+import { aplicarCamposAgendaCatastrofico } from '../utils/agendaCatastrofico.js';
 
 const ArchivoAllianzSchema = new mongoose.Schema(
   {
@@ -188,6 +190,9 @@ const AllianzCasoSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+aplicarCamposAgendaCatastrofico(AllianzCasoSchema);
+aplicarPluginNotificacionesOperativas(AllianzCasoSchema, { modulo: 'allianz' });
 
 const AllianzCaso = mongoose.model(
   'AllianzCaso',

@@ -17,6 +17,9 @@ import { homologarCausaZurich } from '../utils/causasZurich.js';
 import { aplicarReservaDesdePresupuestoZurich, fusionarInformeUnicoZurich } from '../utils/reservaPresupuestoZurich.js';
 import { aplicarLiderZurich } from '../utils/filtrarCatalogoPorModulo.js';
 import { TORRE_CONFIG_ZURICH } from '../config/zurichListadoTorre.js';
+import { notificarPersistenciaNativa } from '../services/notificacionesOperativasService.js';
+import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
+import { rechazarSiFranjaOcupada } from '../services/agendaCatastroficoService.js';
 
 if (ZurichListadoCaso?.schema) {
   ZurichListadoCaso.schema.add({
@@ -224,6 +227,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       data.fechaCoordinandoInspeccion,
       base.fechaCoordinandoInspeccion ?? null
     ),
+    ...mapearFranjaAgenda(data, base, pick),
     fechaInspeccionado: pickFecha(data.fechaInspeccionado, base.fechaInspeccionado ?? null),
     fechaVerificado: pickFecha(data.fechaVerificado, base.fechaVerificado ?? null),
     fechaAnalisisCaso: pickFecha(data.fechaAnalisisCaso, base.fechaAnalisisCaso ?? null),
@@ -307,10 +311,21 @@ const persistirListadoZurich = async (id, payload, { crear = false } = {}) => {
       ...$set,
       createdAt: now,
     });
-    return ZurichListadoCaso.findById(_id).lean();
+    const documento = await ZurichListadoCaso.findById(_id).lean();
+    notificarPersistenciaNativa({ crear: true, actual: documento, modulo: 'zurichListado' });
+    return documento;
   }
+  const previo = await ZurichListadoCaso.findById(id)
+    .select('ajustador inspector ajustadorLider consecutivo siniestro zc asegurado')
+    .lean();
   await ZurichListadoCaso.collection.updateOne({ _id: id }, { $set });
-  return ZurichListadoCaso.findById(id).lean();
+  const actualizado = await ZurichListadoCaso.findById(id).lean();
+  notificarPersistenciaNativa({
+    previo,
+    actual: actualizado,
+    modulo: 'zurichListado',
+  });
+  return actualizado;
 };
 
 const obtenerMaxSecuencial = async () => {
@@ -349,6 +364,7 @@ export const crearCasoListadoZurich = async (req, res) => {
       });
     }
     payload.consecutivo = await generarConsecutivo();
+    if (await rechazarSiFranjaOcupada(res, payload)) return;
     const documento = await persistirListadoZurich(null, payload, { crear: true });
     res.status(201).json({ success: true, data: documento });
   } catch (error) {
@@ -518,6 +534,7 @@ export const actualizarCasoListadoZurich = async (req, res) => {
     }
     const payload = buildPayload(req.body, actual.toObject(), { pisar: true });
     if (!payload.consecutivo) payload.consecutivo = actual.consecutivo || (await generarConsecutivo());
+    if (await rechazarSiFranjaOcupada(res, payload, { excludeId: actual._id })) return;
     const actualizado = await persistirListadoZurich(actual._id, payload);
     res.json({ success: true, data: actualizado });
   } catch (error) {

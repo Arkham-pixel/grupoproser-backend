@@ -5,7 +5,7 @@ const UsuarioSchema = new mongoose.Schema({
   nombre:           { type: String, required: true, trim: true },
   correo:           { type: String, required: true, unique: true, lowercase: true, trim: true },
   password:         { type: String, required: true },
-  rol:              { type: String, enum: ["admin","soporte","usuario","visualizador","puertos","contractor_zurich","contractor_alfa","contractor_sura","contractor_solo_zurich","contractor_solo_bbva","contractor_solo_equidad","contractor_solo_equidad_cat","contractor_solo_express","contractor_solo_previsora","contractor_catastroficos"], default: "usuario" },
+  rol:              { type: String, enum: ["admin","soporte","usuario","visualizador","puertos","contractor_zurich","contractor_alfa","contractor_sura","contractor_solo_zurich","contractor_solo_bbva","contractor_solo_equidad","contractor_solo_equidad_cat","contractor_solo_express","contractor_solo_previsora","contractor_catastroficos","contractor_era"], default: "usuario" },
   celular:          { type: String, trim: true },
   cedula:           { type: String, trim: true },
   fechaNacimiento:  { type: Date },

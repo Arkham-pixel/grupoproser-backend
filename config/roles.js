@@ -17,6 +17,7 @@ export const ROLES_VALIDOS = [
   'contractor_solo_express',
   'contractor_solo_previsora',
   'contractor_catastroficos',
+  'contractor_era',
 ];
 
 /** Contratista con acceso únicamente al módulo Zurich. */
@@ -40,6 +41,9 @@ export const ROL_SOLO_PREVISORA = 'contractor_solo_previsora';
 /** Contratista con todos los módulos catastróficos. */
 export const ROL_CATASTROFICOS = 'contractor_catastroficos';
 
+/** Contratista ERA: módulos catastróficos sin Equidad FDM. */
+export const ROL_ERA = 'contractor_era';
+
 const ETIQUETA_TRES = 'Zurich, Alfa, Sura y BBVA';
 const ETIQUETA_SOLO_ZURICH = 'Zurich';
 const ETIQUETA_SOLO_BBVA = 'BBVA';
@@ -48,6 +52,7 @@ const ETIQUETA_SOLO_EQUIDAD_CAT = 'Equidad CAT';
 const ETIQUETA_SOLO_EXPRESS = 'Express';
 const ETIQUETA_SOLO_PREVISORA = 'Previsora';
 const ETIQUETA_CATASTROFICOS = 'Catastróficos';
+const ETIQUETA_ERA = 'ERA';
 
 /** Texto que se agrega al nombre entre paréntesis al asignar el rol. */
 export const SUFIJO_NOMBRE_POR_ROL = {
@@ -61,6 +66,7 @@ export const SUFIJO_NOMBRE_POR_ROL = {
   contractor_solo_express: ETIQUETA_SOLO_EXPRESS,
   contractor_solo_previsora: ETIQUETA_SOLO_PREVISORA,
   contractor_catastroficos: ETIQUETA_CATASTROFICOS,
+  contractor_era: ETIQUETA_ERA,
 };
 
 const SUFIJOS_LEGACY = [
@@ -75,6 +81,7 @@ const SUFIJOS_LEGACY = [
   'Express',
   'Previsora',
   'Catastróficos',
+  'ERA',
 ];
 
 const APIS_TRES = [
@@ -84,11 +91,12 @@ const APIS_TRES = [
   '/api/sura',
   '/api/bbva-cat',
   '/api/bbva-cat-listado',
+  '/api/agenda-catastrofico',
 ];
-const APIS_SOLO_ZURICH = ['/api/zurich', '/api/zurich-listado'];
-const APIS_SOLO_BBVA = ['/api/bbva-cat', '/api/bbva-cat-listado'];
+const APIS_SOLO_ZURICH = ['/api/zurich', '/api/zurich-listado', '/api/agenda-catastrofico'];
+const APIS_SOLO_BBVA = ['/api/bbva-cat', '/api/bbva-cat-listado', '/api/agenda-catastrofico'];
 const APIS_SOLO_EQUIDAD = ['/api/equidad-fdm'];
-const APIS_SOLO_EQUIDAD_CAT = ['/api/equidad-cat', '/api/arnald-drafts'];
+const APIS_SOLO_EQUIDAD_CAT = ['/api/equidad-cat', '/api/arnald-drafts', '/api/agenda-catastrofico'];
 const APIS_SOLO_EXPRESS = [
   '/api/siniestros-express',
   '/api/arnald-drafts',
@@ -98,6 +106,7 @@ const APIS_SOLO_PREVISORA = [
   '/api/previsora',
   '/api/previsora-listado',
   '/api/tareas',
+  '/api/agenda-catastrofico',
 ];
 const APIS_CATASTROFICOS = [
   '/api/previsora',
@@ -113,6 +122,7 @@ const APIS_CATASTROFICOS = [
   '/api/equidad-cat',
   '/api/historial-formularios',
   '/api/tareas',
+  '/api/agenda-catastrofico',
 ];
 
 export const CONTRATISTAS_MODULO = {
@@ -156,6 +166,10 @@ export const CONTRATISTAS_MODULO = {
   contractor_catastroficos: {
     apis: APIS_CATASTROFICOS,
     mensaje: 'Su rol Catastróficos solo permite Previsora, Zurich, BBVA, Alfa, Sura, Allianz y Equidad CAT.',
+  },
+  contractor_era: {
+    apis: APIS_CATASTROFICOS,
+    mensaje: 'Su rol ERA solo permite Previsora, Zurich, BBVA, Alfa, Sura, Allianz y Equidad CAT.',
   },
 };
 

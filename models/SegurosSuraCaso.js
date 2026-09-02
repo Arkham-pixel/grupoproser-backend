@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { aplicarPluginNotificacionesOperativas } from '../services/notificacionesOperativasService.js';
+import { aplicarCamposAgendaCatastrofico } from '../utils/agendaCatastrofico.js';
 
 const ArchivoSuraSchema = new mongoose.Schema(
   {
@@ -223,6 +225,8 @@ const SegurosSuraCasoSchema = new mongoose.Schema(
 SegurosSuraCasoSchema.index({ 'envios_facturacion.gerente': 1 }, { sparse: true });
 SegurosSuraCasoSchema.index({ nmroAjste: 1 }, { sparse: true });
 SegurosSuraCasoSchema.index({ nmroSinstro: 1 }, { sparse: true });
+aplicarCamposAgendaCatastrofico(SegurosSuraCasoSchema);
+aplicarPluginNotificacionesOperativas(SegurosSuraCasoSchema, { modulo: 'sura' });
 
 const SegurosSuraCaso = mongoose.model(
   'SegurosSuraCaso',

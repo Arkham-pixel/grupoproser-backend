@@ -6,6 +6,9 @@ import { aplicarFechaAccionEstadoBbvaCat, homologarEstadoBbvaCat } from '../util
 import { homologarCiudadBbvaCat } from '../utils/ciudadesBbvaCat.js';
 import { crearControladoresArchivosListado } from '../utils/archivosCasoListado.js';
 import { rutaArchivoSigueEnUsoBbvaCat } from '../utils/espejarArchivoBbvaCatEnListado.js';
+import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
+import { rechazarSiFranjaOcupada } from '../services/agendaCatastroficoService.js';
+import { aplicarValorLiquidadoDesdeLiquidadorBbva } from '../utils/valoresLiquidadorBbvaCat.js';
 
 const esVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null';
@@ -126,6 +129,14 @@ const pickObjeto = (incoming, existing) => {
   return existing ?? null;
 };
 
+const parseNumero = (valor, fallback = null) => {
+  if (valor === undefined) return fallback ?? null;
+  if (valor === null || valor === '') return fallback ?? null;
+  if (typeof valor === 'number' && Number.isFinite(valor)) return valor;
+  const n = Number(String(valor).replace(/\./g, '').replace(/[^\d-]/g, ''));
+  return Number.isNaN(n) ? fallback ?? null : n;
+};
+
 const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
   const pick = pisar ? toStr : completarCampo;
   const pickFecha = pisar ? parseFecha : completarFecha;
@@ -155,6 +166,34 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     inspector: pick(data.inspector, base.inspector ?? null),
     fechaAsignacion: pickFecha(data.fechaAsignacion, base.fechaAsignacion ?? null),
     fechaVisita: pickFecha(data.fechaVisita, base.fechaVisita ?? null),
+    reserva:
+      data.reserva !== undefined
+        ? parseNumero(data.reserva, base.reserva ?? null)
+        : (base.reserva ?? null),
+    valorEstimadoAseguradora: parseNumero(
+      data.valorEstimadoAseguradora,
+      base.valorEstimadoAseguradora ?? null
+    ),
+    valorAseguradoInmueble: parseNumero(
+      data.valorAseguradoInmueble,
+      base.valorAseguradoInmueble ?? null
+    ),
+    valorReclamado: parseNumero(data.valorReclamado, base.valorReclamado ?? null),
+    valorLiquidado: parseNumero(data.valorLiquidado, base.valorLiquidado ?? null),
+    valorALiquidar: parseNumero(data.valorALiquidar, base.valorALiquidar ?? null),
+    valorAseguradoContenidos: parseNumero(
+      data.valorAseguradoContenidos,
+      base.valorAseguradoContenidos ?? null
+    ),
+    valorReservaPreventivaPromedio: parseNumero(
+      data.valorReservaPreventivaPromedio,
+      base.valorReservaPreventivaPromedio ?? null
+    ),
+    valorComercialInmueble: parseNumero(
+      data.valorComercialInmueble,
+      base.valorComercialInmueble ?? null
+    ),
+    observacionReserva: pick(data.observacionReserva, base.observacionReserva ?? null),
     estado: homologarEstadoBbvaCat(pick(data.estado, base.estado ?? 'CASO NUEVO') || 'CASO NUEVO'),
     modalidadAtencion: pick(data.modalidadAtencion, base.modalidadAtencion ?? null),
     fechaCasoNuevo: pickFecha(data.fechaCasoNuevo, base.fechaCasoNuevo ?? null),
@@ -162,6 +201,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       data.fechaCoordinandoInspeccion,
       base.fechaCoordinandoInspeccion ?? null
     ),
+    ...mapearFranjaAgenda(data, base, pick),
     fechaAnalisisCaso: pickFecha(data.fechaAnalisisCaso, base.fechaAnalisisCaso ?? null),
     fechaSolicitudDocumento: pickFecha(
       data.fechaSolicitudDocumento,
@@ -192,6 +232,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
     informeUnico: pickObjeto(data.informeUnico, base.informeUnico ?? null),
   });
+  aplicarValorLiquidadoDesdeLiquidadorBbva(payload);
   return aplicarFechaAccionEstadoBbvaCat(
     armarContactoAsegurado(armarContactoIntermediario(payload)),
     base
@@ -234,6 +275,7 @@ export const crearCasoListadoBbvaCat = async (req, res) => {
       });
     }
     payload.consecutivo = await generarConsecutivo();
+    if (await rechazarSiFranjaOcupada(res, payload)) return;
     const documento = await BbvaCatListadoCaso.create(payload);
     res.status(201).json({ success: true, data: documento });
   } catch (error) {
@@ -299,6 +341,7 @@ export const actualizarCasoListadoBbvaCat = async (req, res) => {
     }
     const payload = buildPayload(req.body, actual.toObject(), { pisar: true });
     if (!payload.consecutivo) payload.consecutivo = actual.consecutivo || (await generarConsecutivo());
+    if (await rechazarSiFranjaOcupada(res, payload, { excludeId: actual._id })) return;
     const actualizado = await BbvaCatListadoCaso.findByIdAndUpdate(
       actual._id,
       { $set: payload },

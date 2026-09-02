@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { aplicarPluginNotificacionesOperativas } from '../services/notificacionesOperativasService.js';
+import { aplicarCamposAgendaCatastrofico } from '../utils/agendaCatastrofico.js';
 
 const ArchivoBbvaCatSchema = new mongoose.Schema(
   {
@@ -86,8 +88,11 @@ const BbvaCatCasoSchema = new mongoose.Schema(
     valorReservaPreventivaPromedio: Number,
     valorComercialInmueble: Number,
     reserva: Number,
+    valorEstimadoAseguradora: Number,
     valorReclamado: Number,
     valorLiquidado: Number,
+    valorALiquidar: Number,
+    observacionReserva: String,
     fechaInspeccion: Date,
     fechaUltimoDocumento: Date,
     fechaLiquidado: Date,
@@ -208,6 +213,9 @@ const BbvaCatCasoSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+aplicarCamposAgendaCatastrofico(BbvaCatCasoSchema);
+aplicarPluginNotificacionesOperativas(BbvaCatCasoSchema, { modulo: 'bbvaCat' });
 
 const BbvaCatCaso = mongoose.model(
   'BbvaCatCaso',

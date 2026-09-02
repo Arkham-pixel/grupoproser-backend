@@ -11,6 +11,7 @@ import { helmetMiddleware, loginRateLimitMiddleware } from "./config/httpSecurit
 import { restringirExterno } from "./middleware/restringirExterno.js";
 import { restringirContractorZurich } from "./middleware/restringirContractorZurich.js";
 import { poblarUsuarioOpcional } from "./middleware/usuarioOpcional.js";
+import { contextoUsuarioMiddleware } from "./middleware/contextoUsuario.js";
 import { registrarAuditoriaPlataforma } from "./middleware/registrarAuditoriaPlataforma.js";
 import { resolveFrontendUrl } from "./config/platformUrls.js";
 import { localeMiddleware } from './middleware/locale.js';
@@ -38,6 +39,8 @@ import casosRoutes from './routes/casos.js';
 import riesgosRoutes from './routes/riesgos.routes.js';
 import historialRoutes from './routes/historial.routes.js';
 import alertasRoutes from './routes/alertasRoutes.js';
+import notificacionesOperativasRoutes from './routes/notificacionesOperativas.routes.js';
+import agendaCatastroficoRoutes from './routes/agendaCatastrofico.routes.js';
 import funcionarioRoutes from './routes/funcionario.routes.js';
 import matrizRiesgoRoutes from './routes/matrizRiesgoRoutes.js';
 import intermediarioRoutes from './routes/intermediario.routes.js';
@@ -235,6 +238,7 @@ app.get('/reset-password/:token', (req, res) => {
 app.use(restringirExterno);
 app.use(restringirContractorZurich);
 app.use(poblarUsuarioOpcional);
+app.use(contextoUsuarioMiddleware);
 app.use(registrarAuditoriaPlataforma);
 app.use('/api', requireMongo);
 
@@ -264,6 +268,8 @@ app.use('/api/comunicados', comunicadosRoutes);
 app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/historial-formularios', historialRoutes);
 app.use('/api/alertas', alertasRoutes);
+app.use('/api/notificaciones-operativas', notificacionesOperativasRoutes);
+app.use('/api/agenda-catastrofico', agendaCatastroficoRoutes);
 app.use('/api/health', healthRoutes);
 app.use('/api/integrations/sharepoint', sharepointRoutes);
 console.log('✅ Ruta /api/integrations/sharepoint registrada');

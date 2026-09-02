@@ -24,6 +24,7 @@ import { iniciarCronEquidadFdmExcelSharePointImport } from './services/cronEquid
 import { iniciarCronEquidadFdmExcelOutbound } from './services/cronEquidadFdmExcelOutboundService.js';
 import { iniciarSharePointWatchdog } from './services/cronSharePointWatchdogService.js';
 import { iniciarCronEspejoArchivosBbvaCat } from './services/cronEspejoArchivosBbvaCatService.js';
+import { iniciarCronNotificacionesVisita } from './services/cronNotificacionesVisitaService.js';
 import { verifyMailOnStartup } from './services/mailTransport.js';
 import { verifyS3OnBoot } from './config/storage.js';
 
@@ -92,6 +93,7 @@ function iniciarServiciosCron() {
   iniciarCronEquidadFdmExcelOutbound();
   iniciarSharePointWatchdog();
   iniciarCronEspejoArchivosBbvaCat();
+  iniciarCronNotificacionesVisita();
 }
 
 // Iniciar el servidor independientemente del estado de MongoDB

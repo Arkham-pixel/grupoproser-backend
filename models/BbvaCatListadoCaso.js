@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { aplicarPluginNotificacionesOperativas } from '../services/notificacionesOperativasService.js';
+import { aplicarCamposAgendaCatastrofico } from '../utils/agendaCatastrofico.js';
 
 const ArchivoBbvaCatListadoSchema = new mongoose.Schema(
   {
@@ -55,6 +57,16 @@ const BbvaCatListadoCasoSchema = new mongoose.Schema(
     inspector: String,
     fechaAsignacion: Date,
     fechaVisita: Date,
+    reserva: Number,
+    valorEstimadoAseguradora: Number,
+    valorAseguradoInmueble: Number,
+    valorAseguradoContenidos: Number,
+    valorReservaPreventivaPromedio: Number,
+    valorComercialInmueble: Number,
+    valorReclamado: Number,
+    valorLiquidado: Number,
+    valorALiquidar: Number,
+    observacionReserva: String,
     estado: { type: String, required: true, default: 'CASO NUEVO' },
     modalidadAtencion: String,
     fechaCasoNuevo: Date,
@@ -82,6 +94,8 @@ const BbvaCatListadoCasoSchema = new mongoose.Schema(
 );
 
 BbvaCatListadoCasoSchema.index({ zc: 1 }, { unique: false, sparse: true });
+aplicarCamposAgendaCatastrofico(BbvaCatListadoCasoSchema);
+aplicarPluginNotificacionesOperativas(BbvaCatListadoCasoSchema, { modulo: 'bbvaCatListado' });
 
 const BbvaCatListadoCaso = mongoose.model(
   'BbvaCatListadoCaso',

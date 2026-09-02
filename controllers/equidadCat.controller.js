@@ -4,6 +4,8 @@ import AjustadorCatastrofico from '../models/AjustadorCatastrofico.js';
 import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatastrofico.js';
 import { catalogoPerteneceAModulo } from '../utils/filtrarCatalogoPorModulo.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
+import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
+import { rechazarSiFranjaOcupada } from '../services/agendaCatastroficoService.js';
 import { aplicarFechaAccionEstadoEquidadCat, homologarEstadoEquidadCat } from '../utils/estadosEquidadCat.js';
 import { crearControladoresArchivosListado } from '../utils/archivosCasoListado.js';
 
@@ -230,6 +232,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       data.fechaCoordinandoInspeccion,
       base.fechaCoordinandoInspeccion ?? null
     ),
+    ...mapearFranjaAgenda(data, base, pick),
     fechaAnalisisCaso: pickFecha(data.fechaAnalisisCaso, base.fechaAnalisisCaso ?? null),
     fechaSolicitudDocumento: pickFecha(
       data.fechaSolicitudDocumento,
@@ -301,6 +304,7 @@ export const crearCasoListadoEquidadCat = async (req, res) => {
       });
     }
     payload.consecutivo = await generarConsecutivo();
+    if (await rechazarSiFranjaOcupada(res, payload)) return;
     const documento = await EquidadCatCaso.create(payload);
     res.status(201).json({ success: true, data: documento });
   } catch (error) {
@@ -366,6 +370,7 @@ export const actualizarCasoListadoEquidadCat = async (req, res) => {
     }
     const payload = buildPayload(req.body, actual.toObject(), { pisar: true });
     if (!payload.consecutivo) payload.consecutivo = actual.consecutivo || (await generarConsecutivo());
+    if (await rechazarSiFranjaOcupada(res, payload, { excludeId: actual._id })) return;
     const actualizado = await EquidadCatCaso.findByIdAndUpdate(
       actual._id,
       { $set: payload },

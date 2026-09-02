@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import SegurosAlfaCaso from '../models/SegurosAlfaCaso.js';
 import { deleteStoredFile } from '../services/fileStorageService.js';
+import { rechazarSiFranjaOcupada } from '../services/agendaCatastroficoService.js';
+import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
 import {
   obtenerAlertasAlfaPorAjustadores,
   enviarAlertasTodosAlfa,
@@ -231,6 +233,7 @@ const buildAlfaPayload = (data = {}, base = {}) => ({
   fechaLlamada: parseDateFlexible(data.fechaLlamada, base.fechaLlamada ?? null),
   observacionLlamada: toStringOrNull(data.observacionLlamada, base.observacionLlamada ?? null) || '',
   fechaInspeccion: parseDateFlexible(data.fechaInspeccion, base.fechaInspeccion ?? null),
+  ...mapearFranjaAgenda(data, base, toStringOrNull),
   fechaUltimoDocumento: parseDateFlexible(
     data.fechaUltimoDocumento,
     base.fechaUltimoDocumento ?? null
@@ -430,6 +433,7 @@ export const crearCasoAlfa = async (req, res) => {
       });
     }
 
+    if (await rechazarSiFranjaOcupada(res, payload)) return;
     const documento = await SegurosAlfaCaso.create(payload);
     res.status(201).json({ success: true, data: documento });
   } catch (error) {
@@ -453,7 +457,7 @@ export const listarCasosAlfa = async (req, res) => {
     );
     const skip = (pageNum - 1) * limitNum;
     const identidad = await obtenerIdentidadUsuarioReq(req);
-    const filtroAsignacion = construirFiltroVistaAsignacion(identidad);
+    const filtroAsignacion = construirFiltroVistaAsignacion(identidad, { modulo: 'alfa' });
     const incluirExcluidos = ['1', 'true', 'yes'].includes(
       String(req.query.incluirExcluidos || '').toLowerCase()
     );
@@ -513,7 +517,7 @@ export const obtenerCasoAlfa = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Caso Seguros Alfa no encontrado' });
     }
     const identidad = await obtenerIdentidadUsuarioReq(req);
-    if (!casoVisibleParaIdentidad(documento, identidad)) {
+    if (!casoVisibleParaIdentidad(documento, identidad, { modulo: 'alfa' })) {
       return res.status(403).json({
         success: false,
         error: 'No tiene permiso para ver este caso (solo los asignados a usted).',
@@ -594,6 +598,7 @@ export const actualizarCasoAlfa = async (req, res) => {
       }
     }
 
+    if (await rechazarSiFranjaOcupada(res, payload, { excludeId: registroActual._id })) return;
     const actualizado = await SegurosAlfaCaso.findByIdAndUpdate(
       registroActual._id,
       { $set: payload },

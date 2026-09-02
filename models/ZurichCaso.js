@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { aplicarPluginNotificacionesOperativas } from '../services/notificacionesOperativasService.js';
+import { aplicarCamposAgendaCatastrofico } from '../utils/agendaCatastrofico.js';
 
 const ArchivoZurichSchema = new mongoose.Schema(
   {
@@ -190,6 +192,9 @@ const ZurichCasoSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+aplicarCamposAgendaCatastrofico(ZurichCasoSchema);
+aplicarPluginNotificacionesOperativas(ZurichCasoSchema, { modulo: 'zurich' });
 
 const ZurichCaso = mongoose.model(
   'ZurichCaso',

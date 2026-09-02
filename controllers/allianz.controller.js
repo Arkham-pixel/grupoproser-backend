@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import AllianzCaso from '../models/AllianzCaso.js';
 import { deleteStoredFile } from '../services/fileStorageService.js';
+import { rechazarSiFranjaOcupada } from '../services/agendaCatastroficoService.js';
+import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
 import {
   obtenerAlertasAllianzPorAjustadores,
   enviarAlertasTodosAllianz,
@@ -394,6 +396,7 @@ const buildAllianzPayload = (data = {}, base = {}) => {
     data.fechaCoordinandoInspeccion,
     base.fechaCoordinandoInspeccion ?? null
   ),
+  ...mapearFranjaAgenda(data, base, toStringOrNull),
   fechaAnalisisCaso: parseDateFlexible(data.fechaAnalisisCaso, base.fechaAnalisisCaso ?? null),
   fechaSolicitudDocumento: parseDateFlexible(
     data.fechaSolicitudDocumento,
@@ -712,6 +715,7 @@ export const crearCasoAllianz = async (req, res) => {
       });
     }
 
+    if (await rechazarSiFranjaOcupada(res, payload)) return;
     const documento = await AllianzCaso.create(payload);
     res.status(201).json({ success: true, data: documento });
   } catch (error) {
@@ -793,6 +797,7 @@ export const actualizarCasoAllianz = async (req, res) => {
       });
     }
 
+    if (await rechazarSiFranjaOcupada(res, payload, { excludeId: registroActual._id })) return;
     const actualizado = await AllianzCaso.findByIdAndUpdate(
       registroActual._id,
       { $set: payload },

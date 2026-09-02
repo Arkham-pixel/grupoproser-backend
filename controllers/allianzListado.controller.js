@@ -6,6 +6,8 @@ import { catalogoPerteneceAModulo } from '../utils/filtrarCatalogoPorModulo.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoAllianz, homologarEstadoAllianz } from '../utils/estadosAllianz.js';
 import { crearControladoresArchivosListado } from '../utils/archivosCasoListado.js';
+import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
+import { rechazarSiFranjaOcupada } from '../services/agendaCatastroficoService.js';
 import { homologarCiudadAllianz, resolverUbicacionCatastrofico } from '../utils/ciudadesBbvaCat.js';
 
 const esVacio = (valor) =>
@@ -194,6 +196,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       data.fechaCoordinandoInspeccion,
       base.fechaCoordinandoInspeccion ?? null
     ),
+    ...mapearFranjaAgenda(data, base, pick),
     fechaAnalisisCaso: pickFecha(data.fechaAnalisisCaso, base.fechaAnalisisCaso ?? null),
     fechaSolicitudDocumento: pickFecha(
       data.fechaSolicitudDocumento,
@@ -271,6 +274,7 @@ export const crearCasoListadoAllianz = async (req, res) => {
       });
     }
     payload.consecutivo = await generarConsecutivo();
+    if (await rechazarSiFranjaOcupada(res, payload)) return;
     const documento = await AllianzListadoCaso.create(payload);
     res.status(201).json({ success: true, data: documento });
   } catch (error) {
@@ -336,6 +340,7 @@ export const actualizarCasoListadoAllianz = async (req, res) => {
     }
     const payload = buildPayload(req.body, actual.toObject(), { pisar: true });
     if (!payload.consecutivo) payload.consecutivo = actual.consecutivo || (await generarConsecutivo());
+    if (await rechazarSiFranjaOcupada(res, payload, { excludeId: actual._id })) return;
     const actualizado = await AllianzListadoCaso.findByIdAndUpdate(
       actual._id,
       { $set: payload },

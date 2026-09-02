@@ -5,6 +5,8 @@ import SecurUser from '../models/SecurUser.js';
 import Estado from '../models/Estado.js';
 import Cliente from '../models/Cliente.js';
 import { deleteStoredFile } from '../services/fileStorageService.js';
+import { rechazarSiFranjaOcupada } from '../services/agendaCatastroficoService.js';
+import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
 import {
   obtenerAlertasSuraPorAjustadores,
   enviarAlertasTodosSura,
@@ -325,6 +327,7 @@ export const buildSuraPayload = (data = {}, base = {}) => {
     fechaInspeccion:
       primerFecha(data.fechaInspeccion, data.fchaInspccion) ||
       parseDateFlexible(undefined, base.fechaInspeccion ?? base.fchaInspccion ?? null),
+    ...mapearFranjaAgenda(data, base, toStringOrNull),
     fechaUltimoDocumento: parseDateFlexible(
       data.fechaUltimoDocumento,
       base.fechaUltimoDocumento ?? null
@@ -484,6 +487,7 @@ export const crearCasoSura = async (req, res) => {
       });
     }
 
+    if (await rechazarSiFranjaOcupada(res, payload)) return;
     if (!payload.nmroAjste) payload.nmroAjste = payload.consecutivo;
     if (!payload.nombreCliente) payload.nombreCliente = SURA_RAZON_SOCIAL;
     if (!payload.nombreAseguradora) payload.nombreAseguradora = SURA_RAZON_SOCIAL;
@@ -647,6 +651,7 @@ export const actualizarCasoSura = async (req, res) => {
       }
     }
 
+    if (await rechazarSiFranjaOcupada(res, payload, { excludeId: registroActual._id })) return;
     const actualizado = await SegurosSuraCaso.findByIdAndUpdate(
       registroActual._id,
       { $set: payload },

@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { aplicarPluginNotificacionesOperativas } from '../services/notificacionesOperativasService.js';
+import { aplicarCamposAgendaCatastrofico } from '../utils/agendaCatastrofico.js';
 
 const ArchivoEquidadCatSchema = new mongoose.Schema(
   {
@@ -121,6 +123,8 @@ const EquidadCatCasoSchema = new mongoose.Schema(
 );
 
 EquidadCatCasoSchema.index({ zc: 1 }, { unique: false, sparse: true });
+aplicarCamposAgendaCatastrofico(EquidadCatCasoSchema);
+aplicarPluginNotificacionesOperativas(EquidadCatCasoSchema, { modulo: 'equidadCat' });
 
 const EquidadCatCaso = mongoose.model(
   'EquidadCatCaso',

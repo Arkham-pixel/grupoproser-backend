@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { aplicarPluginNotificacionesOperativas } from '../services/notificacionesOperativasService.js';
+import { aplicarCamposAgendaCatastrofico } from '../utils/agendaCatastrofico.js';
 
 const ArchivoPrevisoraListadoSchema = new mongoose.Schema(
   {
@@ -97,6 +99,8 @@ const PrevisoraListadoCasoSchema = new mongoose.Schema(
 
 PrevisoraListadoCasoSchema.index({ zc: 1 }, { unique: false, sparse: true });
 PrevisoraListadoCasoSchema.index({ noCaso: 1 }, { unique: false, sparse: true });
+aplicarCamposAgendaCatastrofico(PrevisoraListadoCasoSchema);
+aplicarPluginNotificacionesOperativas(PrevisoraListadoCasoSchema, { modulo: 'previsoraListado' });
 
 const PrevisoraListadoCaso = mongoose.model(
   'PrevisoraListadoCaso',

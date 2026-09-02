@@ -5,6 +5,7 @@
  */
 import { normalizarRol } from '../config/roles.js';
 import SecurUser from '../models/SecurUser.js';
+import { identidadEsLiderDeFuente } from './lideresModuloCatastrofico.js';
 
 export const ROL_AJUSTADOR_LIDER = 'ajustador_lider';
 export const ROL_AJUSTADOR_CASO = 'ajustador';
@@ -58,13 +59,20 @@ export function esIdentidadConPermisoLiderSura(opts = {}) {
   return [opts.login, opts.cedula].some((v) => esLoginConPermisoLiderSura(v, modulo));
 }
 
+export function esIdentidadLiderDeModulo(identidad = {}, modulo = '') {
+  if (esIdentidadConPermisoLiderSura({ ...identidad, modulo })) return true;
+  return identidadEsLiderDeFuente(identidad, modulo);
+}
+
 /**
  * @param {string} rol
  * @param {{ modulo?: string, login?: string, cedula?: string }} [opts]
  */
 export function puedeEditarTodoElCaso(rol, opts = {}) {
   const r = normalizarRol(rol);
-  if (['admin', 'soporte', ROL_AJUSTADOR_LIDER].includes(r)) return true;
+  if (['admin', 'soporte'].includes(r)) return true;
+  if (esIdentidadLiderDeModulo(opts, opts.modulo)) return true;
+  if (r === ROL_AJUSTADOR_LIDER && !opts.modulo) return true;
   if (esIdentidadConPermisoLiderSura(opts)) return true;
   if (r === ROL_AJUSTADOR_CASO || r === ROL_INSPECTOR) return false;
   return true;
@@ -72,12 +80,14 @@ export function puedeEditarTodoElCaso(rol, opts = {}) {
 
 /**
  * Ajustador e inspector solo ven casos que el líder les asignó.
- * En SURA, Mario (72288319) ve todos.
+ * El líder de área ve todo su módulo. En SURA, Mario (72288319) ve todos.
  */
 export function rolConVistaRestringidaAsignacion(rol, opts = {}) {
-  if (esIdentidadConPermisoLiderSura(opts)) return false;
+  if (esIdentidadLiderDeModulo(opts, opts.modulo)) return false;
   const r = normalizarRol(rol);
-  return r === ROL_AJUSTADOR_CASO || r === ROL_INSPECTOR;
+  if (['admin', 'soporte'].includes(r)) return false;
+  if (!opts.modulo && r === ROL_AJUSTADOR_LIDER) return false;
+  return r === ROL_AJUSTADOR_CASO || r === ROL_INSPECTOR || r === ROL_AJUSTADOR_LIDER;
 }
 
 export function normalizarClavePersona(valor) {
@@ -153,12 +163,13 @@ export function construirFiltroVistaAsignacion(identidad, opts = {}) {
     !rolConVistaRestringidaAsignacion(identidad.rol, {
       login: identidad.login,
       cedula: identidad.cedula,
+      name: identidad.name,
+      nombre: identidad.nombre || identidad.name,
       modulo,
     })
   ) {
     return null;
   }
-  const campo = identidad.rol === ROL_INSPECTOR ? 'inspector' : 'ajustador';
   const claves = [
     ...new Set(
       [identidad.name, identidad.login, identidad.cedula]
@@ -170,7 +181,10 @@ export function construirFiltroVistaAsignacion(identidad, opts = {}) {
     return { _id: { $exists: false } };
   }
   return {
-    $or: claves.flatMap((k) => ramasFiltroCampoPersona(campo, k)),
+    $or: claves.flatMap((k) => [
+      ...ramasFiltroCampoPersona('ajustador', k),
+      ...ramasFiltroCampoPersona('inspector', k),
+    ]),
   };
 }
 
@@ -200,16 +214,18 @@ export function casoVisibleParaIdentidad(caso, identidad, opts = {}) {
     !rolConVistaRestringidaAsignacion(identidad.rol, {
       login: identidad.login,
       cedula: identidad.cedula,
+      name: identidad.name,
+      nombre: identidad.nombre || identidad.name,
       modulo,
     })
   ) {
     return true;
   }
-  const campo = identidad.rol === ROL_INSPECTOR ? 'inspector' : 'ajustador';
-  const valor = caso?.[campo];
   const claves = [identidad.name, identidad.login, identidad.cedula].filter(Boolean);
   if (!claves.length) return false;
-  return claves.some((k) => coincidenPersonas(valor, k));
+  return claves.some(
+    (k) => coincidenPersonas(caso?.ajustador, k) || coincidenPersonas(caso?.inspector, k)
+  );
 }
 
 export function collationVistaAsignacion() {
@@ -272,6 +288,8 @@ export function aplicarRestriccionRolCaso(req, data, base = {}, opts = {}) {
     modulo: opts.modulo,
     login,
     cedula,
+    name: opts.name || req?.user?.name || req?.usuario?.name || null,
+    nombre: opts.nombre || req?.user?.name || req?.usuario?.name || null,
   });
   return { data: payload, soloEstado, rol };
 }

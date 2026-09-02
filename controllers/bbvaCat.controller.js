@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import BbvaCatCaso from '../models/BbvaCatCaso.js';
 import { deleteStoredFile } from '../services/fileStorageService.js';
+import { rechazarSiFranjaOcupada } from '../services/agendaCatastroficoService.js';
+import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
 import {
   obtenerAlertasBbvaCatPorAjustadores,
   enviarAlertasTodosBbvaCat,
@@ -19,6 +21,7 @@ import {
   espejarArchivoCatEnListado,
   rutaArchivoSigueEnUsoBbvaCat,
 } from '../utils/espejarArchivoBbvaCatEnListado.js';
+import { aplicarValorLiquidadoDesdeLiquidadorBbva } from '../utils/valoresLiquidadorBbvaCat.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -373,8 +376,14 @@ const buildBbvaCatPayload = (data = {}, base = {}) => {
     base.valorComercialInmueble ?? null
   ),
   reserva: parseNumberFlexible(data.reserva, base.reserva ?? null),
+  valorEstimadoAseguradora: parseNumberFlexible(
+    data.valorEstimadoAseguradora,
+    base.valorEstimadoAseguradora ?? null
+  ),
   valorReclamado: parseNumberFlexible(data.valorReclamado, base.valorReclamado ?? null),
   valorLiquidado: parseNumberFlexible(data.valorLiquidado, base.valorLiquidado ?? null),
+  valorALiquidar: parseNumberFlexible(data.valorALiquidar, base.valorALiquidar ?? null),
+  observacionReserva: toStringOrNull(data.observacionReserva, base.observacionReserva ?? null),
   fechaInspeccion: parseDateFlexible(data.fechaInspeccion, base.fechaInspeccion ?? null),
   fechaUltimoDocumento: parseDateFlexible(
     data.fechaUltimoDocumento,
@@ -398,6 +407,7 @@ const buildBbvaCatPayload = (data = {}, base = {}) => {
     data.fechaCoordinandoInspeccion,
     base.fechaCoordinandoInspeccion ?? null
   ),
+  ...mapearFranjaAgenda(data, base, toStringOrNull),
   fechaAnalisisCaso: parseDateFlexible(data.fechaAnalisisCaso, base.fechaAnalisisCaso ?? null),
   fechaSolicitudDocumento: parseDateFlexible(
     data.fechaSolicitudDocumento,
@@ -514,6 +524,7 @@ const buildBbvaCatPayload = (data = {}, base = {}) => {
     data.ubicacionPredio !== undefined ? data.ubicacionPredio : base.ubicacionPredio ?? null,
   };
   payload.checklistCatCompleto = esChecklistCatLleno(payload);
+  aplicarValorLiquidadoDesdeLiquidadorBbva(payload);
   return aplicarFechaAccionEstadoBbvaCat(payload, base);
 };
 
@@ -546,7 +557,8 @@ export const mapExpressABbvaCat = (express = {}) => ({
   valorComercialInmueble: null,
   reserva: express.reserva ?? null,
   valorReclamado: null,
-  valorLiquidado: express.valorIndemnizacion ?? null,
+  valorLiquidado: null,
+  valorALiquidar: express.valorIndemnizacion ?? null,
   fechaInspeccion: null,
   fechaUltimoDocumento: express.fechaUltimoDocumento || null,
   fechaLiquidado: express.fechaDefinicionCaso || null,
@@ -596,8 +608,11 @@ const mergeImportacionBbvaCat = (incomingPayload = {}, existente = {}) => {
     'valorReservaPreventivaPromedio',
     'valorComercialInmueble',
     'reserva',
+    'valorEstimadoAseguradora',
     'valorReclamado',
     'valorLiquidado',
+    'valorALiquidar',
+    'observacionReserva',
     'fechaInspeccion',
     'fechaUltimoDocumento',
     'fechaLiquidado',
@@ -680,6 +695,7 @@ export const crearCasoBbvaCat = async (req, res) => {
       });
     }
 
+    if (await rechazarSiFranjaOcupada(res, payload)) return;
     const documento = await BbvaCatCaso.create(payload);
     res.status(201).json({ success: true, data: documento });
   } catch (error) {
@@ -778,6 +794,7 @@ export const actualizarCasoBbvaCat = async (req, res) => {
       }
     }
 
+    if (await rechazarSiFranjaOcupada(res, payload, { excludeId: registroActual._id })) return;
     const actualizado = await BbvaCatCaso.findByIdAndUpdate(
       registroActual._id,
       { $set: payload },
