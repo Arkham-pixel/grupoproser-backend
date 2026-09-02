@@ -202,12 +202,14 @@ const parseDate = (value) => {
 };
 
 const parseDateFlexible = (value, fallback = null) => {
-  if (esValorVacio(value) || esPlaceholderOPendiente(value)) return fallback ?? null;
-  return parseDate(value) ?? fallback ?? null;
+  if (value === undefined) return fallback ?? null;
+  if (esValorVacio(value) || esPlaceholderOPendiente(value)) return null;
+  return parseDate(value) ?? null;
 };
 
 const parseNumberFlexible = (value, fallback = null) => {
-  if (esValorVacio(value) || esPlaceholderOPendiente(value)) return fallback ?? null;
+  if (value === undefined) return fallback ?? null;
+  if (esValorVacio(value) || esPlaceholderOPendiente(value)) return null;
   const texto = String(value).trim();
   if (!/\d/.test(texto) && typeof value !== 'number') return fallback ?? null;
   const limpio = texto.replace(/[^\d.,-]/g, '').replace(/,/g, '');
@@ -217,8 +219,9 @@ const parseNumberFlexible = (value, fallback = null) => {
 };
 
 const toStringOrNull = (value, fallback = null) => {
-  if (esValorVacio(value)) return fallback ?? null;
-  return String(value).trim();
+  if (value === undefined) return fallback ?? null;
+  if (esValorVacio(value)) return null;
+  return String(value).trim() || null;
 };
 
 const normClave = (valor) =>

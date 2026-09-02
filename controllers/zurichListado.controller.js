@@ -105,9 +105,9 @@ const armarContactoIntermediario = (payload = {}) => {
   return payload;
 };
 
-const parseFecha = (valor, fallback = null) => {
+const parseFecha = (valor, fallback = null, { vacioPisa = false } = {}) => {
   if (valor === undefined) return fallback ?? null;
-  if (esPlaceholder(valor) || esVacio(valor)) return fallback ?? null;
+  if (esPlaceholder(valor) || esVacio(valor)) return vacioPisa ? null : fallback ?? null;
   if (valor instanceof Date && !Number.isNaN(valor.getTime())) return valor;
   const texto = String(valor).trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(texto)) {
@@ -149,17 +149,25 @@ const pickObjeto = (incoming, existing) => {
   return existing ?? null;
 };
 
-const parseNumero = (valor, fallback = null) => {
+const parseNumero = (valor, fallback = null, { vacioPisa = false } = {}) => {
   if (valor === undefined) return fallback ?? null;
-  if (valor === null || valor === '') return fallback ?? null;
+  if (valor === null || valor === '') return vacioPisa ? null : fallback ?? null;
   if (typeof valor === 'number' && Number.isFinite(valor)) return valor;
   const n = Number(String(valor).replace(/\./g, '').replace(/[^\d-]/g, ''));
   return Number.isNaN(n) ? fallback ?? null : n;
 };
 
+const toStrPisar = (valor, existing) => {
+  if (valor === undefined) return existing ?? null;
+  return toStr(valor, null);
+};
+
 const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
-  const pick = pisar ? toStr : completarCampo;
-  const pickFecha = pisar ? parseFecha : completarFecha;
+  const pick = pisar ? toStrPisar : completarCampo;
+  const pickFecha = pisar
+    ? (incoming, existing) => parseFecha(incoming, existing, { vacioPisa: true })
+    : completarFecha;
+  const numOpts = { vacioPisa: pisar };
   const payload = completarIdentificacion({
     consecutivo: base.consecutivo ?? null,
     zc: pick(data.zc, base.zc ?? null),
@@ -205,10 +213,10 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       data.fechaSiniestro ?? data.fechaOcurrencia,
       base.fechaSiniestro ?? null
     ),
-    reserva: data.reserva !== undefined ? parseNumero(data.reserva, base.reserva ?? null) : (base.reserva ?? null),
-    valorAseguradoInmueble: parseNumero(data.valorAseguradoInmueble, base.valorAseguradoInmueble ?? null),
-    valorReclamado: parseNumero(data.valorReclamado, base.valorReclamado ?? null),
-    valorLiquidado: parseNumero(data.valorLiquidado, base.valorLiquidado ?? null),
+    reserva: parseNumero(data.reserva, base.reserva ?? null, numOpts),
+    valorAseguradoInmueble: parseNumero(data.valorAseguradoInmueble, base.valorAseguradoInmueble ?? null, numOpts),
+    valorReclamado: parseNumero(data.valorReclamado, base.valorReclamado ?? null, numOpts),
+    valorLiquidado: parseNumero(data.valorLiquidado, base.valorLiquidado ?? null, numOpts),
     estado: homologarEstadoZurich(pick(data.estado, base.estado ?? 'CASO NUEVO') || 'CASO NUEVO'),
     modalidadAtencion: pick(data.modalidadAtencion, base.modalidadAtencion ?? null),
     fechaCasoNuevo: pickFecha(data.fechaCasoNuevo, base.fechaCasoNuevo ?? null),
