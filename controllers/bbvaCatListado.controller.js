@@ -29,6 +29,75 @@ const toStr = (valor, fallback = null) => {
   return String(valor).replace(/\t/g, ' ').replace(/\s+/g, ' ').trim() || fallback || null;
 };
 
+/**
+ * Listado / dashboard / reporte: no mandar liquidador, informe ni archivos.
+ * Con ~1000 casos esos Mixed inflan el GET y el dashboard tarda en abrir.
+ */
+const PROYECCION_LISTA_BBVA_CAT = {
+  consecutivo: 1,
+  zc: 1,
+  siniestro: 1,
+  identificacion: 1,
+  tipoIdentificacion: 1,
+  numeroPoliza: 1,
+  tipoPoliza: 1,
+  tipoPolizaOtro: 1,
+  causa: 1,
+  asegurado: 1,
+  intermediario: 1,
+  correoIntermediario: 1,
+  telefonoIntermediario: 1,
+  contactoIntermediario: 1,
+  correoAsegurado: 1,
+  telefonoAsegurado: 1,
+  contactoAsegurado: 1,
+  observaciones: 1,
+  ciudad: 1,
+  departamento: 1,
+  ajustadorLider: 1,
+  ajustador: 1,
+  inspector: 1,
+  fechaAsignacion: 1,
+  fechaVisita: 1,
+  reserva: 1,
+  valorEstimadoAseguradora: 1,
+  valorAseguradoInmueble: 1,
+  valorAseguradoContenidos: 1,
+  valorReservaPreventivaPromedio: 1,
+  valorComercialInmueble: 1,
+  valorReclamado: 1,
+  valorLiquidado: 1,
+  valorALiquidar: 1,
+  observacionReserva: 1,
+  estado: 1,
+  modalidadAtencion: 1,
+  fechaCasoNuevo: 1,
+  fechaCoordinandoInspeccion: 1,
+  fechaAnalisisCaso: 1,
+  fechaSolicitudDocumento: 1,
+  fechaRecepcionDocumento: 1,
+  fechaObjecion: 1,
+  fechaObjetado: 1,
+  fechaAutorizacionAnalista: 1,
+  fechaCasoParaPago: 1,
+  fechaCasoPagado: 1,
+  documentoFaltante: 1,
+  observacionPendienteDocumento: 1,
+  motivoObjecion: 1,
+  createdAt: 1,
+  updatedAt: 1,
+};
+
+const PIPELINE_BANDERAS_LISTA_BBVA_CAT = {
+  $addFields: {
+    tieneInforme: { $eq: [{ $type: '$informeUnico' }, 'object'] },
+    tieneLiquidador: { $eq: [{ $type: '$liquidador' }, 'object'] },
+    nArchivos: {
+      $cond: [{ $isArray: '$archivos' }, { $size: '$archivos' }, 0],
+    },
+  },
+};
+
 /** Incoming útil completa huecos; no pisa un dato ya guardado. */
 const completarCampo = (incoming, existing) => {
   const a = toStr(incoming, null);
@@ -290,20 +359,36 @@ export const crearCasoListadoBbvaCat = async (req, res) => {
 
 export const listarCasosListadoBbvaCat = async (req, res) => {
   try {
-    const { limit = 25, page = 1 } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
+    const { limit = 25, page = 1, completo } = req.query;
+    const limite = Math.max(1, Number(limit) || 25);
+    const pagina = Math.max(1, Number(page) || 1);
+    const skip = (pagina - 1) * limite;
+    const quiereCompleto = String(completo || '') === '1' || String(completo || '') === 'true';
+
     const [total, documentos] = await Promise.all([
       BbvaCatListadoCaso.countDocuments({}),
-      BbvaCatListadoCaso.find({})
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(Number(limit)),
+      quiereCompleto
+        ? BbvaCatListadoCaso.find({}).sort({ createdAt: -1 }).skip(skip).limit(limite).lean()
+        : BbvaCatListadoCaso.aggregate([
+            { $sort: { createdAt: -1 } },
+            { $skip: skip },
+            { $limit: limite },
+            PIPELINE_BANDERAS_LISTA_BBVA_CAT,
+            {
+              $project: {
+                ...PROYECCION_LISTA_BBVA_CAT,
+                tieneInforme: 1,
+                tieneLiquidador: 1,
+                nArchivos: 1,
+              },
+            },
+          ]),
     ]);
     res.json({
       success: true,
       total,
-      page: Number(page),
-      limit: Number(limit),
+      page: pagina,
+      limit: limite,
       data: documentos,
     });
   } catch (error) {
