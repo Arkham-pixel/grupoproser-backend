@@ -96,7 +96,13 @@ const APIS_TRES = [
 const APIS_SOLO_ZURICH = ['/api/zurich', '/api/zurich-listado', '/api/agenda-catastrofico'];
 const APIS_SOLO_BBVA = ['/api/bbva-cat', '/api/bbva-cat-listado', '/api/agenda-catastrofico'];
 const APIS_SOLO_EQUIDAD = ['/api/equidad-fdm'];
-const APIS_SOLO_EQUIDAD_CAT = ['/api/equidad-cat', '/api/arnald-drafts', '/api/agenda-catastrofico'];
+const APIS_SOLO_EQUIDAD_CAT = [
+  '/api/equidad-cat',
+  '/api/allianz',
+  '/api/allianz-listado',
+  '/api/arnald-drafts',
+  '/api/agenda-catastrofico',
+];
 const APIS_SOLO_EXPRESS = [
   '/api/siniestros-express',
   '/api/arnald-drafts',
@@ -153,7 +159,7 @@ export const CONTRATISTAS_MODULO = {
   },
   contractor_solo_equidad_cat: {
     apis: APIS_SOLO_EQUIDAD_CAT,
-    mensaje: 'Su rol Equidad CAT solo permite trabajar el módulo Equidad CAT.',
+    mensaje: 'Su rol Equidad CAT solo permite trabajar los módulos Equidad CAT y Allianz.',
   },
   contractor_solo_express: {
     apis: APIS_SOLO_EXPRESS,
