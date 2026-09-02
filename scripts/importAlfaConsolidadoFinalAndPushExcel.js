@@ -197,7 +197,10 @@ for (const caso of casos) {
     const cell = row.getCell(col);
     cell.value = toExcelCellValue(field, val);
     if (ALFA_EXCEL_DATE_FIELDS.includes(field) && cell.value instanceof Date) {
-      cell.numFmt = 'dd/mm/yyyy';
+      cell.numFmt = 'mm-dd-yy';
+    }
+    if (ALFA_EXCEL_MONEY_FIELDS.includes(field) && typeof cell.value === 'number') {
+      cell.numFmt = '[$$-240A] #,##0';
     }
     cellsWritten += 1;
     wrote = true;

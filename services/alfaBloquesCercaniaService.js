@@ -638,8 +638,9 @@ export async function obtenerBloquesCercaniaAlfa({
   ciudad = '',
   estado = '',
   omitirConFechaLlamada = false,
+  filtroExtra = {},
 } = {}) {
-  const filtro = {};
+  const filtro = { ...(filtroExtra && typeof filtroExtra === 'object' ? filtroExtra : {}) };
   if (ciudad) {
     filtro.ciudad = new RegExp(`^${String(ciudad).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
   }

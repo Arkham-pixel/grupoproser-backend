@@ -137,6 +137,11 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
     excluidoBaseAlfa: { type: Boolean, default: false, index: true },
     excluidoBaseAlfaAt: Date,
     excluidoBaseAlfaReason: String,
+    /**
+     * Firma externa del pool (ERA). Se sella al asignar un ajustador/inspector ERA.
+     * No implica cupo ni asignación masiva por sí sola.
+     */
+    firmaAjuste: { type: String, default: '', index: true },
   },
   {
     collection: 'gsk3cAppsegurosAlfaCasos',

@@ -9,10 +9,13 @@ import {
   construirContenidoNotificacion,
   destinatariosAsignacion,
   destinatariosCasoNuevo,
+  destinatariosMovimientoEra,
   esMismoActor,
   resumenCasoNotificacion,
   valorAsignacionVacio,
 } from '../utils/notificacionesOperativasCore.js';
+import { esRolEra } from '../config/roles.js';
+import { esEmpresaEra, esIdentidadEra } from '../utils/jerarquiaEra.js';
 
 const FLUSH_MS = 400;
 const CACHE_MS = 30_000;
@@ -38,7 +41,7 @@ export async function cargarDatosOperativos(actor = null) {
   if (ahora - cacheOp.at >= CACHE_MS || !cacheOp.users.length) {
     const [users, ajustadores, inspectores] = await Promise.all([
       SecurUser.find({ active: { $ne: 'N' } })
-        .select('_id login name role cedula email phone celulares')
+        .select('_id login name role cedula email phone celulares empresa')
         .lean(),
       AjustadorCatastrofico.find({})
         .select('_id nombre codigo email telefono usuarioId userId')
@@ -54,10 +57,10 @@ export async function cargarDatosOperativos(actor = null) {
     try {
       const id = actor.id || actor._id;
       const extra = id
-        ? await SecurUser.findById(id).select('_id login name role cedula email phone celulares').lean()
+        ? await SecurUser.findById(id).select('_id login name role cedula email phone celulares empresa').lean()
         : actor.login
           ? await SecurUser.findOne({ login: actor.login })
-              .select('_id login name role cedula email phone celulares')
+              .select('_id login name role cedula email phone celulares empresa')
               .lean()
           : null;
       if (extra) users.push(extra);
@@ -76,17 +79,36 @@ function actorDesde(actor) {
   return actor || usuarioActualContexto() || null;
 }
 
-function encolar({ recipient, tipo, modulo, caso, actor, campo = '' }) {
+function encolar({
+  recipient,
+  tipo,
+  modulo,
+  caso,
+  actor,
+  campo = '',
+  detalle = '',
+  actorNombre = '',
+}) {
   if (!recipient?._id) return;
   if (tipo !== 'asignacion' && esMismoActor(recipient, actor)) return;
   const key = `${recipient._id}|${tipo}|${modulo}`;
   let bucket = buckets.get(key);
   if (!bucket) {
-    bucket = { recipient, tipo, modulo, campo: campo || '', casos: [] };
+    bucket = {
+      recipient,
+      tipo,
+      modulo,
+      campo: campo || '',
+      detalle: detalle || '',
+      actorNombre: actorNombre || '',
+      casos: [],
+    };
     buckets.set(key, bucket);
   } else if (bucket.campo && campo && bucket.campo !== campo) {
     bucket.campo = '';
   }
+  if (detalle && !bucket.detalle) bucket.detalle = detalle;
+  if (actorNombre && !bucket.actorNombre) bucket.actorNombre = actorNombre;
   const resumen = caso ? resumenCasoNotificacion(caso) : null;
   if (resumen?.id && !bucket.casos.some((c) => c.id === resumen.id)) {
     bucket.casos.push(resumen);
@@ -114,6 +136,8 @@ async function persistirBucket(bucket) {
     modulo: bucket.modulo,
     casos: bucket.casos,
     campo: bucket.campo,
+    actorNombre: bucket.actorNombre,
+    detalle: bucket.detalle,
   });
   await NotificacionOperativa.create({
     recipientUserId: String(bucket.recipient._id),
@@ -150,6 +174,7 @@ export async function procesarCambioAsignacion(previo, actual, modulo, actorExpl
   const actor = actorDesde(actorExplicito);
   const datos = await cargarDatosOperativos(actor);
   await procesarAsignacionCampos(antes, despues, modulo, actor, datos);
+  procesarMovimientoEra(antes, despues, modulo, actor, datos);
 }
 
 /** Escrituras nativas (collection.updateOne/insertOne) no disparan hooks de Mongoose. */
@@ -162,6 +187,113 @@ export function notificarPersistenciaNativa({ crear = false, previo = null, actu
   tarea.catch((err) => {
     console.error('❌ Notificación operativa (persistencia nativa):', err.message);
   });
+}
+
+const CAMPOS_SNAPSHOT_NOTIF = [
+  'ajustador',
+  'inspector',
+  'ajustadorLider',
+  'estado',
+  'liquidador',
+  'informeUnico',
+  'consecutivo',
+  'siniestro',
+  'nmroSinstro',
+  'zc',
+  'asegurado',
+  'firmaAjuste',
+];
+
+function snapshotNotifDoc(doc = {}) {
+  const out = {};
+  for (const c of CAMPOS_SNAPSHOT_NOTIF) out[c] = doc[c];
+  return out;
+}
+
+function usuarioResuelto(actor, users = []) {
+  if (!actor) return null;
+  return users.find((u) => esMismoActor(u, actor)) || null;
+}
+
+function actorEsEra(actor, users = []) {
+  if (!actor) return false;
+  if (esRolEra(actor.role || actor.rol) || esEmpresaEra(actor.empresa)) return true;
+  const u = usuarioResuelto(actor, users);
+  if (!u) return false;
+  return esRolEra(u.role || u.rol) || esEmpresaEra(u.empresa) || esIdentidadEra(u);
+}
+
+function nombreActor(actor, users = []) {
+  const u = usuarioResuelto(actor, users);
+  return String(u?.name || actor?.name || actor?.nombre || actor?.login || '').trim();
+}
+
+function jsonIgual(a, b) {
+  try {
+    return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  } catch {
+    return a === b;
+  }
+}
+
+function tiposMovimientoEra(antes = {}, despues = {}) {
+  const tipos = [];
+  if (!jsonIgual(antes.liquidador, despues.liquidador)) tipos.push('liquidador');
+  if (!jsonIgual(antes.informeUnico, despues.informeUnico)) tipos.push('informe');
+  if (String(antes.estado ?? '') !== String(despues.estado ?? '')) tipos.push('estado');
+  return tipos;
+}
+
+function encolarJerarquiaEra({ usuarios, caso, modulo, actor, tipo, campo = '', detalle = '' }) {
+  const actorNombre = nombreActor(actor, usuarios);
+  for (const dest of destinatariosMovimientoEra(usuarios, caso, actor)) {
+    encolar({
+      recipient: dest,
+      tipo,
+      modulo,
+      caso,
+      actor,
+      campo,
+      detalle,
+      actorNombre,
+    });
+  }
+}
+
+function procesarMovimientoEra(antes, despues, modulo, actor, datos = {}) {
+  const usuarios = datos.users || [];
+  if (!actorEsEra(actor, usuarios)) return;
+  const tipos = tiposMovimientoEra(antes, despues);
+  const detalleEstado =
+    String(antes.estado ?? '') !== String(despues.estado ?? '')
+      ? `${antes.estado || '—'} → ${despues.estado || '—'}`
+      : '';
+  for (const tipo of tipos) {
+    encolarJerarquiaEra({
+      usuarios,
+      caso: despues,
+      modulo,
+      actor,
+      tipo,
+      campo: tipo === 'estado' ? 'estado' : tipo,
+      detalle: tipo === 'estado' ? detalleEstado : '',
+    });
+  }
+  const asigno =
+    asignacionCambio(antes.ajustador, despues.ajustador) ||
+    asignacionCambio(antes.inspector, despues.inspector);
+  if (asigno && !tipos.length) {
+    const campo = asignacionCambio(antes.ajustador, despues.ajustador) ? 'ajustador' : 'inspector';
+    encolarJerarquiaEra({
+      usuarios,
+      caso: despues,
+      modulo,
+      actor,
+      tipo: 'movimiento',
+      campo,
+      detalle: `asignó ${campo}`,
+    });
+  }
 }
 
 async function procesarAsignacionCampos(antes, despues, modulo, actor, datos = {}) {
@@ -233,11 +365,7 @@ export function aplicarPluginNotificacionesOperativas(schema, { modulo } = {}) {
   schema._notifOperativasRegistrado = true;
 
   schema.post('init', function asignarSnapshotNotif() {
-    this.$locals.notifPrevAsign = {
-      ajustador: this.ajustador,
-      inspector: this.inspector,
-      ajustadorLider: this.ajustadorLider,
-    };
+    this.$locals.notifPrevAsign = snapshotNotifDoc(this);
   });
 
   schema.pre('save', function marcarNuevoNotif() {
@@ -261,8 +389,8 @@ export function aplicarPluginNotificacionesOperativas(schema, { modulo } = {}) {
 
   schema.pre('findOneAndUpdate', async function precargarAsignacionNotif() {
     const set = camposUpdateNotificacion(this.getUpdate() || {});
-    const toca = ['ajustador', 'inspector', 'ajustadorLider'].some((c) =>
-      Object.prototype.hasOwnProperty.call(set, c)
+    const toca = ['ajustador', 'inspector', 'ajustadorLider', 'estado', 'liquidador', 'informeUnico'].some(
+      (c) => Object.prototype.hasOwnProperty.call(set, c)
     );
     if (!toca) {
       this._notifSkip = true;
@@ -271,7 +399,7 @@ export function aplicarPluginNotificacionesOperativas(schema, { modulo } = {}) {
     try {
       this._notifPrev = await this.model
         .findOne(this.getQuery())
-        .select('ajustador inspector ajustadorLider consecutivo siniestro nmroSinstro zc asegurado')
+        .select(CAMPOS_SNAPSHOT_NOTIF.join(' '))
         .lean();
     } catch {
       this._notifPrev = null;

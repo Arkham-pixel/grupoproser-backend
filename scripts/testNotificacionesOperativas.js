@@ -208,6 +208,16 @@ const msgLote = construirContenidoNotificacion({
 });
 assert(msgLote.cantidad === 2 && msgLote.ruta.includes('/seguros-alfa/reporte'), 'lote va al reporte');
 
+const msgEstadoEra = construirContenidoNotificacion({
+  tipo: 'estado',
+  modulo: 'alfa',
+  actorNombre: 'César Rodríguez',
+  detalle: 'A → B',
+  casos: [{ id: 'a1', etiqueta: 'ALFA-1' }],
+});
+assert(msgEstadoEra.titulo.includes('estado'), 'titulo movimiento estado');
+assert(msgEstadoEra.mensaje.includes('César'), 'mensaje movimiento trae actor');
+
 const msgVisita = construirContenidoNotificacion({
   tipo: 'visita',
   modulo: 'zurichListado',

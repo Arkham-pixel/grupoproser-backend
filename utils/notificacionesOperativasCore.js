@@ -1,6 +1,10 @@
 import { coincidenPersonas, SURA_LOGINS_PERMISO_LIDER } from './permisosCasoPorRol.js';
 import { quitarSufijosRolDelNombre } from '../config/roles.js';
 import { needlesLiderModulo as needlesLiderDesdeArea } from './lideresModuloCatastrofico.js';
+import {
+  usuarioEsLiderEra,
+  usuarioEsLiderProserAjustes,
+} from './jerarquiaEra.js';
 
 export const ROLES_NOTIFICACION = Object.freeze(['ajustador_lider', 'ajustador', 'inspector']);
 
@@ -400,6 +404,40 @@ export function destinatariosAsignacion(usuarios = [], campo, valor, actor = nul
   return porDato;
 }
 
+/**
+ * Cadena ERA: todo movimiento avisa al Líder Proser Ajustes.
+ * Inspector ERA → también al ajustador del caso y al Líder ERA.
+ * Ajustador ERA → Líder ERA + Líder Proser.
+ * Líder ERA → Líder Proser.
+ */
+export function destinatariosMovimientoEra(usuarios = [], caso = {}, actor = null) {
+  const vistos = new Set();
+  const out = [];
+  const push = (u) => {
+    if (!u) return;
+    const id = String(u._id || u.id || u.login || '');
+    if (!id || vistos.has(id)) return;
+    if (esMismoActor(u, actor)) return;
+    vistos.add(id);
+    out.push(u);
+  };
+  for (const u of usuarios) {
+    if (usuarioEsLiderProserAjustes(u)) push(u);
+    if (usuarioEsLiderEra(u)) push(u);
+  }
+  const actorNombre = actor?.name || actor?.nombre || actor?.login || '';
+  const actorEsInspectorCaso =
+    Boolean(actorNombre) &&
+    coincidenPersonas(caso?.inspector, actorNombre) &&
+    !coincidenPersonas(caso?.ajustador, actorNombre);
+  if (actorEsInspectorCaso && !valorAsignacionVacio(caso?.ajustador)) {
+    for (const p of destinatariosAsignacion(usuarios, 'ajustador', caso.ajustador, actor, [])) {
+      push(p);
+    }
+  }
+  return out;
+}
+
 function etiquetaRolAsignacion(campo) {
   const c = String(campo || '').toLowerCase();
   if (c === 'inspector') return 'inspector';
@@ -413,6 +451,8 @@ export function construirContenidoNotificacion({
   casos = [],
   campo = '',
   anticipacionMin = 15,
+  actorNombre = '',
+  detalle = '',
 } = {}) {
   const cfg = configModuloNotificacion(modulo);
   const cantidad = casos.length;
@@ -420,6 +460,8 @@ export function construirContenidoNotificacion({
   const ruta =
     cantidad === 1 && primero?.id ? cfg.rutaCaso(primero.id) : cfg.rutaLista;
   const rol = etiquetaRolAsignacion(campo);
+  const quien = String(actorNombre || '').trim();
+  const extra = [quien, detalle].filter(Boolean).join(' · ');
   if (tipo === 'visita') {
     const mins = Math.max(1, Number(anticipacionMin) || 15);
     const franja = [primero?.horaInicio, primero?.horaFin].filter(Boolean).join('–');
@@ -470,6 +512,29 @@ export function construirContenidoNotificacion({
             .map((c) => c.etiqueta)
             .join(', ') + (cantidad > 4 ? '…' : '')
         : primero?.etiqueta || 'Caso desasignado';
+    return { titulo, mensaje, cantidad, ruta, campo: rol };
+  }
+  if (tipo === 'estado' || tipo === 'liquidador' || tipo === 'informe' || tipo === 'movimiento') {
+    const verbo =
+      tipo === 'estado'
+        ? 'cambió el estado'
+        : tipo === 'liquidador'
+          ? 'guardó liquidador'
+          : tipo === 'informe'
+            ? 'guardó informe'
+            : 'actualizó un caso';
+    const titulo =
+      cantidad > 1
+        ? `ERA ${verbo} en ${cantidad} casos · ${cfg.etiqueta}`
+        : `ERA ${verbo} · ${cfg.etiqueta}`;
+    const baseMsg =
+      cantidad > 1
+        ? casos
+            .slice(0, 4)
+            .map((c) => c.etiqueta)
+            .join(', ') + (cantidad > 4 ? '…' : '')
+        : primero?.etiqueta || 'Caso ERA';
+    const mensaje = extra ? `${extra} · ${baseMsg}` : baseMsg;
     return { titulo, mensaje, cantidad, ruta, campo: rol };
   }
   const titulo =

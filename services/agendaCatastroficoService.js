@@ -14,8 +14,11 @@ import SegurosSuraCaso from '../models/SegurosSuraCaso.js';
 import { CONTRATISTAS_MODULO, normalizarRol } from '../config/roles.js';
 import {
   coincidenPersonas,
+  combinarFiltrosMongo,
   esIdentidadLiderDeModulo,
 } from '../utils/permisosCasoPorRol.js';
+import { esIdentidadEra, esIdentidadLiderEra } from '../utils/jerarquiaEra.js';
+import { construirFiltroVistaEra } from '../utils/alcanceEra.js';
 import {
   ConflictoAgendaError,
   fechaAgendaDeCaso,
@@ -214,6 +217,20 @@ function eventoAsignadoAIdentidad(evento, identidad) {
 
 function filtrarEventosPorIdentidad(eventos, identidad) {
   if (!identidad || esRolAgendaGlobal(identidad.rol)) return eventos;
+  if (esIdentidadEra(identidad)) {
+    const vistos = new Set();
+    const out = [];
+    const liderEra = esIdentidadLiderEra(identidad);
+    for (const ev of eventos) {
+      const clave = `${ev.modulo}:${ev.id}`;
+      if (vistos.has(clave)) continue;
+      if (liderEra || eventoAsignadoAIdentidad(ev, identidad)) {
+        vistos.add(clave);
+        out.push(ev);
+      }
+    }
+    return out;
+  }
   const vistos = new Set();
   const out = [];
   for (const ev of eventos) {
@@ -229,6 +246,7 @@ function filtrarEventosPorIdentidad(eventos, identidad) {
 
 export function alcanceAgendaParaIdentidad(identidad) {
   if (!identidad || esRolAgendaGlobal(identidad.rol)) return 'global';
+  if (esIdentidadLiderEra(identidad)) return 'area';
   if (FUENTES_AGENDA.some((f) => esIdentidadLiderDeModulo(identidad, f.key))) return 'area';
   return 'asignados';
 }
@@ -250,7 +268,11 @@ export async function listarEventosAgenda({
   const bloques = await Promise.all(
     fuentes.map(async (fuente) => {
       try {
-        const docs = await fuente.Model.find(filtroFechaMongo(fuente.fechaCampo, desdeYmd, hastaYmd))
+        let filtro = filtroFechaMongo(fuente.fechaCampo, desdeYmd, hastaYmd);
+        if (esIdentidadEra(identidad) && fuente.key === 'alfa') {
+          filtro = combinarFiltrosMongo(filtro, await construirFiltroVistaEra());
+        }
+        const docs = await fuente.Model.find(filtro)
           .select(PROYECCION)
           .lean();
         return docs

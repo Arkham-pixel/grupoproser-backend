@@ -526,13 +526,20 @@ export const obtenerCasoListadoZurich = async (req, res) => {
   }
 };
 
+const esPersistenciaSeccionZurich = (body = {}) =>
+  Object.prototype.hasOwnProperty.call(body, 'liquidador') ||
+  Object.prototype.hasOwnProperty.call(body, 'informeUnico');
+
 export const actualizarCasoListadoZurich = async (req, res) => {
   try {
     const actual = await ZurichListadoCaso.findById(req.params.id);
     if (!actual) {
       return res.status(404).json({ success: false, error: 'Caso del listado no encontrado' });
     }
-    const payload = buildPayload(req.body, actual.toObject(), { pisar: true });
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    /** Informe/presupuesto reenvían la ficha; vacío no debe borrar lo de Gestionar. */
+    const persistenciaSeccion = esPersistenciaSeccionZurich(body);
+    const payload = buildPayload(body, actual.toObject(), { pisar: !persistenciaSeccion });
     if (!payload.consecutivo) payload.consecutivo = actual.consecutivo || (await generarConsecutivo());
     if (await rechazarSiFranjaOcupada(res, payload, { excludeId: actual._id })) return;
     const actualizado = await persistirListadoZurich(actual._id, payload);

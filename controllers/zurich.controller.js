@@ -818,7 +818,18 @@ export const actualizarCasoZurich = async (req, res) => {
 
     const base = registroActual.toObject();
     const { data: bodyFiltrado } = aplicarRestriccionRolCaso(req, req.body || {}, base);
-    const payload = buildZurichPayload(bodyFiltrado, base);
+    const persistenciaSeccion =
+      Object.prototype.hasOwnProperty.call(bodyFiltrado, 'liquidador') ||
+      Object.prototype.hasOwnProperty.call(bodyFiltrado, 'informeUnico');
+    let bodyParaPayload = bodyFiltrado;
+    if (persistenciaSeccion) {
+      bodyParaPayload = { ...bodyFiltrado };
+      for (const [k, v] of Object.entries(bodyParaPayload)) {
+        if (k === 'liquidador' || k === 'informeUnico' || k === 'archivos') continue;
+        if (v === '' || v === null) delete bodyParaPayload[k];
+      }
+    }
+    const payload = buildZurichPayload(bodyParaPayload, base);
     if (!payload.consecutivo) {
       payload.consecutivo = base.consecutivo || (await generarConsecutivoZurich());
     }

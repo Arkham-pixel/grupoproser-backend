@@ -20,7 +20,13 @@ import {
   assertFieldWritableOrThrow,
 } from '../config/alfaExcelOwnershipMap.js';
 import { ALFA_EXCEL_DATE_FIELDS, ALFA_EXCEL_MONEY_FIELDS } from '../config/alfaExcelColumnMap.js';
-import { isAlfaOutboundEmptyValue, normalizeExcelHeader } from '../utils/alfaExcelNormalize.js';
+import { isAlfaOutboundEmptyValue, normalizeExcelHeader, pesosOficialesAlfa } from '../utils/alfaExcelNormalize.js';
+import {
+  applyAlfaExcelCellValue,
+  getAlfaExcelDefaultNumFmt,
+  resolveAlfaExcelColumnNumFmt,
+  toExcelSerialDate,
+} from '../utils/alfaExcelCellFormat.js';
 import { normalizeIdentification as normId } from '../utils/alfaIdentification.js';
 import {
   matchAlfaCaseForExcelRow,
@@ -73,6 +79,11 @@ function fieldValuesEqual(field, a, b) {
   return String(a) === String(b);
 }
 
+function moneyOutbound(value) {
+  const n = pesosOficialesAlfa(value);
+  return n == null ? null : n;
+}
+
 function serializeForOutbox(field, value) {
   if (value == null || value === '') return null;
   if (ALFA_EXCEL_DATE_FIELDS.includes(field)) {
@@ -80,8 +91,7 @@ function serializeForOutbox(field, value) {
     return Number.isNaN(d.getTime()) ? null : d.toISOString();
   }
   if (ALFA_EXCEL_MONEY_FIELDS.includes(field)) {
-    const n = typeof value === 'number' ? value : Number(value);
-    return Number.isFinite(n) ? n : null;
+    return moneyOutbound(value);
   }
   return value;
 }
@@ -94,8 +104,7 @@ function toExcelCellValue(field, value) {
     return d;
   }
   if (ALFA_EXCEL_MONEY_FIELDS.includes(field)) {
-    const n = typeof value === 'number' ? value : Number(value);
-    return Number.isFinite(n) ? n : null;
+    return moneyOutbound(value);
   }
   return value;
 }
@@ -524,10 +533,9 @@ export async function patchYellowCellsInWorkbookBuffer({
     }
     allowedCols.add(colNum);
     const cell = dataRow.getCell(colNum);
-    cell.value = toExcelCellValue(upd.field, upd.value);
-    if (ALFA_EXCEL_DATE_FIELDS.includes(upd.field) && cell.value instanceof Date) {
-      cell.numFmt = 'dd/mm/yyyy';
-    }
+    const val = toExcelCellValue(upd.field, upd.value);
+    const numFmt = resolveAlfaExcelColumnNumFmt(ws, colNum, upd.field);
+    applyAlfaExcelCellValue(cell, upd.field, val, { numFmt });
   }
 
   const afterSnap = {};
@@ -561,13 +569,12 @@ export async function patchYellowCellsInWorkbookBuffer({
 function toGraphRangeValue(field, value) {
   if (value == null || value === '') return '';
   if (ALFA_EXCEL_DATE_FIELDS.includes(field)) {
-    const d = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toISOString().slice(0, 10);
+    const serial = toExcelSerialDate(value);
+    return serial == null ? '' : serial;
   }
   if (ALFA_EXCEL_MONEY_FIELDS.includes(field)) {
-    const n = typeof value === 'number' ? value : Number(String(value).replace(/[^\d.-]/g, ''));
-    if (!Number.isFinite(n)) return '';
+    const n = moneyOutbound(value);
+    if (n == null || !Number.isFinite(n)) return '';
     return n;
   }
   if (typeof value === 'number') return value;
@@ -613,11 +620,11 @@ function graphCellMatchesExpected(field, expected, range) {
   }
 
   if (ALFA_EXCEL_MONEY_FIELDS.includes(field)) {
-    const expN = typeof expected === 'number' ? expected : Number(expected);
-    if (!Number.isFinite(expN)) return false;
-    if (typeof raw === 'number') return Math.abs(raw - expN) < 0.01;
-    const parsed = Number(String(raw ?? text ?? '').replace(/[^\d.-]/g, ''));
-    return Number.isFinite(parsed) && Math.abs(parsed - expN) < 0.01;
+    const expN = moneyOutbound(expected);
+    if (expN == null || !Number.isFinite(expN)) return false;
+    if (typeof raw === 'number') return Math.abs(pesosOficialesAlfa(raw) - expN) < 0.5;
+    const parsed = moneyOutbound(raw ?? text);
+    return parsed != null && Number.isFinite(parsed) && Math.abs(parsed - expN) < 0.5;
   }
 
   // estado y strings
@@ -697,6 +704,10 @@ async function writeOutboundCells({
         worksheetName: sheetName,
         address,
         values: [[toGraphRangeValue(upd.field, upd.value)]],
+        numberFormat: (() => {
+          const fmt = getAlfaExcelDefaultNumFmt(upd.field);
+          return fmt ? [[fmt]] : undefined;
+        })(),
         sessionId,
       });
     }
@@ -1164,7 +1175,9 @@ export async function syncMissingArnaldCasosToAlfaExcel({ batchSize = 120 } = {}
         if (val == null || val === '') continue;
         const resolvedCol = resolveOutboundColumn(headerRow, entry, entry.column);
         if (!resolvedCol?.colNum) continue;
-        row.getCell(resolvedCol.colNum).value = val;
+        const cell = row.getCell(resolvedCol.colNum);
+        const numFmt = resolveAlfaExcelColumnNumFmt(ws, resolvedCol.colNum, field);
+        applyAlfaExcelCellValue(cell, field, val, { numFmt });
       }
       row.commit?.();
       rowIdx += 1;

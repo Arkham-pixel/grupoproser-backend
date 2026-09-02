@@ -114,6 +114,12 @@ const APIS_SOLO_PREVISORA = [
   '/api/tareas',
   '/api/agenda-catastrofico',
 ];
+const APIS_ERA = [
+  '/api/seguros-alfa',
+  '/api/agenda-catastrofico',
+  '/api/arnald-drafts',
+  '/api/historial-formularios',
+];
 const APIS_CATASTROFICOS = [
   '/api/previsora',
   '/api/previsora-listado',
@@ -174,13 +180,17 @@ export const CONTRATISTAS_MODULO = {
     mensaje: 'Su rol Catastróficos solo permite Previsora, Zurich, BBVA, Alfa, Sura, Allianz y Equidad CAT.',
   },
   contractor_era: {
-    apis: APIS_CATASTROFICOS,
-    mensaje: 'Su rol ERA solo permite Previsora, Zurich, BBVA, Alfa, Sura, Allianz y Equidad CAT.',
+    apis: APIS_ERA,
+    mensaje: 'Su rol ERA solo permite trabajar los casos Alfa que se asignen a la firma.',
   },
 };
 
 export function normalizarRol(rol) {
   return String(rol || '').trim().toLowerCase();
+}
+
+export function esRolEra(rol) {
+  return normalizarRol(rol) === ROL_ERA;
 }
 
 export function esRolValido(rol) {

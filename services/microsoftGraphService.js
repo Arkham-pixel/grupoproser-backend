@@ -537,6 +537,7 @@ export async function updateWorkbookRange({
   worksheetName,
   address,
   values,
+  numberFormat,
   sessionId,
 } = {}) {
   if (!driveId || !itemId || !worksheetName || !address) {
@@ -547,12 +548,16 @@ export async function updateWorkbookRange({
   const headers = {};
   if (sessionId) headers['workbook-session-id'] = sessionId;
 
+  const body = {};
+  if (values !== undefined) body.values = values;
+  if (numberFormat !== undefined) body.numberFormat = numberFormat;
+
   return graphRequest(
     `/drives/${driveId}/items/${itemId}/workbook/worksheets('${ws}')/range(address='${addr}')`,
     {
       method: 'PATCH',
       headers,
-      body: { values },
+      body,
     }
   );
 }

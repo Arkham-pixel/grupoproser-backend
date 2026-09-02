@@ -123,4 +123,14 @@ const { payload: payOtro } = filtrarPayloadCasoPorRol(
 );
 assert(payOtro.ajustador === 'Viejo', 'otro ajustador no cambia asignacion');
 
+assert(rolConVistaRestringidaAsignacion('contractor_era'), 'ERA restringido');
+assert(
+  !puedeEditarTodoElCaso('contractor_era', {
+    login: '2272085666324',
+    name: 'César Rodríguez',
+    rol: 'contractor_era',
+  }),
+  'ERA no lider no edita todo'
+);
+
 console.log(process.exitCode ? 'RESULTADO: fallos' : 'RESULTADO: ok');

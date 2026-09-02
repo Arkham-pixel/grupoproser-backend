@@ -9,6 +9,8 @@ import {
   valuesEqualForDiff,
   normalizeDate,
   decideAlfaExcelMerge,
+  normalizeMoney,
+  pesosOficialesAlfa,
 } from '../utils/alfaExcelNormalize.js';
 import { isArnaldOwnedField } from '../config/alfaExcelOwnershipMap.js';
 import {
@@ -85,9 +87,12 @@ function parseDateFlexible(value, fallback = null) {
 
 function parseNumberFlexible(value, fallback = null) {
   if (value === undefined || value === null || value === '') return fallback ?? null;
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  const n = Number(String(value).replace(/[^\d.,-]/g, '').replace(/,/g, ''));
-  return Number.isNaN(n) ? fallback ?? null : n;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return pesosOficialesAlfa(value) ?? value;
+  }
+  const n = normalizeMoney(value);
+  if (n == null) return fallback ?? null;
+  return pesosOficialesAlfa(n);
 }
 
 export function buildAlfaCasoPayload(data = {}, base = {}) {

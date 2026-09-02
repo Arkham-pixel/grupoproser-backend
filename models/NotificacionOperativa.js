@@ -21,7 +21,7 @@ const NotificacionOperativaSchema = new mongoose.Schema(
     recipientRole: { type: String, default: '' },
     tipo: {
       type: String,
-      enum: ['asignacion', 'desasignacion', 'caso_nuevo', 'visita'],
+      enum: ['asignacion', 'desasignacion', 'caso_nuevo', 'visita', 'estado', 'liquidador', 'informe', 'movimiento'],
       required: true,
     },
     modulo: { type: String, required: true },

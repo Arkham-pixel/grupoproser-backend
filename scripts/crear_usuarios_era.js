@@ -1,6 +1,7 @@
 /**
  * Crea/actualiza usuarios externos ERA (login = INE, rol contractor_era).
- * Equipo de escritorio: Previsora, Zurich, BBVA, Alfa, Sura, Allianz y Equidad CAT (sin FDM).
+ * Equipo: módulo Alfa, solo los casos que Proser asigne a la firma (sin autoasignar).
+ * Cadena: Líder Proser Ajustes → Líder ERA (Erick) → Ajustador ERA → Inspector ERA.
  *
  * Uso: desde backend/ → node scripts/crear_usuarios_era.js
  */
@@ -130,7 +131,8 @@ function construirDocumento(resultados) {
   return `# Credenciales de acceso — Rol ERA
 
 **Sistema:** Arnald DataFlow (Grupo Proser)  
-**Módulos:** Previsora, Zurich, BBVA CAT, Alfa, Sura, Allianz y Equidad CAT  
+**Módulos:** Alfa (casos que Proser asigne a la firma; no crean cartera)  
+**Cadena:** Líder Proser Ajustes → Líder ERA (Erick) → Ajustador ERA → Inspector ERA  
 **Fecha de generación:** ${fecha}  
 **Estado:** Usuarios activos con rol \`contractor_era\` (etiqueta **ERA**)
 
@@ -167,7 +169,9 @@ ${filas}
 ## Notas
 
 - **Login:** el número de identificación (INE) de cada persona.
-- **Acceso:** estos usuarios ven Previsora, Zurich, BBVA, Alfa, Sura, Allianz, Equidad CAT y **Mi Cuenta**. No tienen Equidad FDM, Express, Complex ni Administración.
+- **Acceso:** estos usuarios ven **Alfa** (reporte, mis casos, dashboard, caso) y **Mi Cuenta**. No ven el resto de módulos catastróficos ni Equidad FDM.
+- **Casos:** hasta que Proser asigne el cupo en Alfa, el reporte sale vacío. No se autoasignan casos al crear usuarios.
+- **Líder ERA:** Erick Aramis Quevedo Gonzalez. Los movimientos (estado, liquidador, informe) avisan a Erick y al Líder Proser Ajustes.
 - **Seguridad:** no compartir este documento por canales públicos. Entregar las credenciales de forma individual o por correo interno.
 
 ---

@@ -48,11 +48,18 @@ import {
   listAlfaCondicionesDocuments,
   openAlfaCondicionDownloadStream,
 } from '../services/alfaCondicionesService.js';
-import { aplicarRestriccionRolCaso, obtenerIdentidadUsuarioReq, construirFiltroVistaAsignacion, casoVisibleParaIdentidad, collationVistaAsignacion, combinarFiltrosMongo, esIdentidadColaFechaLlamadaAlfa } from '../utils/permisosCasoPorRol.js';
+import { aplicarRestriccionRolCaso, obtenerIdentidadUsuarioReq, collationVistaAsignacion, combinarFiltrosMongo, esIdentidadColaFechaLlamadaAlfa } from '../utils/permisosCasoPorRol.js';
+import { esIdentidadEra } from '../utils/jerarquiaEra.js';
+import {
+  aplicarFirmaAjusteSiCorresponde,
+  casoVisibleParaIdentidadCasos,
+  construirFiltroVistaCasos,
+} from '../utils/alcanceEra.js';
 import {
   resolverLiquidadorParaUpdate,
   resolverInformeUnicoParaUpdate,
 } from '../utils/protegerPresupuestoNsr10.js';
+import { normalizeMoney, pesosOficialesAlfa } from '../utils/alfaExcelNormalize.js';
 import * as XLSX from 'xlsx';
 
 const esValorVacio = (valor) =>
@@ -113,12 +120,15 @@ const parseDateFlexible = (value, fallback = null) => {
 const parseNumberFlexible = (value, fallback = null) => {
   if (value === undefined) return fallback ?? null;
   if (esValorVacio(value) || esPlaceholderOPendiente(value)) return null;
-  const texto = String(value).trim();
-  if (!/\d/.test(texto) && typeof value !== 'number') return null;
-  const limpio = texto.replace(/[^\d.,-]/g, '').replace(/,/g, '');
-  if (!limpio || limpio === '-' || limpio === '.' || limpio === '-.') return null;
-  const number = Number(limpio);
-  return Number.isNaN(number) ? null : number;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const n = normalizeMoney(value);
+  return n == null ? null : n;
+};
+
+const parsePesosAlfa = (value, fallback = null) => {
+  const n = parseNumberFlexible(value, fallback);
+  if (n == null) return null;
+  return pesosOficialesAlfa(n);
 };
 
 const toStringOrNull = (value, fallback = null) => {
@@ -205,31 +215,31 @@ const buildAlfaPayload = (data = {}, base = {}) => ({
   fechaAviso: parseDateFlexible(data.fechaAviso, base.fechaAviso ?? null),
   fechaInicioPoliza: parseDateFlexible(data.fechaInicioPoliza, base.fechaInicioPoliza ?? null),
   fechaFinPoliza: parseDateFlexible(data.fechaFinPoliza, base.fechaFinPoliza ?? null),
-  valorAseguradoSid: parseNumberFlexible(
+  valorAseguradoSid: parsePesosAlfa(
     data.valorAseguradoSid,
     base.valorAseguradoSid ?? null
   ),
-  valorAseguradoInmueble: parseNumberFlexible(
+  valorAseguradoInmueble: parsePesosAlfa(
     data.valorAseguradoInmueble,
     base.valorAseguradoInmueble ?? null
   ),
-  valorAseguradoContenidos: parseNumberFlexible(
+  valorAseguradoContenidos: parsePesosAlfa(
     data.valorAseguradoContenidos,
     base.valorAseguradoContenidos ?? null
   ),
   cobertura: toStringOrNull(data.cobertura, base.cobertura ?? null),
   estadoPagoPrimas: toStringOrNull(data.estadoPagoPrimas, base.estadoPagoPrimas ?? null),
-  valorReservaPreventivaPromedio: parseNumberFlexible(
+  valorReservaPreventivaPromedio: parsePesosAlfa(
     data.valorReservaPreventivaPromedio,
     base.valorReservaPreventivaPromedio ?? null
   ),
-  valorComercialInmueble: parseNumberFlexible(
+  valorComercialInmueble: parsePesosAlfa(
     data.valorComercialInmueble,
     base.valorComercialInmueble ?? null
   ),
-  reserva: parseNumberFlexible(data.reserva, base.reserva ?? null),
-  valorReclamado: parseNumberFlexible(data.valorReclamado, base.valorReclamado ?? null),
-  valorLiquidado: parseNumberFlexible(data.valorLiquidado, base.valorLiquidado ?? null),
+  reserva: parsePesosAlfa(data.reserva, base.reserva ?? null),
+  valorReclamado: parsePesosAlfa(data.valorReclamado, base.valorReclamado ?? null),
+  valorLiquidado: parsePesosAlfa(data.valorLiquidado, base.valorLiquidado ?? null),
   fechaLlamada: parseDateFlexible(data.fechaLlamada, base.fechaLlamada ?? null),
   observacionLlamada: toStringOrNull(data.observacionLlamada, base.observacionLlamada ?? null) || '',
   fechaInspeccion: parseDateFlexible(data.fechaInspeccion, base.fechaInspeccion ?? null),
@@ -417,10 +427,28 @@ const asegurarEstadoUnificado = (payload) => {
   return payload;
 };
 
+const rechazarSiOperacionEra = async (req, res, mensaje) => {
+  const identidad = await obtenerIdentidadUsuarioReq(req);
+  if (!esIdentidadEra(identidad)) return false;
+  res.status(403).json({
+    success: false,
+    error: mensaje || 'El rol ERA no puede ejecutar esta operación.',
+  });
+  return true;
+};
+
 export const crearCasoAlfa = async (req, res) => {
   try {
+    const identidad = await obtenerIdentidadUsuarioReq(req);
+    if (esIdentidadEra(identidad)) {
+      return res.status(403).json({
+        success: false,
+        error: 'El rol ERA no puede crear casos. Solo trabaja los que Proser le asigne en Alfa.',
+      });
+    }
     const payload = asegurarEstadoUnificado(buildAlfaPayload(req.body));
     payload.consecutivo = await generarConsecutivoAlfaLocal();
+    await aplicarFirmaAjusteSiCorresponde(payload);
 
     const faltantes = validarRequeridos(payload);
     const obsErr = validarObservacionesGestion(payload);
@@ -446,6 +474,51 @@ export const crearCasoAlfa = async (req, res) => {
   }
 };
 
+const ALFA_CAMPOS_PESOS = [
+  'valorAseguradoSid',
+  'valorAseguradoInmueble',
+  'valorAseguradoContenidos',
+  'valorReservaPreventivaPromedio',
+  'valorComercialInmueble',
+  'reserva',
+  'valorReclamado',
+  'valorLiquidado',
+];
+
+function healAlfaMoneyDoc(doc) {
+  if (!doc || typeof doc !== 'object') return doc;
+  const out = { ...doc };
+  for (const f of ALFA_CAMPOS_PESOS) {
+    if (out[f] == null || out[f] === '') continue;
+    const p = pesosOficialesAlfa(out[f]);
+    if (p != null) out[f] = p;
+  }
+  return out;
+}
+
+async function persistAlfaMontosInflados(documentos = []) {
+  for (const doc of documentos) {
+    if (!doc?._id) continue;
+    const patch = {};
+    for (const f of ['valorReclamado', 'valorLiquidado']) {
+      const raw = Number(doc[f]);
+      const oficial = pesosOficialesAlfa(doc[f]);
+      if (oficial == null || !Number.isFinite(raw)) continue;
+      if (Math.abs(raw) >= 1_000_000_000 && raw !== oficial) patch[f] = oficial;
+    }
+    if (!Object.keys(patch).length) continue;
+    try {
+      await SegurosAlfaCaso.updateOne({ _id: doc._id }, { $set: patch });
+      await enqueueAlfaExcelOutboundFromCaseUpdate({
+        beforeDoc: doc,
+        afterDoc: { ...doc, ...patch },
+      });
+    } catch (err) {
+      console.error('[Alfa] No se pudo sanar montos inflados', String(doc._id), err.message);
+    }
+  }
+}
+
 const ALFA_LISTADO_LIMIT_MAX = 3000;
 
 export const listarCasosAlfa = async (req, res) => {
@@ -457,7 +530,7 @@ export const listarCasosAlfa = async (req, res) => {
     );
     const skip = (pageNum - 1) * limitNum;
     const identidad = await obtenerIdentidadUsuarioReq(req);
-    const filtroAsignacion = construirFiltroVistaAsignacion(identidad, { modulo: 'alfa' });
+    const filtroAsignacion = await construirFiltroVistaCasos(identidad, { modulo: 'alfa' });
     const incluirExcluidos = ['1', 'true', 'yes'].includes(
       String(req.query.incluirExcluidos || '').toLowerCase()
     );
@@ -483,8 +556,9 @@ export const listarCasosAlfa = async (req, res) => {
       total,
       page: pageNum,
       limit: limitNum,
-      data: documentos,
+      data: documentos.map((d) => healAlfaMoneyDoc(d)),
     });
+    void persistAlfaMontosInflados(documentos);
   } catch (error) {
     console.error('❌ Error al listar casos Seguros Alfa:', error);
     res.status(500).json({
@@ -517,13 +591,15 @@ export const obtenerCasoAlfa = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Caso Seguros Alfa no encontrado' });
     }
     const identidad = await obtenerIdentidadUsuarioReq(req);
-    if (!casoVisibleParaIdentidad(documento, identidad, { modulo: 'alfa' })) {
+    if (!(await casoVisibleParaIdentidadCasos(documento, identidad, { modulo: 'alfa' }))) {
       return res.status(403).json({
         success: false,
         error: 'No tiene permiso para ver este caso (solo los asignados a usted).',
       });
     }
-    res.json({ success: true, data: documento });
+    const plain = typeof documento.toObject === 'function' ? documento.toObject() : documento;
+    res.json({ success: true, data: healAlfaMoneyDoc(plain) });
+    void persistAlfaMontosInflados([plain]);
   } catch (error) {
     console.error('❌ Error al obtener caso Seguros Alfa:', error);
     res.status(500).json({
@@ -542,7 +618,7 @@ export const actualizarCasoAlfa = async (req, res) => {
     }
 
     const identidad = await obtenerIdentidadUsuarioReq(req);
-    if (!casoVisibleParaIdentidad(registroActual, identidad)) {
+    if (!(await casoVisibleParaIdentidadCasos(registroActual, identidad, { modulo: 'alfa' }))) {
       return res.status(403).json({
         success: false,
         error: 'No tiene permiso para modificar este caso (solo los asignados a usted).',
@@ -550,7 +626,25 @@ export const actualizarCasoAlfa = async (req, res) => {
     }
 
     const base = registroActual.toObject();
-    const { data: bodyFiltrado, soloEstado } = aplicarRestriccionRolCaso(req, req.body || {}, base);
+    const { data: bodyFiltrado, soloEstado, denegado } = aplicarRestriccionRolCaso(
+      req,
+      req.body || {},
+      base,
+      {
+        modulo: 'alfa',
+        name: identidad?.name,
+        login: identidad?.login,
+        cedula: identidad?.cedula,
+        empresa: identidad?.empresa,
+        caso: base,
+      }
+    );
+    if (denegado) {
+      return res.status(403).json({
+        success: false,
+        error: 'No tiene permiso para modificar este caso (solo los asignados a usted).',
+      });
+    }
     if (
       soloEstado &&
       req.body &&
@@ -567,6 +661,8 @@ export const actualizarCasoAlfa = async (req, res) => {
     if (!payload.consecutivo) {
       payload.consecutivo = base.consecutivo || (await generarConsecutivoAlfa());
     }
+    if (base.firmaAjuste) payload.firmaAjuste = base.firmaAjuste;
+    await aplicarFirmaAjusteSiCorresponde(payload);
 
     const faltantes = validarRequeridos(payload);
     const obsErr = validarObservacionesGestion(payload);
@@ -647,6 +743,13 @@ export const actualizarCasoAlfa = async (req, res) => {
 
 export const eliminarCasoAlfa = async (req, res) => {
   try {
+    const identidad = await obtenerIdentidadUsuarioReq(req);
+    if (esIdentidadEra(identidad)) {
+      return res.status(403).json({
+        success: false,
+        error: 'El rol ERA no puede eliminar casos.',
+      });
+    }
     const registro = await buscarCasoPorId(req.params.id);
     if (!registro) {
       return res.status(404).json({ success: false, error: 'Caso Seguros Alfa no encontrado' });
@@ -670,6 +773,13 @@ export const eliminarCasoAlfa = async (req, res) => {
  */
 export const importarCasosAlfa = async (req, res) => {
   try {
+    const identidad = await obtenerIdentidadUsuarioReq(req);
+    if (esIdentidadEra(identidad)) {
+      return res.status(403).json({
+        success: false,
+        error: 'El rol ERA no puede importar casos.',
+      });
+    }
     const filas = Array.isArray(req.body?.casos) ? req.body.casos : null;
     if (!filas || filas.length === 0) {
       return res.status(400).json({
@@ -864,6 +974,13 @@ export const subirArchivoAlfa = async (req, res) => {
     const caso = await buscarCasoPorId(req.params.id);
     if (!caso) {
       return res.status(404).json({ success: false, error: 'Caso Seguros Alfa no encontrado' });
+    }
+    const identidadArchivo = await obtenerIdentidadUsuarioReq(req);
+    if (!(await casoVisibleParaIdentidadCasos(caso, identidadArchivo, { modulo: 'alfa' }))) {
+      return res.status(403).json({
+        success: false,
+        error: 'No tiene permiso para este caso.',
+      });
     }
 
     const etiqueta = toStringOrNull(req.body?.etiqueta) || 'GENERAL';
@@ -1191,6 +1308,15 @@ const usuarioImportDesdeReq = (req) => {
 /** POST /api/seguros-alfa/import/preview — multipart file excel */
 export const previewImportExcelAlfa = async (req, res) => {
   try {
+    if (
+      await rechazarSiOperacionEra(
+        req,
+        res,
+        'El rol ERA no puede importar casos.'
+      )
+    ) {
+      return;
+    }
     const file = req.file;
     if (!file?.buffer) {
       return res.status(400).json({
@@ -1221,6 +1347,15 @@ export const previewImportExcelAlfa = async (req, res) => {
 /** POST /api/seguros-alfa/import/execute — { importSessionId, force? } */
 export const executeImportExcelAlfa = async (req, res) => {
   try {
+    if (
+      await rechazarSiOperacionEra(
+        req,
+        res,
+        'El rol ERA no puede importar casos.'
+      )
+    ) {
+      return;
+    }
     const importSessionId = req.body?.importSessionId;
     const force = req.body?.force === true;
     const data = await executeAlfaExcelImport({
@@ -1382,8 +1517,17 @@ export const setSharePointEnabledAlfa = async (req, res) => {
 };
 
 /** GET /api/seguros-alfa/alertas */
-export const getAlertasAlfa = async (_req, res) => {
+export const getAlertasAlfa = async (req, res) => {
   try {
+    if (
+      await rechazarSiOperacionEra(
+        req,
+        res,
+        'El rol ERA no consulta las alertas internas de Proser.'
+      )
+    ) {
+      return;
+    }
     const data = await obtenerAlertasAlfaPorAjustadores();
     return res.json(data);
   } catch (error) {
@@ -1509,11 +1653,14 @@ export const getBloquesCercaniaAlfa = async (req, res) => {
       login: u.login,
       cedula: u.cedula,
     });
+    const identidad = await obtenerIdentidadUsuarioReq(req);
+    const filtroAsignacion = await construirFiltroVistaCasos(identidad, { modulo: 'alfa' });
     const data = await obtenerBloquesCercaniaAlfa({
       radioKm,
       ciudad,
       estado,
       omitirConFechaLlamada,
+      filtroExtra: filtroAsignacion || {},
     });
     return res.json({ success: true, data });
   } catch (error) {
@@ -1597,10 +1744,16 @@ export const crearPredioVinculadoAlfa = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Caso Seguros Alfa no encontrado' });
     }
     const identidad = await obtenerIdentidadUsuarioReq(req);
-    if (!casoVisibleParaIdentidad(padre, identidad)) {
+    if (!(await casoVisibleParaIdentidadCasos(padre, identidad, { modulo: 'alfa' }))) {
       return res.status(403).json({
         success: false,
         error: 'No tiene permiso para este caso.',
+      });
+    }
+    if (esIdentidadEra(identidad)) {
+      return res.status(403).json({
+        success: false,
+        error: 'El rol ERA no puede crear predios vinculados.',
       });
     }
 

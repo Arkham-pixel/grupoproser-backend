@@ -105,19 +105,63 @@ export function normalizeDate(value) {
   return null;
 }
 
-export function normalizeMoney(value) {
+export function parseCopMoney(value) {
   if (value === null || value === undefined || value === '') return null;
-  if (typeof value === 'number' && !Number.isNaN(value)) return value;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'object') {
+    if (typeof value.result === 'number' && Number.isFinite(value.result)) return value.result;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (value.text != null && value.text !== '') return parseCopMoney(value.text);
+    return null;
+  }
   const texto = String(value).trim();
   if (!texto) return null;
   if (/^(n\/?a|null|undefined|desiste|por confirmar|por confrimar|-)$/i.test(texto)) {
     return null;
   }
   if (!/\d/.test(texto)) return null;
-  const limpio = texto.replace(/[^\d.,-]/g, '').replace(/,/g, '');
-  if (!limpio || limpio === '-' || limpio === '.' || limpio === '-.') return null;
-  const n = Number(limpio);
-  return Number.isNaN(n) ? null : n;
+  let numero = texto.replace(/[^\d.,-]/g, '');
+  if (!numero || numero === '-' || numero === '.' || numero === '-.') return null;
+  const neg = numero.startsWith('-');
+  if (neg) numero = numero.slice(1);
+  if (numero.includes(',') && numero.includes('.')) {
+    const lastComma = numero.lastIndexOf(',');
+    const lastDot = numero.lastIndexOf('.');
+    numero =
+      lastComma > lastDot
+        ? numero.replace(/\./g, '').replace(',', '.')
+        : numero.replace(/,/g, '');
+  } else if ((numero.match(/,/g) || []).length > 1) {
+    numero = numero.replace(/,/g, '');
+  } else if (numero.includes(',')) {
+    numero = numero.replace(',', '.');
+  } else if (numero.includes('.')) {
+    const partes = numero.split('.');
+    if (partes.length > 2 || (partes.length === 2 && partes[1].length === 3)) {
+      numero = numero.replace(/\./g, '');
+    }
+  }
+  const n = Number(numero);
+  if (!Number.isFinite(n)) return null;
+  return neg ? -n : n;
+}
+
+/**
+ * Pesos enteros para UI / Excel.
+ * Si los centavos (.88) se concatenaron al entero (≥ 1.000 millones), divide ×100.
+ * 3.668.964.288 → 36.689.643
+ */
+export function pesosOficialesAlfa(value) {
+  const n = parseCopMoney(value);
+  if (n == null || !Number.isFinite(n)) return null;
+  if (Math.abs(n) >= 1_000_000_000) return Math.round(n / 100);
+  return Math.round(n);
+}
+
+export function normalizeMoney(value) {
+  return parseCopMoney(value);
 }
 
 /**
