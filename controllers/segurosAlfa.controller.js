@@ -59,7 +59,8 @@ import {
   resolverLiquidadorParaUpdate,
   resolverInformeUnicoParaUpdate,
 } from '../utils/protegerPresupuestoNsr10.js';
-import { normalizeMoney, pesosOficialesAlfa } from '../utils/alfaExcelNormalize.js';
+import { normalizeMoney, pesosOficialesAlfa, pareceIdentificacionComoMontoAlfa } from '../utils/alfaExcelNormalize.js';
+import { aplicarMontosOficialesDesdeLiquidadorAlfa } from '../utils/valoresLiquidadorAlfa.js';
 import * as XLSX from 'xlsx';
 
 const esValorVacio = (valor) =>
@@ -125,10 +126,10 @@ const parseNumberFlexible = (value, fallback = null) => {
   return n == null ? null : n;
 };
 
-const parsePesosAlfa = (value, fallback = null) => {
+const parsePesosAlfa = (value, fallback = null, identificacion = null) => {
   const n = parseNumberFlexible(value, fallback);
   if (n == null) return null;
-  return pesosOficialesAlfa(n);
+  return pesosOficialesAlfa(n, identificacion);
 };
 
 const toStringOrNull = (value, fallback = null) => {
@@ -193,7 +194,8 @@ const buscarCasoPorId = async (idParam) => {
   return null;
 };
 
-const buildAlfaPayload = (data = {}, base = {}) => ({
+const buildAlfaPayload = (data = {}, base = {}) =>
+  aplicarMontosOficialesDesdeLiquidadorAlfa({
   consecutivo: base.consecutivo ?? null,
   siniestro: toStringOrNull(data.siniestro, base.siniestro ?? null),
   identificacion: toStringOrNull(data.identificacion, base.identificacion ?? null),
@@ -238,8 +240,16 @@ const buildAlfaPayload = (data = {}, base = {}) => ({
     base.valorComercialInmueble ?? null
   ),
   reserva: parsePesosAlfa(data.reserva, base.reserva ?? null),
-  valorReclamado: parsePesosAlfa(data.valorReclamado, base.valorReclamado ?? null),
-  valorLiquidado: parsePesosAlfa(data.valorLiquidado, base.valorLiquidado ?? null),
+  valorReclamado: parsePesosAlfa(
+    data.valorReclamado,
+    base.valorReclamado ?? null,
+    data.identificacion || base.identificacion
+  ),
+  valorLiquidado: parsePesosAlfa(
+    data.valorLiquidado,
+    base.valorLiquidado ?? null,
+    data.identificacion || base.identificacion
+  ),
   fechaLlamada: parseDateFlexible(data.fechaLlamada, base.fechaLlamada ?? null),
   observacionLlamada: toStringOrNull(data.observacionLlamada, base.observacionLlamada ?? null) || '',
   fechaInspeccion: parseDateFlexible(data.fechaInspeccion, base.fechaInspeccion ?? null),
@@ -490,28 +500,45 @@ function healAlfaMoneyDoc(doc) {
   const out = { ...doc };
   for (const f of ALFA_CAMPOS_PESOS) {
     if (out[f] == null || out[f] === '') continue;
-    const p = pesosOficialesAlfa(out[f]);
+    if (
+      (f === 'valorReclamado' || f === 'valorLiquidado') &&
+      pareceIdentificacionComoMontoAlfa(out[f], out.identificacion)
+    ) {
+      out[f] = null;
+      continue;
+    }
+    const p = pesosOficialesAlfa(
+      out[f],
+      f === 'valorReclamado' || f === 'valorLiquidado' ? out.identificacion : undefined
+    );
     if (p != null) out[f] = p;
   }
-  return out;
+  return aplicarMontosOficialesDesdeLiquidadorAlfa(out);
+}
+
+function sameMontoAlfa(a, b) {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  return Number(a) === Number(b);
 }
 
 async function persistAlfaMontosInflados(documentos = []) {
   for (const doc of documentos) {
     if (!doc?._id) continue;
+    const sanado = healAlfaMoneyDoc(doc);
     const patch = {};
+    const afterForExcel = { ...doc };
     for (const f of ['valorReclamado', 'valorLiquidado']) {
-      const raw = Number(doc[f]);
-      const oficial = pesosOficialesAlfa(doc[f]);
-      if (oficial == null || !Number.isFinite(raw)) continue;
-      if (Math.abs(raw) >= 1_000_000_000 && raw !== oficial) patch[f] = oficial;
+      if (sameMontoAlfa(doc[f], sanado[f])) continue;
+      patch[f] = sanado[f] == null ? null : sanado[f];
+      afterForExcel[f] = sanado[f] == null ? 0 : sanado[f];
     }
     if (!Object.keys(patch).length) continue;
     try {
       await SegurosAlfaCaso.updateOne({ _id: doc._id }, { $set: patch });
       await enqueueAlfaExcelOutboundFromCaseUpdate({
         beforeDoc: doc,
-        afterDoc: { ...doc, ...patch },
+        afterDoc: afterForExcel,
       });
     } catch (err) {
       console.error('[Alfa] No se pudo sanar montos inflados', String(doc._id), err.message);

@@ -13,6 +13,10 @@ import SegurosAlfaCaso from '../models/SegurosAlfaCaso.js';
 import AlfaExcelSharePointSource from '../models/AlfaExcelSharePointSource.js';
 import AlfaExcelOutboundUpdate from '../models/AlfaExcelOutboundUpdate.js';
 import {
+  getAlfaRespaldoCollection,
+  restoreAlfaCasoFromRespaldoById,
+} from '../services/alfaCasosRespaldoService.js';
+import {
   parseAlfaExcelBuffer,
   matchAlfaCaseForExcelRow,
 } from '../services/alfaExcelImportService.js';
@@ -118,11 +122,21 @@ for (const row of rows) {
   const id = String(payload.identificacion || '').replace(/\D/g, '');
   let caso = await SegurosAlfaCaso.findOne({ identificacion: id });
   if (!caso) {
-    // incluir archivados
     caso = await SegurosAlfaCaso.findOne({
       identificacion: id,
       excluidoBaseAlfa: true,
     });
+  }
+  if (!caso) {
+    const respaldo = await getAlfaRespaldoCollection().findOne({ identificacion: id });
+    if (respaldo) {
+      if (!DRY) {
+        await restoreAlfaCasoFromRespaldoById(respaldo._id, { unexclude: true });
+      }
+      caso = DRY
+        ? respaldo
+        : await SegurosAlfaCaso.findById(respaldo._id);
+    }
   }
   if (!caso) {
     results.push({ id, action: 'NOT_FOUND_IN_ARNALD' });

@@ -115,13 +115,73 @@ const completarFecha = (incoming, existing) => {
   return parseFecha(incoming, existing ?? null);
 };
 
-const normClave = (valor) =>
-  String(valor ?? '')
+const normClave = (valor) => {
+  let t = String(valor ?? '')
+    .replace(/^\uFEFF/, '')
+    .replace(/^'+/, '')
+    .replace(/\u00A0/g, ' ')
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
     .trim()
     .toUpperCase()
     .replace(/\s+/g, '');
+  if (/^\d+\.0+$/.test(t)) t = t.replace(/\.0+$/, '');
+  return t;
+};
+
+const claveParSiniestroCaso = (siniestro, noCaso) => {
+  const s = normClave(siniestro);
+  const c = normClave(noCaso);
+  if (!s || !c) return null;
+  return `SC:${s}|${c}`;
+};
+
+/**
+ * Deduplica por No_Siniestro o No_Caso (el Excel a veces trae solo el número de caso).
+ * Si vienen ambos, el par es la identidad: mismo siniestro con otro No. caso es un caso nuevo.
+ */
+const registrarIndiceListado = (indice, doc) => {
+  if (!doc) return;
+  const s = normClave(doc.siniestro);
+  const c = normClave(doc.noCaso);
+  if (s && c) indice.set(claveParSiniestroCaso(s, c), doc);
+  if (s) indice.set(`S:${s}`, doc);
+  if (c) indice.set(`C:${c}`, doc);
+};
+
+const resolverExistenteListado = (indice, siniestro, noCaso) => {
+  const s = normClave(siniestro);
+  const c = normClave(noCaso);
+  if (!s && !c) return null;
+  if (s && c) {
+    const par = indice.get(claveParSiniestroCaso(s, c));
+    if (par) return par;
+    const porCaso = indice.get(`C:${c}`);
+    if (porCaso) return porCaso;
+    const porSin = indice.get(`S:${s}`);
+    if (porSin && !normClave(porSin.noCaso)) return porSin;
+    return null;
+  }
+  if (c) return indice.get(`C:${c}`) || null;
+  return indice.get(`S:${s}`) || null;
+};
+
+const buscarDuplicadoPorPar = async ({ siniestro, noCaso, excludeId } = {}) => {
+  const s = normClave(siniestro);
+  const c = normClave(noCaso);
+  if (!s && !c) return null;
+  const or = [];
+  if (s) or.push({ siniestro: { $nin: [null, ''] } });
+  if (c) or.push({ noCaso: { $nin: [null, ''] } });
+  const filtro = { $or: or };
+  if (excludeId) filtro._id = { $ne: excludeId };
+  const candidatos = await PrevisoraListadoCaso.find(filtro)
+    .select('_id siniestro noCaso consecutivo')
+    .lean();
+  const indice = new Map();
+  for (const doc of candidatos) registrarIndiceListado(indice, doc);
+  return resolverExistenteListado(indice, siniestro, noCaso);
+};
 
 const completarIdentificacion = (payload = {}) => {
   if (payload.identificacion) return payload;
@@ -190,7 +250,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     inspector: pick(data.inspector, base.inspector ?? null),
     fechaAsignacion: pickFecha(data.fechaAsignacion, base.fechaAsignacion ?? null),
     fechaVisita: pickFecha(data.fechaVisita, base.fechaVisita ?? null),
-    estado: homologarEstadoPrevisora(pick(data.estado, base.estado ?? 'CASO NUEVO') || 'CASO NUEVO'),
+    estado: homologarEstadoPrevisora(pick(data.estado, base.estado) || 'CASO NUEVO'),
     modalidadAtencion: pick(data.modalidadAtencion, base.modalidadAtencion ?? null),
     fechaCasoNuevo: pickFecha(data.fechaCasoNuevo, base.fechaCasoNuevo ?? null),
     fechaCoordinandoInspeccion: pickFecha(
@@ -267,6 +327,13 @@ export const crearCasoListadoPrevisora = async (req, res) => {
         error: 'Indique el siniestro o el No. caso',
       });
     }
+    const duplicado = await buscarDuplicadoPorPar(payload);
+    if (duplicado) {
+      return res.status(409).json({
+        success: false,
+        error: `Ya existe un caso con el mismo No_Siniestro y No_Caso (${duplicado.consecutivo || duplicado._id})`,
+      });
+    }
     payload.consecutivo = await generarConsecutivo();
     if (await rechazarSiFranjaOcupada(res, payload)) return;
     const documento = await PrevisoraListadoCaso.create(payload);
@@ -333,6 +400,17 @@ export const actualizarCasoListadoPrevisora = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Caso del listado no encontrado' });
     }
     const payload = buildPayload(req.body, actual.toObject(), { pisar: true });
+    const duplicado = await buscarDuplicadoPorPar({
+      siniestro: payload.siniestro,
+      noCaso: payload.noCaso,
+      excludeId: actual._id,
+    });
+    if (duplicado) {
+      return res.status(409).json({
+        success: false,
+        error: `Ya existe un caso con el mismo No_Siniestro y No_Caso (${duplicado.consecutivo || duplicado._id})`,
+      });
+    }
     if (!payload.consecutivo) payload.consecutivo = actual.consecutivo || (await generarConsecutivo());
     if (await rechazarSiFranjaOcupada(res, payload, { excludeId: actual._id })) return;
     const actualizado = await PrevisoraListadoCaso.findByIdAndUpdate(
@@ -370,7 +448,9 @@ export const eliminarCasoListadoPrevisora = async (req, res) => {
 };
 
 /**
- * Importación del listado cliente. Empareja por siniestro.
+ * Importación del listado cliente.
+ * Deduplica por No_Siniestro o No_Caso (a veces el Excel solo trae No_Caso).
+ * Si vienen ambos, el par identifica el caso: mismo siniestro con otro No. caso se crea aparte.
  * No toca gsk3cAppprevisoraCasos (inspección CAT).
  */
 export const importarCasosListadoPrevisora = async (req, res) => {
@@ -397,14 +477,7 @@ export const importarCasosListadoPrevisora = async (req, res) => {
     const inspectores = inspectoresRaw.filter((d) => catalogoPerteneceAModulo(d, 'previsora'));
     const ajustadores = ajustadoresRaw.filter((d) => catalogoPerteneceAModulo(d, 'previsora'));
     const indice = new Map();
-    const registrarIndice = (doc) => {
-      if (!doc) return;
-      const siniestro = normClave(doc.siniestro);
-      const noCaso = normClave(doc.noCaso);
-      if (siniestro) indice.set(`S:${siniestro}`, doc);
-      if (noCaso) indice.set(`C:${noCaso}`, doc);
-    };
-    for (const doc of existentes) registrarIndice(doc);
+    for (const doc of existentes) registrarIndiceListado(indice, doc);
 
     const ahora = new Date();
     const año = ahora.getFullYear();
@@ -434,17 +507,15 @@ export const importarCasosListadoPrevisora = async (req, res) => {
           ajustador: asignacion.ajustador,
           estado: homologarEstadoPrevisora(filas[i]?.estado),
         });
-        if (!payload.siniestro && !payload.noCaso && !payload.asegurado) {
+        if (!payload.siniestro && !payload.noCaso) {
           resumen.omitidos += 1;
-          resumen.errores.push({ fila: filaNum, motivo: 'Falta siniestro, No. caso o asegurado' });
+          resumen.errores.push({
+            fila: filaNum,
+            motivo: 'Falta No_Siniestro o No_Caso',
+          });
           continue;
         }
-        const claveSiniestro = normClave(payload.siniestro);
-        const claveCaso = normClave(payload.noCaso);
-        const existente =
-          (claveSiniestro && indice.get(`S:${claveSiniestro}`)) ||
-          (claveCaso && indice.get(`C:${claveCaso}`)) ||
-          null;
+        const existente = resolverExistenteListado(indice, payload.siniestro, payload.noCaso);
         if (existente) {
           const merge = buildPayload(payload, existente);
           if (!merge.consecutivo) {
@@ -455,14 +526,14 @@ export const importarCasosListadoPrevisora = async (req, res) => {
             new: true,
           }).lean();
           resumen.actualizados += 1;
-          registrarIndice(actualizado);
+          registrarIndiceListado(indice, actualizado);
         } else {
           secuencial += 1;
           payload.consecutivo = `PREVISORA-LST-${año}-${mes}-${secuencial}`;
           const creado = await PrevisoraListadoCaso.create(payload);
           const lean = creado.toObject();
           resumen.creados += 1;
-          registrarIndice(lean);
+          registrarIndiceListado(indice, lean);
         }
       } catch (errFila) {
         resumen.omitidos += 1;

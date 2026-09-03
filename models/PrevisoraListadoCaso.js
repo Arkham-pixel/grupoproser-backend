@@ -33,7 +33,9 @@ const PrevisoraListadoCasoSchema = new mongoose.Schema(
     zc: { type: String, index: true },
     /** Número de caso Previsora (columna No_Caso del reporte). */
     noCaso: { type: String, index: true },
-    siniestro: String,
+    /** Número de siniestro Previsora (columna No_Siniestro). Deduplica con noCaso (OR; par si vienen ambos). */
+    siniestro: { type: String, index: true },
+    siniestro: { type: String, index: true },
     identificacion: { type: String, required: true },
     tipoIdentificacion: String,
     numeroPoliza: String,
@@ -99,6 +101,7 @@ const PrevisoraListadoCasoSchema = new mongoose.Schema(
 
 PrevisoraListadoCasoSchema.index({ zc: 1 }, { unique: false, sparse: true });
 PrevisoraListadoCasoSchema.index({ noCaso: 1 }, { unique: false, sparse: true });
+PrevisoraListadoCasoSchema.index({ siniestro: 1, noCaso: 1 }, { unique: false, sparse: true });
 aplicarCamposAgendaCatastrofico(PrevisoraListadoCasoSchema);
 aplicarPluginNotificacionesOperativas(PrevisoraListadoCasoSchema, { modulo: 'previsoraListado' });
 

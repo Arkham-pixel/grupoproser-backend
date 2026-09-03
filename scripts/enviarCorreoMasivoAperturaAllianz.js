@@ -8,6 +8,7 @@
  *   node scripts/enviarCorreoMasivoAperturaAllianz.js --apply --limit=10
  *   node scripts/enviarCorreoMasivoAperturaAllianz.js --apply --force
  *   node scripts/enviarCorreoMasivoAperturaAllianz.js --apply --delay=1500
+ *   node scripts/enviarCorreoMasivoAperturaAllianz.js --apply --from-excel="C:\\ruta\\correos.xlsx"
  */
 import dns from 'dns';
 import dotenv from 'dotenv';
@@ -15,6 +16,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
+import XLSX from 'xlsx';
 import AllianzListadoCaso from '../models/AllianzListadoCaso.js';
 import { deliverMail, isMailConfigured, getMailConfigStatus } from '../services/mailTransport.js';
 
@@ -231,6 +233,41 @@ function emailsDeCaso(c) {
   return { emails: [], via: null };
 }
 
+function leerEmailsExcel(filePath) {
+  const wb = XLSX.readFile(filePath);
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
+  const out = [];
+  const seen = new Set();
+  for (const row of rows) {
+    for (const cell of row || []) {
+      for (const email of extraerEmails(cell)) {
+        if (seen.has(email)) continue;
+        seen.add(email);
+        out.push(email);
+      }
+    }
+  }
+  return out;
+}
+
+function emailsYaEnviadosEnLogs() {
+  const sent = new Set();
+  for (const f of fs.readdirSync(__dirname)) {
+    if (!f.startsWith('_log_apertura_allianz_') || !f.endsWith('.json')) continue;
+    try {
+      const log = JSON.parse(fs.readFileSync(path.join(__dirname, f), 'utf8'));
+      for (const ok of log.ok || []) {
+        const email = String(ok.email || '').trim().toLowerCase();
+        if (email) sent.add(email);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return sent;
+}
+
 function parseArgs(argv) {
   const out = {
     apply: false,
@@ -239,6 +276,7 @@ function parseArgs(argv) {
     delay: 1500,
     test: null,
     only: null,
+    fromExcel: null,
   };
   for (const a of argv) {
     if (a === '--apply') out.apply = true;
@@ -247,6 +285,7 @@ function parseArgs(argv) {
     else if (a.startsWith('--delay=')) out.delay = Math.max(200, Number(a.slice(8)) || 1500);
     else if (a.startsWith('--test=')) out.test = String(a.slice(7)).trim().toLowerCase() || null;
     else if (a.startsWith('--only=')) out.only = String(a.slice(7)).trim().toLowerCase() || null;
+    else if (a.startsWith('--from-excel=')) out.fromExcel = String(a.slice(13)).trim() || null;
   }
   return out;
 }
@@ -331,8 +370,31 @@ async function main() {
     }
 
     let destinatarios = [...byEmail.values()];
+    let omitidosExcel = 0;
+    if (args.fromExcel) {
+      const lista = leerEmailsExcel(args.fromExcel);
+      const yaLog = emailsYaEnviadosEnLogs();
+      destinatarios = lista.map((email) => {
+        const existente = byEmail.get(email);
+        return (
+          existente || {
+            email,
+            casoIds: [],
+            yaEnviado: yaLog.has(email),
+            asegurado: '',
+            siniestro: '',
+            via: 'excel',
+          }
+        );
+      });
+      if (!args.force) {
+        const antes = destinatarios.length;
+        destinatarios = destinatarios.filter((d) => !d.yaEnviado && !yaLog.has(d.email));
+        omitidosExcel = antes - destinatarios.length;
+      }
+    }
     if (args.only) destinatarios = destinatarios.filter((d) => d.email === args.only);
-    if (!args.force) destinatarios = destinatarios.filter((d) => !d.yaEnviado);
+    if (!args.force && !args.fromExcel) destinatarios = destinatarios.filter((d) => !d.yaEnviado);
     if (args.limit != null && args.limit > 0) destinatarios = destinatarios.slice(0, args.limit);
 
     console.log(
@@ -343,9 +405,12 @@ async function main() {
           sinCorreoUtil: sinCorreo,
           viaIntermediario,
           correosUnicosEnBd: byEmail.size,
+          fromExcel: args.fromExcel || null,
           yaEnviadosOmitidos: args.force
             ? 0
-            : [...byEmail.values()].filter((d) => d.yaEnviado).length,
+            : args.fromExcel
+              ? omitidosExcel
+              : [...byEmail.values()].filter((d) => d.yaEnviado).length,
           aEnviar: destinatarios.length,
           modo: args.test ? `TEST → ${args.test}` : args.apply ? 'APPLY' : 'DRY-RUN',
           delayMs: args.delay,
@@ -421,15 +486,17 @@ async function main() {
           { enqueue: false, tipo: 'allianz-apertura' }
         );
         const messageId = info?.messageId || '';
-        await AllianzListadoCaso.updateMany(
-          { _id: { $in: d.casoIds } },
-          {
-            $set: {
-              fechaEmailAperturaAllianz: new Date(),
-              emailAperturaAllianzMessageId: messageId,
-            },
-          }
-        );
+        if (d.casoIds.length) {
+          await AllianzListadoCaso.updateMany(
+            { _id: { $in: d.casoIds } },
+            {
+              $set: {
+                fechaEmailAperturaAllianz: new Date(),
+                emailAperturaAllianzMessageId: messageId,
+              },
+            }
+          );
+        }
         log.ok.push({ email: d.email, messageId, casos: d.casoIds.length, via: d.via });
         console.log(`[${n}/${destinatarios.length}] OK ${d.email}`);
       } catch (err) {

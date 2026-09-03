@@ -152,12 +152,29 @@ export function parseCopMoney(value) {
  * Pesos enteros para UI / Excel.
  * Si los centavos (.88) se concatenaron al entero (≥ 1.000 millones), divide ×100.
  * 3.668.964.288 → 36.689.643
+ * No divide cédulas: 1.118.293.088 no es un monto inflado.
  */
-export function pesosOficialesAlfa(value) {
+export function pesosOficialesAlfa(value, identificacion) {
   const n = parseCopMoney(value);
   if (n == null || !Number.isFinite(n)) return null;
-  if (Math.abs(n) >= 1_000_000_000) return Math.round(n / 100);
+  if (pareceIdentificacionComoMontoAlfa(n, identificacion)) return null;
+  if (Math.abs(n) >= 1_000_000_000) {
+    const divided = Math.round(n / 100);
+    if (pareceIdentificacionComoMontoAlfa(divided, identificacion)) return null;
+    return divided;
+  }
   return Math.round(n);
+}
+
+/** Cédula pegada en VALOR RECLAMADO (tal cual o ÷100 tras el saneo de centavos). */
+export function pareceIdentificacionComoMontoAlfa(valor, identificacion) {
+  const idn = Number(String(identificacion ?? '').replace(/\D/g, ''));
+  const v = Number(valor);
+  if (!Number.isFinite(idn) || idn < 100_000) return false;
+  if (!Number.isFinite(v) || v <= 0) return false;
+  if (Math.abs(v - idn) <= 1) return true;
+  if (idn >= 1_000_000_000 && Math.abs(v - Math.round(idn / 100)) <= 1) return true;
+  return false;
 }
 
 export function normalizeMoney(value) {

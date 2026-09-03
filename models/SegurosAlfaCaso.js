@@ -108,6 +108,12 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
     fechaEmailAperturaProser: Date,
     emailAperturaProserMessageId: String,
     /**
+     * Correo masivo: convenio de apoyo con firma ajustadora de México.
+     * Solo casos en estado Sin contactar.
+     */
+    fechaEmailConvenioMexico: Date,
+    emailConvenioMexicoMessageId: String,
+    /**
      * Coordenadas del predio para bloques de cercanía (solo ARNALD).
      * No sincroniza con SharePoint / Excel Control y Seguimiento.
      */

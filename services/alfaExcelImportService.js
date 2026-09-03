@@ -37,6 +37,10 @@ import {
   buildAlfaCasoPayload,
 } from './alfaCasoService.js';
 import {
+  listAlfaCasosParaMatchExcel,
+  restoreAlfaCasoFromRespaldoById,
+} from './alfaCasosRespaldoService.js';
+import {
   acquireAlfaExcelImportLock,
   releaseAlfaExcelImportLock,
 } from './alfaExcelImportLockService.js';
@@ -839,7 +843,7 @@ export async function previewAlfaExcelImport({
     throw fail('TOO_MANY_ROWS', `Máximo ${cfg.maxRows} filas`, 400);
   }
 
-  const allCases = await SegurosAlfaCaso.find().lean();
+  const allCases = await listAlfaCasosParaMatchExcel();
   const planned = parsed.rows.map((r) => planRow(r, allCases));
 
   const totals = {
@@ -1096,6 +1100,14 @@ export async function executeAlfaExcelImport({
           }
 
           if (row.action === 'UNCHANGED') {
+            if (row.matchedCaseId) {
+              const live = await SegurosAlfaCaso.findById(row.matchedCaseId).lean();
+              if (!live) {
+                await restoreAlfaCasoFromRespaldoById(row.matchedCaseId, {
+                  unexclude: true,
+                });
+              }
+            }
             totals.unchanged += 1;
             row.applied = true;
             row.resultCaseId = row.matchedCaseId;
@@ -1127,7 +1139,12 @@ export async function executeAlfaExcelImport({
               await row.save();
               continue;
             }
-            const before = await SegurosAlfaCaso.findById(row.matchedCaseId).lean();
+            let before = await SegurosAlfaCaso.findById(row.matchedCaseId).lean();
+            if (!before) {
+              before = await restoreAlfaCasoFromRespaldoById(row.matchedCaseId, {
+                unexclude: true,
+              });
+            }
             const updated = await updateAlfaCasoFields(row.matchedCaseId, row.payload || {});
             row.applied = true;
             row.resultCaseId = updated?._id || row.matchedCaseId;
