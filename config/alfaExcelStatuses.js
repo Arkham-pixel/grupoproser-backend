@@ -13,7 +13,12 @@ export const ALFA_ESTADOS_UNIFICADOS = Object.freeze([
   'LIQUIDADO',
   'ENVIADO ASEGURADORA',
   'CERRADO',
+  'OBJETADO',
+  'DESISTIDO',
 ]);
+
+/** Cierres que en SharePoint (ESTADO SINIESTRO) se escriben como CERRADO. */
+export const ALFA_ESTADOS_SHAREPOINT_COMO_CERRADO = Object.freeze(['OBJETADO', 'DESISTIDO']);
 
 /** @deprecated Alias del catálogo unificado. */
 export const ALFA_KNOWN_STATUSES = ALFA_ESTADOS_UNIFICADOS;
@@ -41,6 +46,8 @@ const STATUS_RANK = Object.freeze({
   LIQUIDADO: 50,
   'ENVIADO ASEGURADORA': 60,
   CERRADO: 70,
+  OBJETADO: 70,
+  DESISTIDO: 70,
 });
 
 export const ALFA_EXCEL_ALLOWED_STATUS_TRANSITIONS = Object.freeze({
@@ -52,6 +59,8 @@ export const ALFA_EXCEL_ALLOWED_STATUS_TRANSITIONS = Object.freeze({
     'LIQUIDADO',
     'ENVIADO ASEGURADORA',
     'CERRADO',
+    'OBJETADO',
+    'DESISTIDO',
   ],
   'CONTACTADO Y PROGRAMADO': [
     'INSPECCIONADO',
@@ -60,6 +69,8 @@ export const ALFA_EXCEL_ALLOWED_STATUS_TRANSITIONS = Object.freeze({
     'LIQUIDADO',
     'ENVIADO ASEGURADORA',
     'CERRADO',
+    'OBJETADO',
+    'DESISTIDO',
   ],
   INSPECCIONADO: [
     'SIN RESPUESTA',
@@ -67,6 +78,8 @@ export const ALFA_EXCEL_ALLOWED_STATUS_TRANSITIONS = Object.freeze({
     'LIQUIDADO',
     'ENVIADO ASEGURADORA',
     'CERRADO',
+    'OBJETADO',
+    'DESISTIDO',
   ],
   'SIN RESPUESTA': [
     'CONTACTADO Y PROGRAMADO',
@@ -75,11 +88,22 @@ export const ALFA_EXCEL_ALLOWED_STATUS_TRANSITIONS = Object.freeze({
     'LIQUIDADO',
     'ENVIADO ASEGURADORA',
     'CERRADO',
+    'OBJETADO',
+    'DESISTIDO',
   ],
-  'SOLICITUD DE DOCUMENTOS': ['LIQUIDADO', 'ENVIADO ASEGURADORA', 'CERRADO', 'INSPECCIONADO'],
-  LIQUIDADO: ['ENVIADO ASEGURADORA', 'CERRADO'],
-  'ENVIADO ASEGURADORA': ['CERRADO'],
-  CERRADO: [],
+  'SOLICITUD DE DOCUMENTOS': [
+    'LIQUIDADO',
+    'ENVIADO ASEGURADORA',
+    'CERRADO',
+    'OBJETADO',
+    'DESISTIDO',
+    'INSPECCIONADO',
+  ],
+  LIQUIDADO: ['ENVIADO ASEGURADORA', 'CERRADO', 'OBJETADO', 'DESISTIDO'],
+  'ENVIADO ASEGURADORA': ['CERRADO', 'OBJETADO', 'DESISTIDO'],
+  CERRADO: ['OBJETADO', 'DESISTIDO'],
+  OBJETADO: ['DESISTIDO', 'CERRADO'],
+  DESISTIDO: ['OBJETADO', 'CERRADO'],
   // legacy keys still accepted in Excel diffs
   PENDIENTE: [
     'EN TRAMITE',
@@ -88,6 +112,8 @@ export const ALFA_EXCEL_ALLOWED_STATUS_TRANSITIONS = Object.freeze({
     'LIQUIDADO',
     'ENVIADO ASEGURADORA',
     'CERRADO',
+    'OBJETADO',
+    'DESISTIDO',
   ],
   'EN TRAMITE': [
     'EN INSPECCION',
@@ -95,14 +121,18 @@ export const ALFA_EXCEL_ALLOWED_STATUS_TRANSITIONS = Object.freeze({
     'LIQUIDADO',
     'ENVIADO ASEGURADORA',
     'CERRADO',
+    'OBJETADO',
+    'DESISTIDO',
   ],
   'EN INSPECCION': [
     'DOCUMENTACION',
     'LIQUIDADO',
     'ENVIADO ASEGURADORA',
     'CERRADO',
+    'OBJETADO',
+    'DESISTIDO',
   ],
-  DOCUMENTACION: ['LIQUIDADO', 'ENVIADO ASEGURADORA', 'CERRADO'],
+  DOCUMENTACION: ['LIQUIDADO', 'ENVIADO ASEGURADORA', 'CERRADO', 'OBJETADO', 'DESISTIDO'],
 });
 
 export function normalizeAlfaStatus(value) {
@@ -129,8 +159,28 @@ function canonicalDisplayStatus(normalized) {
     LIQUIDADO: 'LIQUIDADO',
     'ENVIADO ASEGURADORA': 'ENVIADO ASEGURADORA',
     CERRADO: 'CERRADO',
+    OBJETADO: 'OBJETADO',
+    'CASO OBJETADO': 'OBJETADO',
+    OBJECION: 'OBJETADO',
+    DESISTIDO: 'DESISTIDO',
+    DESISTIMIENTO: 'DESISTIDO',
   };
   return map[normalized] || null;
+}
+
+/**
+ * Valor de ESTADO SINIESTRO para Excel / SharePoint.
+ * OBJETADO y DESISTIDO se reportan como CERRADO; ARNALD conserva el estado real.
+ */
+export function estadoAlfaParaSharePoint(estado) {
+  const n = normalizeAlfaStatus(estado);
+  if (!n) return '';
+  if (n === 'OBJETADO' || n === 'DESISTIDO' || n === 'CASO OBJETADO' || n === 'OBJECION') {
+    return 'CERRADO';
+  }
+  if (n === 'DESISTIMIENTO') return 'CERRADO';
+  const display = canonicalDisplayStatus(n);
+  return display || String(estado || '').trim();
 }
 
 /** Normaliza texto de gestión para comparar. */
@@ -170,7 +220,13 @@ export function canonicalEstadoGestion(value) {
 
 export function isAlfaEstadoDefinido(estado) {
   const n = normalizeAlfaStatus(estado);
-  return n.includes('LIQUIDADO') || n.includes('ENVIADO') || n === 'CERRADO';
+  return (
+    n.includes('LIQUIDADO') ||
+    n.includes('ENVIADO') ||
+    n === 'CERRADO' ||
+    n === 'OBJETADO' ||
+    n === 'DESISTIDO'
+  );
 }
 
 /**
@@ -244,7 +300,7 @@ export function shouldUpdateAlfaStatus({ currentStatus, incomingStatus } = {}) {
   const currentNorm = normalizeAlfaStatus(currentStatus);
 
   if (
-    /^(N\/?A|NA|NULL|UNDEFINED|DESISTE|-|SIN DATO|POR CONFIRM|PENDIENTE DE INFORM)/i.test(
+    /^(N\/?A|NA|NULL|UNDEFINED|-|SIN DATO|POR CONFIRM|PENDIENTE DE INFORM)|^(DESISTE)$/i.test(
       incomingNorm
     )
   ) {

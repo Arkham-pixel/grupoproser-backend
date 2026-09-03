@@ -90,6 +90,14 @@ assert(
   generarAlertasCasoAlfa({ ...caso, estado: 'CERRADO' }, ahora).length === 0,
   'CERRADO no debe generar alerta'
 );
+assert(
+  generarAlertasCasoAlfa({ ...caso, estado: 'OBJETADO' }, ahora).length === 0,
+  'OBJETADO no debe generar alerta'
+);
+assert(
+  generarAlertasCasoAlfa({ ...caso, estado: 'DESISTIDO' }, ahora).length === 0,
+  'DESISTIDO no debe generar alerta'
+);
 
 const alertasAbiertas = generarAlertasCasoAlfa(
   {

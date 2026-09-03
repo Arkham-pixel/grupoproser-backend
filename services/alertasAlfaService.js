@@ -1,3 +1,4 @@
+import { isAlfaEstadoDefinido } from '../config/alfaExcelStatuses.js';
 import SegurosAlfaCaso from '../models/SegurosAlfaCaso.js';
 import Responsable from '../models/Responsable.js';
 import { DIAS_ENTRE_RECORDATORIOS_EMAIL } from './alertasService.js';
@@ -11,20 +12,16 @@ import {
 export const DIAS_RECORDATORIO_INACTIVIDAD_ALFA = 30;
 
 /** Estados de cierre: no se recuerdan por inactividad. */
-const ESTADOS_CERRADOS_ALFA = ['CERRADO', 'LIQUIDADO', 'ENVIADO ASEGURADORA'];
-
-function normalizarEstadoAlfa(valor) {
-  return String(valor ?? '')
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, ' ');
-}
+const ESTADOS_CERRADOS_ALFA = [
+  'CERRADO',
+  'LIQUIDADO',
+  'ENVIADO ASEGURADORA',
+  'OBJETADO',
+  'DESISTIDO',
+];
 
 function esEstadoAlfaCerrado(valorEstado) {
-  const estado = normalizarEstadoAlfa(valorEstado);
-  return ESTADOS_CERRADOS_ALFA.includes(estado);
+  return isAlfaEstadoDefinido(valorEstado);
 }
 
 function parseFechaAlfa(valor) {

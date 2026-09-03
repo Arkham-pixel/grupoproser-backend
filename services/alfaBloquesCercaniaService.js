@@ -5,6 +5,7 @@
 
 import crypto from 'crypto';
 import SegurosAlfaCaso from '../models/SegurosAlfaCaso.js';
+import { isAlfaEstadoDefinido } from '../config/alfaExcelStatuses.js';
 
 const EARTH_RADIUS_KM = 6371;
 
@@ -310,12 +311,7 @@ export function casoYaInspeccionadoAlfa(caso = {}) {
     .replace(/\p{M}/gu, '')
     .trim()
     .toUpperCase();
-  return (
-    e === 'LIQUIDADO' ||
-    e === 'ENVIADO ASEGURADORA' ||
-    e === 'CERRADO' ||
-    e.startsWith('LIQUID')
-  );
+  return isAlfaEstadoDefinido(e) || e.startsWith('LIQUID');
 }
 
 /** Placeholder geocodificado por error (p. ej. "POR CONFIRMAR" → pin en ciudad). */

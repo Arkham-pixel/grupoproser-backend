@@ -49,6 +49,7 @@ import {
   toAlfaExcelOperationalFileName,
 } from '../utils/alfaExcelSharePointPath.js';
 import { selectAlfaExcelFromSharePointFolder } from './alfaExcelSharePointImportService.js';
+import { estadoAlfaParaSharePoint } from '../config/alfaExcelStatuses.js';
 
 function logOut(event, payload = {}) {
   console.log(JSON.stringify({ event, at: new Date().toISOString(), ...payload }));
@@ -86,6 +87,10 @@ function moneyOutbound(value) {
 
 function serializeForOutbox(field, value) {
   if (value == null || value === '') return null;
+  if (field === 'estado') {
+    const mapped = estadoAlfaParaSharePoint(value);
+    return mapped || null;
+  }
   if (ALFA_EXCEL_DATE_FIELDS.includes(field)) {
     const d = value instanceof Date ? value : new Date(value);
     return Number.isNaN(d.getTime()) ? null : d.toISOString();
@@ -98,6 +103,10 @@ function serializeForOutbox(field, value) {
 
 function toExcelCellValue(field, value) {
   if (value == null || value === '') return null;
+  if (field === 'estado') {
+    const mapped = estadoAlfaParaSharePoint(value);
+    return mapped || null;
+  }
   if (ALFA_EXCEL_DATE_FIELDS.includes(field)) {
     const d = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(d.getTime())) return null;
@@ -338,7 +347,9 @@ export function findExcelRowForCase(caseDoc, excelRows) {
     }
   }
 
-  if (hits.length === 1) return hits[0];
+  if (hits.length === 1) {
+    return { ...hits[0], allRowNumbers: [hits[0].rowNumber] };
+  }
   if (hits.length > 1) {
     // Preferir coincidencia exacta de dirección cuando hay varias filas ID+póliza
     const dirCaso = normKeyAddress(caseDoc?.direccionPredio);
@@ -349,12 +360,13 @@ export function findExcelRowForCase(caseDoc, excelRows) {
       if (byDir.length === 1) {
         return {
           rowNumber: byDir[0].rowNumber,
+          allRowNumbers: [byDir[0].rowNumber],
           strategy: `${byDir[0].strategy}+DIRECCION`,
           evidence: { ...(byDir[0].evidence || {}), direccionPredio: true },
         };
       }
       if (byDir.length > 1) {
-        // Filas Excel duplicadas (misma ID/póliza/dirección): tomar la primera
+        // Filas Excel duplicadas (misma ID/póliza/dirección): escribir en todas
         byDir.sort((a, b) => a.rowNumber - b.rowNumber);
         logOut('ALFA_EXCEL_OUTBOUND_DUPLICATE_ROWS_PICKED', {
           consecutivo: caseDoc?.consecutivo || null,
@@ -363,7 +375,8 @@ export function findExcelRowForCase(caseDoc, excelRows) {
         });
         return {
           rowNumber: byDir[0].rowNumber,
-          strategy: `${byDir[0].strategy}+FIRST_DUPLICATE`,
+          allRowNumbers: byDir.map((h) => h.rowNumber),
+          strategy: `${byDir[0].strategy}+ALL_DUPLICATES`,
           evidence: byDir[0].evidence,
         };
       }
@@ -568,6 +581,9 @@ export async function patchYellowCellsInWorkbookBuffer({
 
 function toGraphRangeValue(field, value) {
   if (value == null || value === '') return '';
+  if (field === 'estado') {
+    return String(estadoAlfaParaSharePoint(value) || '');
+  }
   if (ALFA_EXCEL_DATE_FIELDS.includes(field)) {
     const serial = toExcelSerialDate(value);
     return serial == null ? '' : serial;
@@ -600,6 +616,7 @@ function graphCellMatchesExpected(field, expected, range) {
   if (isClearValue(expected)) return graphCellIsEmpty(range);
   const raw = range?.values?.[0]?.[0];
   const text = range?.text?.[0]?.[0];
+  const expectedEstado = field === 'estado' ? estadoAlfaParaSharePoint(expected) : expected;
 
   if (ALFA_EXCEL_DATE_FIELDS.includes(field)) {
     const exp = new Date(expected);
@@ -628,7 +645,7 @@ function graphCellMatchesExpected(field, expected, range) {
   }
 
   // estado y strings
-  const expS = String(expected).trim();
+  const expS = String(field === 'estado' ? expectedEstado : expected).trim();
   const rawS = raw == null ? '' : String(raw).trim();
   const textS = text == null ? '' : String(text).trim();
   return rawS === expS || textS === expS;
@@ -893,15 +910,27 @@ export async function processAlfaExcelOutboundUpdate(doc) {
       return { outcome: 'cancelled', code: 'SKIP_EMPTY_DOES_NOT_CLEAR' };
     }
 
-    const written = await writeOutboundCells({
-      driveId: resolved.driveId,
-      itemId: resolved.itemId,
-      sheetName: parsed.sheetName || ALFA_EXCEL_SHEET_NAME,
-      excelRowNumber: hit.rowNumber,
-      cellUpdates,
-      eTagBefore,
-      downloadedBuffer: downloaded.buffer,
-    });
+    const rowNumbers = [
+      ...new Set(
+        (Array.isArray(hit.allRowNumbers) && hit.allRowNumbers.length
+          ? hit.allRowNumbers
+          : [hit.rowNumber]
+        ).filter((n) => Number.isFinite(Number(n)))
+      ),
+    ];
+
+    let written = { eTagAfter: eTagBefore, verified: [], strategy: null };
+    for (const excelRowNumber of rowNumbers) {
+      written = await writeOutboundCells({
+        driveId: resolved.driveId,
+        itemId: resolved.itemId,
+        sheetName: parsed.sheetName || ALFA_EXCEL_SHEET_NAME,
+        excelRowNumber,
+        cellUpdates,
+        eTagBefore: written.eTagAfter || eTagBefore,
+        downloadedBuffer: downloaded.buffer,
+      });
+    }
 
     const eTagAfter = written.eTagAfter;
 
@@ -912,7 +941,10 @@ export async function processAlfaExcelOutboundUpdate(doc) {
     doc.match = {
       excelRowNumber: hit.rowNumber,
       strategy: hit.strategy,
-      evidence: hit.evidence,
+      evidence: {
+        ...(hit.evidence || {}),
+        allRowNumbers: rowNumbers,
+      },
     };
     doc.sourceExcel = {
       itemId: resolved.itemId,
