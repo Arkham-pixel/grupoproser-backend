@@ -1,5 +1,5 @@
 /**
- * Equipo BBVA CAT: ajustadores fijos (sin inspectores)
+ * Equipo BBVA CAT: ajustadores fijos, inspectores del módulo
  * y Miguel Báez como ajustador líder.
  *
  * Uso: node scripts/equipo_bbva_cat.js
@@ -29,7 +29,10 @@ const CEDULAS = [
   '19419745',
   '52478912',
   '79655067',
+  '14231484',
 ];
+
+const CEDULAS_INSPECTORES = ['14231484'];
 
 async function main() {
   await mongoose.connect(process.env.MONGO_URI_DIRECT || process.env.MONGO_URI, {
@@ -45,8 +48,13 @@ async function main() {
   };
 
   const codigosAju = CEDULAS.map((c) => `AJU-${c}`);
+  const codigosIns = CEDULAS_INSPECTORES.map((c) => `INS-${c}`);
+  const ins = await db.collection('gsk3cAppinspectorcatastrofico').updateMany(
+    { codigo: { $in: codigosIns } },
+    patch
+  );
   const insDel = await db.collection('gsk3cAppinspectorcatastrofico').updateMany(
-    { modulos: 'bbvaCat' },
+    { codigo: { $nin: codigosIns }, modulos: 'bbvaCat' },
     { $pull: { modulos: 'bbvaCat' }, $set: { updatedAt: new Date() } }
   );
   const aju = await db.collection('gsk3cAppajustadorcatastrofico').updateMany(
@@ -92,11 +100,23 @@ async function main() {
     .find({ codigo: { $in: codigosAju } })
     .project({ codigo: 1, nombre: 1, ciudad: 1, modulos: 1 })
     .toArray();
+  const inspectoresBbva = await db
+    .collection('gsk3cAppinspectorcatastrofico')
+    .find({ codigo: { $in: codigosIns } })
+    .project({ codigo: 1, nombre: 1, ciudad: 1, modulos: 1 })
+    .toArray();
 
   console.log(
     JSON.stringify(
       {
+        inspectoresActualizados: ins.modifiedCount,
         inspectoresBbvaQuitados: insDel.modifiedCount,
+        inspectoresBbva: inspectoresBbva.map((a) => ({
+          codigo: a.codigo,
+          nombre: a.nombre,
+          ciudad: a.ciudad,
+          modulos: a.modulos,
+        })),
         ajustadoresActualizados: aju.modifiedCount,
         ajustadoresMatched: aju.matchedCount,
         otrosAjustadoresSinBbva: ajuExtra.modifiedCount,

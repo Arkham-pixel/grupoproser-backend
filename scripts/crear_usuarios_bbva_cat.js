@@ -103,6 +103,14 @@ const PERSONAS = [
     telefono: '3208200213',
     ciudad: 'Bogotá',
   },
+  {
+    nombre: 'Oscar Villanueva Arias',
+    profesion: 'ARQUITECTO',
+    cedula: '14231484',
+    email: 'ovillanuevarq2025@gmail.com',
+    telefono: '3208999013',
+    ciudad: 'Todas',
+  },
 ];
 
 function norm(valor) {
