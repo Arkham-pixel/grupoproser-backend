@@ -15,6 +15,7 @@ import { CONTRATISTAS_MODULO, normalizarRol } from '../config/roles.js';
 import {
   coincidenPersonas,
   combinarFiltrosMongo,
+  esIdentidadConVistaGlobalAgenda,
   esIdentidadLiderDeModulo,
 } from '../utils/permisosCasoPorRol.js';
 import { esIdentidadEra, esIdentidadLiderEra } from '../utils/jerarquiaEra.js';
@@ -199,6 +200,15 @@ function esRolAgendaGlobal(rol) {
   return r === 'admin' || r === 'soporte';
 }
 
+function esVistaAgendaGlobal(identidad = {}) {
+  return esRolAgendaGlobal(identidad.rol) || esIdentidadConVistaGlobalAgenda(identidad);
+}
+
+function fuentesParaIdentidad(identidad, rolUsuario = '') {
+  if (esVistaAgendaGlobal(identidad) || esRolAgendaGlobal(rolUsuario)) return FUENTES_AGENDA;
+  return fuentesParaRol(identidad?.rol || rolUsuario);
+}
+
 function clavesIdentidadAgenda(identidad = {}) {
   return [...new Set(
     [identidad.name, identidad.nombre, identidad.login, identidad.cedula]
@@ -216,7 +226,7 @@ function eventoAsignadoAIdentidad(evento, identidad) {
 }
 
 function filtrarEventosPorIdentidad(eventos, identidad) {
-  if (!identidad || esRolAgendaGlobal(identidad.rol)) return eventos;
+  if (!identidad || esVistaAgendaGlobal(identidad)) return eventos;
   if (esIdentidadEra(identidad)) {
     const vistos = new Set();
     const out = [];
@@ -245,7 +255,7 @@ function filtrarEventosPorIdentidad(eventos, identidad) {
 }
 
 export function alcanceAgendaParaIdentidad(identidad) {
-  if (!identidad || esRolAgendaGlobal(identidad.rol)) return 'global';
+  if (!identidad || esVistaAgendaGlobal(identidad)) return 'global';
   if (esIdentidadLiderEra(identidad)) return 'area';
   if (FUENTES_AGENDA.some((f) => esIdentidadLiderDeModulo(identidad, f.key))) return 'area';
   return 'asignados';
@@ -263,13 +273,17 @@ export async function listarEventosAgenda({
   const desdeYmd = ymdBogota(desde) || ymdBogota(new Date());
   const hastaYmd = ymdBogota(hasta) || desdeYmd;
   const personaNorm = normNombrePersona(persona);
-  const fuentes = fuentesParaRol(identidad?.rol || rolUsuario);
+  const fuentes = fuentesParaIdentidad(identidad, rolUsuario);
 
   const bloques = await Promise.all(
     fuentes.map(async (fuente) => {
       try {
         let filtro = filtroFechaMongo(fuente.fechaCampo, desdeYmd, hastaYmd);
-        if (esIdentidadEra(identidad) && fuente.key === 'alfa') {
+        if (
+          esIdentidadEra(identidad) &&
+          fuente.key === 'alfa' &&
+          !esVistaAgendaGlobal(identidad)
+        ) {
           filtro = combinarFiltrosMongo(filtro, await construirFiltroVistaEra());
         }
         const docs = await fuente.Model.find(filtro)

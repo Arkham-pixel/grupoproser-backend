@@ -7,6 +7,8 @@ import {
   filtrarPayloadCasoPorRol,
   esLoginConPermisoLiderSura,
   esIdentidadConPermisoLiderSura,
+  esLoginConVistaGlobalAgenda,
+  esIdentidadConVistaGlobalAgenda,
 } from '../utils/permisosCasoPorRol.js';
 
 const assert = (c, m) => {
@@ -122,6 +124,13 @@ const { payload: payOtro } = filtrarPayloadCasoPorRol(
   { login: '999', modulo: 'sura' }
 );
 assert(payOtro.ajustador === 'Viejo', 'otro ajustador no cambia asignacion');
+
+assert(esLoginConVistaGlobalAgenda('1130615470'), 'agenda global por login');
+assert(
+  esIdentidadConVistaGlobalAgenda({ login: '', cedula: '1.130.615.470' }),
+  'agenda global por cedula con puntos'
+);
+assert(!esLoginConVistaGlobalAgenda('72288319'), 'mario no es vista global de agenda');
 
 assert(rolConVistaRestringidaAsignacion('contractor_era'), 'ERA restringido');
 assert(
