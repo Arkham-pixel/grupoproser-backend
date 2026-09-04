@@ -38,6 +38,7 @@ import { generarConsecutivoAlfa, buildAlfaListadoPipeline } from '../services/al
 import {
   homologarEstadoAlfa,
   estadoGestionDesdeEstadoAlfa,
+  aplicarObservacionAutoCierreAlfa,
 } from '../config/alfaExcelStatuses.js';
 import {
   geocodeCasosAlfaPendientes,
@@ -250,6 +251,20 @@ const buildAlfaPayload = (data = {}, base = {}) =>
     base.valorLiquidado ?? null,
     data.identificacion || base.identificacion
   ),
+  liquidadoCoberturaTerremo: parsePesosAlfa(
+    data.liquidadoCoberturaTerremo,
+    base.liquidadoCoberturaTerremo ?? null
+  ),
+  deducibleTerremoto: parsePesosAlfa(data.deducibleTerremoto, base.deducibleTerremoto ?? null),
+  valorLiquidacionCoberturasAdicionales: parsePesosAlfa(
+    data.valorLiquidacionCoberturasAdicionales,
+    base.valorLiquidacionCoberturasAdicionales ?? null
+  ),
+  deducibleCoberturasAdicionales: parsePesosAlfa(
+    data.deducibleCoberturasAdicionales,
+    base.deducibleCoberturasAdicionales ?? 0
+  ),
+  valorTotalPagar: parsePesosAlfa(data.valorTotalPagar, base.valorTotalPagar ?? null),
   fechaLlamada: parseDateFlexible(data.fechaLlamada, base.fechaLlamada ?? null),
   observacionLlamada: toStringOrNull(data.observacionLlamada, base.observacionLlamada ?? null) || '',
   fechaInspeccion: parseDateFlexible(data.fechaInspeccion, base.fechaInspeccion ?? null),
@@ -289,6 +304,10 @@ const buildAlfaPayload = (data = {}, base = {}) =>
   fechaComunicacionBajoDeducible: parseDateFlexible(
     data.fechaComunicacionBajoDeducible,
     base.fechaComunicacionBajoDeducible ?? null
+  ),
+  historialCatastroficoId: toStringOrNull(
+    data.historialCatastroficoId,
+    base.historialCatastroficoId ?? null
   ),
   // Servidor: nunca pisar liquidador/informe con contenido por cascarón vacío o null
   liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
@@ -361,6 +380,10 @@ const mergeImportacionAlfa = (incomingPayload = {}, existente = {}) => {
     estadoGestion: out.estadoGestion || existente.estadoGestion,
   });
   out.estadoGestion = estadoGestionDesdeEstadoAlfa(out.estado);
+  out.observacionesGestion = aplicarObservacionAutoCierreAlfa(
+    out.estado,
+    out.observacionesGestion || existente.observacionesGestion
+  );
   return out;
 };
 
@@ -434,6 +457,10 @@ const asegurarEstadoUnificado = (payload) => {
     estadoGestion: payload.estadoGestion,
   });
   payload.estadoGestion = estadoGestionDesdeEstadoAlfa(payload.estado);
+  payload.observacionesGestion = aplicarObservacionAutoCierreAlfa(
+    payload.estado,
+    payload.observacionesGestion
+  );
   return payload;
 };
 
@@ -493,7 +520,35 @@ const ALFA_CAMPOS_PESOS = [
   'reserva',
   'valorReclamado',
   'valorLiquidado',
+  'liquidadoCoberturaTerremo',
+  'deducibleTerremoto',
+  'valorLiquidacionCoberturasAdicionales',
+  'deducibleCoberturasAdicionales',
+  'valorTotalPagar',
 ];
+
+const ALFA_CAMPOS_CONTROL_LIQUIDACION = [
+  'liquidadoCoberturaTerremo',
+  'deducibleTerremoto',
+  'valorLiquidacionCoberturasAdicionales',
+  'deducibleCoberturasAdicionales',
+  'valorTotalPagar',
+];
+
+function sanitizarCasoAlfaParaListado(doc) {
+  if (!doc || typeof doc !== 'object') return doc;
+  const out = healAlfaMoneyDoc(doc);
+  // Listado: no enviar liquidador/informe (pueden ir firmas/fotos en base64).
+  delete out.liquidador;
+  delete out.informeUnico;
+  return out;
+}
+
+/** Detalle / update: enriquecer montos pero conservar liquidador e informe. */
+function enriquecerCasoAlfaParaRespuesta(doc) {
+  if (!doc || typeof doc !== 'object') return doc;
+  return healAlfaMoneyDoc(doc);
+}
 
 function healAlfaMoneyDoc(doc) {
   if (!doc || typeof doc !== 'object') return doc;
@@ -528,7 +583,11 @@ async function persistAlfaMontosInflados(documentos = []) {
     const sanado = healAlfaMoneyDoc(doc);
     const patch = {};
     const afterForExcel = { ...doc };
-    for (const f of ['valorReclamado', 'valorLiquidado']) {
+    for (const f of [
+      'valorReclamado',
+      'valorLiquidado',
+      ...ALFA_CAMPOS_CONTROL_LIQUIDACION,
+    ]) {
       if (sameMontoAlfa(doc[f], sanado[f])) continue;
       patch[f] = sanado[f] == null ? null : sanado[f];
       afterForExcel[f] = sanado[f] == null ? 0 : sanado[f];
@@ -583,7 +642,7 @@ export const listarCasosAlfa = async (req, res) => {
       total,
       page: pageNum,
       limit: limitNum,
-      data: documentos.map((d) => healAlfaMoneyDoc(d)),
+      data: documentos.map((d) => sanitizarCasoAlfaParaListado(d)),
     });
     void persistAlfaMontosInflados(documentos);
   } catch (error) {
@@ -625,7 +684,7 @@ export const obtenerCasoAlfa = async (req, res) => {
       });
     }
     const plain = typeof documento.toObject === 'function' ? documento.toObject() : documento;
-    res.json({ success: true, data: healAlfaMoneyDoc(plain) });
+    res.json({ success: true, data: enriquecerCasoAlfaParaRespuesta(plain) });
     void persistAlfaMontosInflados([plain]);
   } catch (error) {
     console.error('❌ Error al obtener caso Seguros Alfa:', error);
@@ -757,7 +816,12 @@ export const actualizarCasoAlfa = async (req, res) => {
       );
     }
 
-    res.json({ success: true, data: actualizado });
+    res.json({
+      success: true,
+      data: enriquecerCasoAlfaParaRespuesta(
+        typeof actualizado.toObject === 'function' ? actualizado.toObject() : actualizado
+      ),
+    });
   } catch (error) {
     console.error('❌ Error al actualizar caso Seguros Alfa:', error);
     res.status(500).json({

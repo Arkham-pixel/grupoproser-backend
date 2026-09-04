@@ -156,15 +156,19 @@ function sumarOtrosAmparos(lista = []) {
 }
 
 function resumenCotizacion(liquidador = {}) {
+  const raw =
+    liquidador?.cotizacionesPdf && typeof liquidador.cotizacionesPdf === 'object'
+      ? liquidador.cotizacionesPdf
+      : {};
+  // Misma regla que el frontend: 3 ventanas. cotizacionPdf es alias de «completo», no se suma otra vez.
   const slots = [
-    liquidador?.cotizacionesPdf?.materiales,
-    liquidador?.cotizacionesPdf?.manoObra,
-    liquidador?.cotizacionesPdf?.completo,
-    liquidador?.cotizacionPdf,
+    raw.materiales,
+    raw.manoObra,
+    (raw.completo && typeof raw.completo === 'object' ? raw.completo : null) ||
+      liquidador?.cotizacionPdf,
   ];
   let total = 0;
   let nUsadas = 0;
-  let aiuPct = null;
   for (const slot of slots) {
     if (!slot || typeof slot !== 'object') continue;
     if (slot.usarComoBasePresupuesto === false) continue;
@@ -173,9 +177,10 @@ function resumenCotizacion(liquidador = {}) {
       total += monto;
       nUsadas += 1;
     }
-    if (aiuPct == null && slot.aiuPorcentaje != null) aiuPct = slot.aiuPorcentaje;
   }
   total = round2(total);
+  const aiuLiq = Number(liquidador?.liquidacionCotizacionPdf?.aiuPorcentaje);
+  const aiuPct = Number.isFinite(aiuLiq) && aiuLiq > 0 ? aiuLiq : AIU_DEFAULT;
   return { total, nUsadas, usaComoBase: nUsadas > 0 && total > 0, aiuPct };
 }
 
@@ -249,19 +254,24 @@ export function aplicarMontosOficialesDesdeLiquidadorAlfa(doc = {}) {
   const out = { ...doc };
   const recOk = Math.round(Number(montos.valorReclamado) || 0);
   const liqOk = Math.round(Number(montos.valorLiquidado) || 0);
-  const danios = Math.round(Number(montos.totalDaniosCat) || 0);
-  const refsInflado = [...new Set([recOk, liqOk, danios].filter((x) => x > 0))];
 
-  if (recOk > 0 && out.valorReclamado != null && out.valorReclamado !== '') {
-    if (refsInflado.some((r) => pareceInfladoPorCentavos(out.valorReclamado, r))) {
-      out.valorReclamado = recOk;
-    }
+  if (recOk > 0) {
+    out.valorReclamado = recOk;
   }
-  if (out.valorLiquidado != null && out.valorLiquidado !== '') {
-    if (refsInflado.some((r) => pareceInfladoPorCentavos(out.valorLiquidado, r))) {
-      out.valorLiquidado = liqOk;
-    }
-  }
+  // Liquidador = fuente de verdad del valor liquidado / total a pagar.
+  out.valorLiquidado = liqOk;
+
+  // Campos de control de liquidación (fuente: liquidador existente).
+  out.liquidadoCoberturaTerremo = Math.round(Number(montos.liquidadoCoberturaTerremo) || 0);
+  out.deducibleTerremoto = Math.round(Number(montos.deducibleTerremoto) || 0);
+  out.valorLiquidacionCoberturasAdicionales = Math.round(
+    Number(montos.valorLiquidacionCoberturasAdicionales) || 0
+  );
+  out.deducibleCoberturasAdicionales = Math.round(
+    Number(montos.deducibleCoberturasAdicionales) || 0
+  );
+  out.valorTotalPagar = Math.round(Number(montos.valorTotalPagar) || 0);
+
   return out;
 }
 
@@ -318,9 +328,14 @@ export function extraerMontosLiquidadorAlfa(liquidador = {}, caso = {}) {
     totalDaniosCat = round2(subtotal + aiu + contenidos);
   }
 
+  const cotizLiq =
+    liquidador.liquidacionCotizacionPdf && typeof liquidador.liquidacionCotizacionPdf === 'object'
+      ? liquidador.liquidacionCotizacionPdf
+      : {};
   const cfgDed =
-    (usaCotiz ? liq.deducibleConfig : liq.deducibleConfigPresupuesto || liq.deducibleConfig) ||
-    {};
+    (usaCotiz
+      ? cotizLiq.deducibleConfig || liq.deducibleConfig
+      : liq.deducibleConfigPresupuesto || liq.deducibleConfig) || {};
   const deducible = calcularDeducible({
     valorAsegurado: sid || n(liq.valorAsegurado),
     totalDanios: totalDaniosCat,
@@ -351,5 +366,12 @@ export function extraerMontosLiquidadorAlfa(liquidador = {}, caso = {}) {
     totalOtrosAmparos,
     usaCotiz,
     sid: sid || null,
+    /** Campos de control de liquidación */
+    // Incluye hospedaje si el liquidador lo maneja como monto manual (ver lógica: hospedajeYaEnItems).
+    liquidadoCoberturaTerremo: round2(totalDaniosCat + hospedaje),
+    deducibleTerremoto: deducible,
+    valorLiquidacionCoberturasAdicionales: totalOtrosAmparos,
+    deducibleCoberturasAdicionales: 0,
+    valorTotalPagar: valorLiquidado,
   };
 }

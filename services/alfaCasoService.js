@@ -16,6 +16,7 @@ import { isArnaldOwnedField } from '../config/alfaExcelOwnershipMap.js';
 import {
   estadoGestionDesdeEstadoAlfa,
   homologarEstadoAlfa,
+  aplicarObservacionAutoCierreAlfa,
 } from '../config/alfaExcelStatuses.js';
 
 const COUNTER_ID = 'seguros_alfa_consecutivo';
@@ -195,6 +196,10 @@ export function buildAlfaCasoPayload(data = {}, base = {}) {
     estadoGestion: out.estadoGestion || data.estadoGestion || base.estadoGestion,
   });
   out.estadoGestion = estadoGestionDesdeEstadoAlfa(out.estado);
+  out.observacionesGestion = aplicarObservacionAutoCierreAlfa(
+    out.estado,
+    out.observacionesGestion
+  );
   return out;
 }
 
@@ -268,6 +273,10 @@ export async function createAlfaCasoFromImport(data = {}) {
   if (!payload.estado) payload.estado = 'Sin contactar';
   payload.estado = homologarEstadoAlfa(payload.estado, payload);
   payload.estadoGestion = estadoGestionDesdeEstadoAlfa(payload.estado);
+  payload.observacionesGestion = aplicarObservacionAutoCierreAlfa(
+    payload.estado,
+    payload.observacionesGestion
+  );
   payload.consecutivo = await generarConsecutivoAlfa();
   delete payload.archivos;
   delete payload.liquidador;
@@ -372,7 +381,7 @@ export function buildAlfaListadoPipeline({ filtro = {}, skip = 0, limit = 25 } =
     },
     {
       $project: {
-        liquidador: 0,
+        // liquidador se conserva hasta enriquecer montos en el controller (luego se omite en JSON).
         informeUnico: 0,
       },
     },

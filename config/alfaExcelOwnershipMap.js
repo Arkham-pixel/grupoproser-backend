@@ -1,10 +1,11 @@
 /**
  * Ownership Excel Control y Seguimiento (hoja BD) — consolidado FAC-Cali operativo (sin _Final).
- * Amarillas (ARNALD outbound): T–AD según encabezados reales del archivo.
+ * Amarillas (ARNALD outbound): T–AK según encabezados reales del archivo.
  * Verdes (Alfa inbound): A–S.
  *
- * REGLA: nunca crear columnas nuevas. Solo escribir columnas que YA existen.
- * La letra es referencia; el outbound debe resolver también por encabezado.
+ * REGLA: no crear columnas en código. Solo escribir columnas que YA existen
+ * en el consolidado (el usuario insertó Y–AC en SharePoint).
+ * La letra es referencia; el outbound resuelve primero por encabezado.
  */
 
 export const ALFA_EXCEL_SHEET_NAME = 'BD';
@@ -37,7 +38,7 @@ export const ALFA_EXCEL_OWNERSHIP = Object.freeze({
   estadoPagoPrimas: { owner: 'alfa', column: 'R', header: 'ESTADO PAGO PRIMAS' },
   canalRadicacion: { owner: 'alfa', column: 'S', header: 'CANAL DE RADICACIÓN' },
 
-  // —— ARNALD (amarillo) — outbound T–AD ——
+  // —— ARNALD (amarillo) — outbound T–AK ——
   valorReservaPreventivaPromedio: {
     owner: 'arnald',
     column: 'T',
@@ -69,53 +70,84 @@ export const ALFA_EXCEL_OWNERSHIP = Object.freeze({
     header: 'VALOR LIQUIDADO',
     outboundEnabled: true,
   },
-  fechaInspeccion: {
+  liquidadoCoberturaTerremo: {
     owner: 'arnald',
     column: 'Y',
+    header: 'LIQUIDADO COBERTURA TERREMOTO',
+    outboundEnabled: true,
+  },
+  deducibleTerremoto: {
+    owner: 'arnald',
+    column: 'Z',
+    header: 'DEDUCIBLE TERREMOTO',
+    outboundEnabled: true,
+  },
+  valorLiquidacionCoberturasAdicionales: {
+    owner: 'arnald',
+    column: 'AA',
+    header: 'VALOR LIQUIDACIÓN COBERTURAS ADICIONALES',
+    headerAliases: ['VALOR LIQUIDACION COBERTURAS ADICIONALES'],
+    outboundEnabled: true,
+  },
+  deducibleCoberturasAdicionales: {
+    owner: 'arnald',
+    column: 'AB',
+    header: 'DEDUCIBLE COBERTURAS ADICIONALES',
+    outboundEnabled: true,
+  },
+  valorTotalPagar: {
+    owner: 'arnald',
+    column: 'AC',
+    header: 'VALOR TOTAL A PAGAR',
+    outboundEnabled: true,
+  },
+  fechaInspeccion: {
+    owner: 'arnald',
+    column: 'AD',
     header: 'FECHA INSPECCIÓN',
     outboundEnabled: true,
   },
   fechaUltimoDocumento: {
     owner: 'arnald',
-    column: 'Z',
+    column: 'AE',
     header: 'FECHA ULTIMO DOCUMENTO',
     outboundEnabled: true,
   },
   fechaLiquidado: {
     owner: 'arnald',
-    column: 'AA',
+    column: 'AF',
     header: 'FECHA LIQUIDADO',
     outboundEnabled: true,
   },
   fechaAceptacionLiquidacion: {
     owner: 'arnald',
-    column: 'AB',
+    column: 'AG',
     header: 'FECHA ACEPTACIÓN LIQUIDACIÓN',
     outboundEnabled: true,
   },
   fechaEnvioAseguradora: {
     owner: 'arnald',
-    column: 'AC',
+    column: 'AH',
     header: 'FECHA ENVÍO A LA ASEGURADORA',
     outboundEnabled: true,
   },
   estadoGestion: {
     owner: 'arnald',
-    column: 'AD',
+    column: 'AI',
     header: 'ESTADO GESTION',
     headerAliases: ['ESTADO GESTION', 'ESTADO DE GESTION'],
     outboundEnabled: true,
   },
   estado: {
     owner: 'arnald',
-    column: 'AE',
+    column: 'AJ',
     header: 'ESTADO SINIESTRO',
     headerAliases: ['ESTADO SINIESTRO', 'ESTADO'],
     outboundEnabled: true,
   },
   observacionesGestion: {
     owner: 'arnald',
-    column: 'AF',
+    column: 'AK',
     header: 'OBSERVACION',
     headerAliases: ['OBSERVACION', 'OBSERVACIONES', 'OBSERVACIONES GESTION'],
     outboundEnabled: true,
@@ -193,6 +225,11 @@ export const ALFA_EXCEL_APPEND_FIELDS = Object.freeze([
   'reserva',
   'valorReclamado',
   'valorLiquidado',
+  'liquidadoCoberturaTerremo',
+  'deducibleTerremoto',
+  'valorLiquidacionCoberturasAdicionales',
+  'deducibleCoberturasAdicionales',
+  'valorTotalPagar',
   'fechaInspeccion',
   'fechaUltimoDocumento',
   'fechaLiquidado',

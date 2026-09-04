@@ -183,6 +183,42 @@ export function estadoAlfaParaSharePoint(estado) {
   return display || String(estado || '').trim();
 }
 
+/** Observación que se escribe sola al marcar OBJETADO / DESISTIDO (Excel OBSERVACION). */
+export const OBSERVACIONES_AUTO_CIERRE_ALFA = Object.freeze({
+  OBJETADO: 'Caso objetado.',
+  DESISTIDO: 'Caso desistido.',
+});
+
+function normObsAutoAlfa(valor) {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
+}
+
+const OBS_AUTO_CIERRE_ALFA_NORM = new Set(
+  Object.values(OBSERVACIONES_AUTO_CIERRE_ALFA).map((t) => normObsAutoAlfa(t))
+);
+
+export function observacionAutoCierreAlfa(estado) {
+  const e = homologarEstadoAlfa(estado);
+  return OBSERVACIONES_AUTO_CIERRE_ALFA[e] || '';
+}
+
+/**
+ * Completa o sustituye la observación automática de OBJETADO/DESISTIDO.
+ * No pisa un texto que haya escrito el ajustador.
+ */
+export function aplicarObservacionAutoCierreAlfa(estado, observacionActual = '') {
+  const plantilla = observacionAutoCierreAlfa(estado);
+  const actual = String(observacionActual || '').trim();
+  const actualEsAuto = !actual || OBS_AUTO_CIERRE_ALFA_NORM.has(normObsAutoAlfa(actual));
+  if (plantilla) return actualEsAuto ? plantilla : actual;
+  return actualEsAuto ? '' : actual;
+}
+
 /** Normaliza texto de gestión para comparar. */
 export function normalizeAlfaEstadoGestion(value) {
   if (value == null || value === '') return '';

@@ -1,0 +1,30 @@
+---
+description: Reglas duras ARNALD → Excel Alfa (no corromper columnas)
+globs: "**/alfaExcel*.{js,jsx},**/alfaExcelOutboundService.js,**/alfaExcelOwnershipMap.js,**/rebuildAlfaExcel*.js,**/repairAlfaExcel*.js"
+alwaysApply: false
+---
+
+# Alfa Excel outbound — no dañar el consolidado
+
+## Fuente de verdad de filas
+- El **Excel** define qué filas existen (A–S verdes = Alfa).
+- ARNALD solo **alimenta columnas amarillas** (T–AK) de filas que ya están en el Excel.
+- No inventar columnas nuevas en código. Si falta un título, falla con `OUTBOUND_COLUMN_MISSING_HEADER`.
+
+## Escritura
+- Resolver columna **solo por encabezado** de la fila 1 (nunca por letra guardada en outbox).
+- Fechas → solo columnas de fecha (`dd/mm/yyyy`). Nunca texto de estado/obs.
+- Montos → solo columnas de plata. Nunca fechas ni estados.
+- Estados → AI/AJ. Observaciones → AK (`OBSERVACION`).
+- ARNALD vacío **no borra** celdas llenas en Excel.
+- No tocar columnas verdes A–S en outbound.
+
+## Prohibido
+- Escribir con letras fijas tipo "Y = fecha" (corrimiento histórico).
+- Append masivo de casos ARNALD ausentes sin pedido explícito.
+- Reusar formatos `mm-dd-yy` / `m/d/yyyy`.
+
+## Si hay corrupción
+- Preferir `rebuildAlfaExcelCleanByHeader.js` (limpia amarillas y reescribe por título).
+- Mantener Excel de escritorio cerrado durante sync/rebuild.
+---

@@ -1,12 +1,12 @@
 /**
  * Valores del ajustador (Proser) desde el liquidador BBVA CAT.
- * Valor a liquidar = subtotal + AIU 25% − MAX(SMMLV, %, USD, pesos).
- * La reserva del ajustador no se pisa con el AIU: ese 25% se ve en el caso,
+ * Valor a liquidar = subtotal + AIU (porcentaje del liquidador, default 25%) − MAX(SMMLV, %, USD, pesos).
+ * La reserva del ajustador no se pisa con el AIU: ese porcentaje se ve en el caso,
  * no se suma caso a caso en el dashboard.
  * No toca reserva ni reclamado de la aseguradora.
  */
 
-const AIU_PORCENTAJE = 0.25;
+const AIU_PORCENTAJE_DEFAULT = 0.25;
 
 const SMMLV_TABLA = {
   2022: 1000000,
@@ -188,13 +188,93 @@ export function liquidadorBbvaCatTieneCifras(liquidador) {
   const items = liquidador.evaluacionSismicaNSR10?.presupuesto?.items;
   if (Array.isArray(items) && sumaPresupuesto(items) > 0) return true;
   if (sumaOtrosAmparos(liquidador) > 0) return true;
+  if (montoCotizacionPdfBbva(liquidador) > 0) return true;
   return false;
+}
+
+function montoCotizacionPdfBbva(liquidador = {}) {
+  const c = liquidador?.cotizacionPdf;
+  if (!c || typeof c !== 'object') return 0;
+  return parseMonto(c.montoFinal ?? c.monto);
+}
+
+function resolverAiuPctPdf(liquidador = {}) {
+  const raw = liquidador?.liquidacionCotizacionPdf?.aiuPorcentaje;
+  if (raw === '' || raw == null) return 0;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.max(0, n > 1 ? n / 100 : n);
+}
+
+function resolverAiuPct(liquidador = {}) {
+  const cands = [
+    liquidador.aiuPorcentaje,
+    liquidador.evaluacionSismicaNSR10?.presupuesto?.aiuPorcentaje,
+  ];
+  for (const raw of cands) {
+    if (raw === '' || raw == null) continue;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) continue;
+    return Math.max(0, n > 1 ? n / 100 : n);
+  }
+  return AIU_PORCENTAJE_DEFAULT;
+}
+
+function resolverDeducibleFormatoPdf(liquidador = {}) {
+  const base = defaultDeducible(liquidador);
+  const saved = liquidador?.liquidacionCotizacionPdf?.deducibleFormato;
+  if (!saved || typeof saved !== 'object') return base;
+  const smmlvSaved = parseMonto(saved.smmlv);
+  const pctSaved = parsePorcentaje(saved.porcentaje);
+  return {
+    ...base,
+    smmlv: smmlvSaved > 0 ? smmlvSaved : base.smmlv,
+    porcentaje: pctSaved > 0 ? pctSaved : base.porcentaje,
+    dolares: parseMonto(saved.dolares),
+    pesos: parseMonto(saved.pesos),
+    basePct: saved.basePct || base.basePct,
+  };
 }
 
 function totalesDesdeLiquidadorBbva(liquidador) {
   const enc = liquidador?.encabezado || {};
+  const otros = sumaOtrosAmparos(liquidador);
+  const montoPdf = montoCotizacionPdfBbva(liquidador);
+  if (montoPdf > 0) {
+    const aiuPct = resolverAiuPctPdf(liquidador);
+    const aiu = redondear(montoPdf * aiuPct);
+    const totalConAiu = redondear(montoPdf + aiu);
+    const valorGlobal =
+      parseMonto(enc.valorGlobal) ||
+      parseMonto(enc.valorAseguradoInmueble) ||
+      parseMonto(liquidador?.liquidacionCatastrofico?.valorAsegurado) ||
+      0;
+    const dedFmt = resolverDeducibleFormatoPdf(liquidador);
+    const anio = anioDesdeFecha(enc.fechaSiniestro);
+    const montoSmmlv = redondear(parseMonto(dedFmt.smmlv) * smmlvPorAnio(anio));
+    const basePct =
+      String(dedFmt.basePct || 'valor_global') === 'subtotal' ? totalConAiu : valorGlobal;
+    const montoPct = redondear(basePct * parsePorcentaje(dedFmt.porcentaje));
+    const montoUsd = redondear(parseMonto(dedFmt.dolares) * parseMonto(enc.trm));
+    const montoPesos = redondear(parseMonto(dedFmt.pesos));
+    const deduciblePoliza = Math.max(montoSmmlv, montoPct, montoUsd, montoPesos);
+    const deducibleAplicable = redondear(
+      Math.min(deduciblePoliza, totalConAiu || deduciblePoliza)
+    );
+    const valorAIndemnizar = redondear(Math.max(0, totalConAiu - deducibleAplicable));
+    return {
+      subTotal: montoPdf,
+      aiu,
+      totalConAiu,
+      baseIndemnizable: totalConAiu,
+      valorAIndemnizar,
+      otros,
+    };
+  }
+
   const subTotal = sumaIndemnizable(liquidador);
-  const aiu = redondear(subTotal * AIU_PORCENTAJE);
+  const aiuPct = resolverAiuPct(liquidador);
+  const aiu = redondear(subTotal * aiuPct);
   const totalConAiu = redondear(subTotal + aiu);
   const valorGlobal =
     parseMonto(enc.valorGlobal) ||
@@ -214,12 +294,11 @@ function totalesDesdeLiquidadorBbva(liquidador) {
     Math.min(deduciblePoliza, baseIndemnizable || deduciblePoliza)
   );
   const valorAIndemnizar = redondear(Math.max(0, baseIndemnizable - deducibleAplicable));
-  const otros = sumaOtrosAmparos(liquidador);
   return { subTotal, aiu, totalConAiu, baseIndemnizable, valorAIndemnizar, otros };
 }
 
 /**
- * Reserva del ajustador: subtotal + AIU 25% (tope valor global) + otros amparos.
+ * Reserva del ajustador: subtotal + AIU (tope valor global) + otros amparos.
  * No resta el deducible: eso va en valor a liquidar.
  */
 export function extraerReservaConAiuLiquidadorBbva(liquidador) {

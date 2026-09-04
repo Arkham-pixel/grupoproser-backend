@@ -1,6 +1,6 @@
 /**
  * Formatos de celda Excel Alfa alineados al consolidado operativo.
- * Fechas: mm-dd-yy | Moneda COP: [$$-240A] #,##0
+ * Fechas: dd/mm/yyyy (ej. 12/08/2026) | Moneda COP: [$$-240A] #,##0
  */
 
 import {
@@ -8,8 +8,8 @@ import {
   ALFA_EXCEL_MONEY_FIELDS,
 } from '../config/alfaExcelColumnMap.js';
 
-/** Formato fecha del consolidado PROSER (SharePoint). */
-export const ALFA_EXCEL_DATE_NUM_FMT = 'mm-dd-yy';
+/** Formato fecha del consolidado (Colombia): día/mes/año. */
+export const ALFA_EXCEL_DATE_NUM_FMT = 'dd/mm/yyyy';
 
 /** Formato moneda COP del consolidado PROSER. */
 export const ALFA_EXCEL_MONEY_NUM_FMT = '[$$-240A] #,##0';
@@ -26,6 +26,7 @@ export function getAlfaExcelDefaultNumFmt(field) {
 
 /**
  * Prefiere el formato ya usado en la columna del Excel; si no hay, el default del campo.
+ * Nunca reutilizar mm-dd-yy / m/d/yyyy (corrían el consolidado a estilo US).
  * @param {import('exceljs').Worksheet} ws
  * @param {number} colNum
  * @param {string} field
@@ -37,7 +38,24 @@ export function resolveAlfaExcelColumnNumFmt(
   field,
   sampleRows = [2, 3, 4, 5, 10, 20, 50]
 ) {
-  if (!ws || !colNum) return getAlfaExcelDefaultNumFmt(field);
+  const fallback = getAlfaExcelDefaultNumFmt(field);
+  if (!ws || !colNum) return fallback;
+  if (ALFA_EXCEL_DATE_FIELDS.includes(field)) {
+    for (const r of sampleRows) {
+      try {
+        const fmt = String(ws.getRow(r).getCell(colNum).numFmt || '').trim();
+        if (!fmt) continue;
+        const norm = fmt.toLowerCase().replace(/\s+/g, '');
+        // Solo aceptar formatos día-primero (dd/mm...)
+        if (norm.startsWith('d') && norm.includes('m') && !norm.startsWith('m')) {
+          return fmt;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    return fallback;
+  }
   for (const r of sampleRows) {
     try {
       const fmt = ws.getRow(r).getCell(colNum).numFmt;
@@ -46,7 +64,7 @@ export function resolveAlfaExcelColumnNumFmt(
       /* ignore */
     }
   }
-  return getAlfaExcelDefaultNumFmt(field);
+  return fallback;
 }
 
 /**

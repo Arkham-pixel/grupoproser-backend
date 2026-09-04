@@ -93,7 +93,8 @@ function serializeForOutbox(field, value) {
   }
   if (ALFA_EXCEL_DATE_FIELDS.includes(field)) {
     const d = value instanceof Date ? value : new Date(value);
-    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+    if (Number.isNaN(d.getTime()) || d.getUTCFullYear() < 2000) return null;
+    return d.toISOString();
   }
   if (ALFA_EXCEL_MONEY_FIELDS.includes(field)) {
     return moneyOutbound(value);
@@ -110,12 +111,79 @@ function toExcelCellValue(field, value) {
   if (ALFA_EXCEL_DATE_FIELDS.includes(field)) {
     const d = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(d.getTime())) return null;
+    if (d.getUTCFullYear() < 2000) return null;
     return d;
   }
   if (ALFA_EXCEL_MONEY_FIELDS.includes(field)) {
+    // Nunca escribir texto/fecha en columnas de plata
+    if (typeof value === 'string' && /[-/]/.test(value) && Number.isNaN(Number(value))) {
+      return null;
+    }
+    if (value instanceof Date) return null;
     return moneyOutbound(value);
   }
   return value;
+}
+
+/** Rechaza valores que no pertenecen al tipo de columna (evita corrimiento). */
+function assertOutboundValueTypeOrThrow(field, value) {
+  if (isAlfaOutboundEmptyValue(value)) return;
+  if (ALFA_EXCEL_DATE_FIELDS.includes(field)) {
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime()) || d.getUTCFullYear() < 2000) {
+      const err = new Error(`OUTBOUND_VALUE_TYPE_MISMATCH:${field}:expected_date`);
+      err.code = 'OUTBOUND_VALUE_TYPE_MISMATCH';
+      throw err;
+    }
+    if (typeof value === 'string' && /inspeccionado|solicitud|contactado|cerrado|sin contactar/i.test(value)) {
+      const err = new Error(`OUTBOUND_VALUE_TYPE_MISMATCH:${field}:estado_in_date`);
+      err.code = 'OUTBOUND_VALUE_TYPE_MISMATCH';
+      throw err;
+    }
+    return;
+  }
+  if (ALFA_EXCEL_MONEY_FIELDS.includes(field)) {
+    if (value instanceof Date) {
+      const err = new Error(`OUTBOUND_VALUE_TYPE_MISMATCH:${field}:date_in_money`);
+      err.code = 'OUTBOUND_VALUE_TYPE_MISMATCH';
+      throw err;
+    }
+    if (typeof value === 'string') {
+      const s = value.trim();
+      if (/^\d{1,2}[-/]\d{1,2}/.test(s) || /inspeccionado|solicitud|contactado/i.test(s)) {
+        const err = new Error(`OUTBOUND_VALUE_TYPE_MISMATCH:${field}:text_in_money`);
+        err.code = 'OUTBOUND_VALUE_TYPE_MISMATCH';
+        throw err;
+      }
+    }
+    const n = moneyOutbound(value);
+    if (n == null || !Number.isFinite(n)) {
+      const err = new Error(`OUTBOUND_VALUE_TYPE_MISMATCH:${field}:expected_number`);
+      err.code = 'OUTBOUND_VALUE_TYPE_MISMATCH';
+      throw err;
+    }
+  }
+}
+
+/** La letra resuelta debe coincidir con el título del ownership (nunca letra vieja). */
+function assertHeaderMatchesFieldOrThrow(headerText, field) {
+  const entry = getOwnershipEntry(field);
+  if (!entry) {
+    const err = new Error(`OUTBOUND_FIELD_NOT_MAPPED:${field}`);
+    err.code = 'OUTBOUND_FIELD_NOT_MAPPED';
+    throw err;
+  }
+  const aliases = [entry.header, ...(entry.headerAliases || [])]
+    .filter(Boolean)
+    .map((h) => normalizeExcelHeader(h));
+  const norm = normalizeExcelHeader(headerText);
+  if (!norm || !aliases.includes(norm)) {
+    const err = new Error(
+      `OUTBOUND_HEADER_MISMATCH:${field}:got=${headerText || '(vacío)'}:expected=${entry.header}`
+    );
+    err.code = 'OUTBOUND_HEADER_MISMATCH';
+    throw err;
+  }
 }
 
 function columnLetterToNumber(letter) {
@@ -158,21 +226,23 @@ function resolveOutboundColumn(headerRow, entry, preferredLetter) {
     .filter(Boolean)
     .map((h) => normalizeExcelHeader(h));
 
-  const maxCol = Math.max(40, headerRow.cellCount || 0);
+  const maxCol = Math.max(45, headerRow.cellCount || 0);
   for (let c = 1; c <= maxCol; c += 1) {
     const norm = normalizeExcelHeader(headerCellText(headerRow.getCell(c).value));
     if (norm && aliases.includes(norm)) {
       return { column: columnNumberToLetter(c), colNum: c, by: 'header' };
     }
   }
-  if (preferredLetter) {
-    return {
-      column: preferredLetter,
-      colNum: columnLetterToNumber(preferredLetter),
-      by: 'letter',
-    };
-  }
+  // Nunca usar la letra encolada: al insertar columnas (Y–AC) las letras viejas
+  // escriben fechas encima de montos (p. ej. FECHA INSPECCIÓN en Y).
   return null;
+}
+
+/** mapping parseAlfaExcelBuffer: campo → índice 0-based según encabezado real. */
+function letterFromParsedMapping(mapping, field) {
+  const idx = mapping?.[field];
+  if (!Number.isFinite(Number(idx))) return null;
+  return columnNumberToLetter(Number(idx) + 1);
 }
 
 function changesMapToObject(changes) {
@@ -267,8 +337,8 @@ export async function enqueueAlfaExcelOutboundFromCaseUpdate({
 
     let doc = await AlfaExcelOutboundUpdate.findOne({
       caseId: afterDoc._id,
-      status: 'pending',
-    });
+      status: { $in: ['pending', 'failed'] },
+    }).sort({ updatedAt: -1 });
 
     if (doc) {
       const merged = changesMapToObject(doc.changes);
@@ -278,6 +348,10 @@ export async function enqueueAlfaExcelOutboundFromCaseUpdate({
       doc.changes = merged;
       doc.rejectedAtEnqueue = rejected;
       doc.consecutivo = afterDoc.consecutivo || doc.consecutivo;
+      doc.status = 'pending';
+      doc.lastError = null;
+      doc.lastErrorCode = null;
+      doc.attempts = 0;
       doc.nextRetryAt = new Date();
       await doc.save();
     } else {
@@ -497,7 +571,7 @@ export async function patchYellowCellsInWorkbookBuffer({
 
   const headerRow = ws.getRow(1);
   const dataRow = ws.getRow(excelRowNumber);
-  const maxCol = Math.max(28, headerRow.cellCount || 0);
+  const maxCol = Math.max(45, headerRow.cellCount || 0);
 
   const snapshotValue = (cell) => {
     const v = cell.value;
@@ -525,6 +599,7 @@ export async function patchYellowCellsInWorkbookBuffer({
   const allowedCols = new Set();
   for (const upd of cellUpdates) {
     assertFieldWritableOrThrow(upd.field);
+    assertOutboundValueTypeOrThrow(upd.field, upd.value);
     const entry = getOwnershipEntry(upd.field);
     const resolved = resolveOutboundColumn(headerRow, entry, upd.column || entry.column);
     if (!resolved?.colNum) {
@@ -540,6 +615,7 @@ export async function patchYellowCellsInWorkbookBuffer({
       err.code = 'OUTBOUND_COLUMN_MISSING_HEADER';
       throw err;
     }
+    assertHeaderMatchesFieldOrThrow(headerText, upd.field);
 
     if (isAlfaOutboundEmptyValue(upd.value)) {
       continue;
@@ -547,6 +623,7 @@ export async function patchYellowCellsInWorkbookBuffer({
     allowedCols.add(colNum);
     const cell = dataRow.getCell(colNum);
     const val = toExcelCellValue(upd.field, upd.value);
+    if (val == null || val === '') continue;
     const numFmt = resolveAlfaExcelColumnNumFmt(ws, colNum, upd.field);
     applyAlfaExcelCellValue(cell, upd.field, val, { numFmt });
   }
@@ -672,6 +749,7 @@ async function writeOutboundCells({
   cellUpdates,
   eTagBefore,
   downloadedBuffer,
+  headerMapping = {},
 }) {
   let sessionId = null;
   try {
@@ -684,12 +762,10 @@ async function writeOutboundCells({
     if (!sessionId) throw new Error('NO_WORKBOOK_SESSION');
 
     const touchedCols = new Set(cellUpdates.map((u) => u.column));
-    const guardCols = [
-      ...ALFA_EXCEL_GREEN_COLUMNS,
-      ...['T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE'].filter(
-        (c) => !touchedCols.has(c)
-      ),
-    ];
+    const mappedGuards = Object.values(headerMapping || {})
+      .map((idx) => columnNumberToLetter(Number(idx) + 1))
+      .filter((col) => col && !touchedCols.has(col));
+    const guardCols = [...new Set([...ALFA_EXCEL_GREEN_COLUMNS, ...mappedGuards])];
 
     const beforeGuards = {};
     for (const col of guardCols) {
@@ -706,6 +782,7 @@ async function writeOutboundCells({
 
     for (const upd of cellUpdates) {
       assertFieldWritableOrThrow(upd.field);
+      assertOutboundValueTypeOrThrow(upd.field, upd.value);
       const address = `${upd.column}${excelRowNumber}`;
       if (isClearValue(upd.value) || isAlfaOutboundEmptyValue(upd.value)) {
         logOut('ALFA_EXCEL_OUTBOUND_SKIP_CLEAR', {
@@ -715,16 +792,53 @@ async function writeOutboundCells({
         });
         continue;
       }
+
+      // Si la celda tiene texto basura (estado en columna de fecha, etc.),
+      // limpiar Contents antes de escribir serial/número + formato.
+      const needsTypedWrite =
+        ALFA_EXCEL_DATE_FIELDS.includes(upd.field) || ALFA_EXCEL_MONEY_FIELDS.includes(upd.field);
+      if (needsTypedWrite) {
+        try {
+          const existing = await readWorkbookRange({
+            driveId,
+            itemId,
+            worksheetName: sheetName,
+            address,
+            sessionId,
+          });
+          const raw = existing?.values?.[0]?.[0];
+          const dirty =
+            typeof raw === 'string' &&
+            String(raw).trim() !== '' &&
+            Number.isNaN(Number(String(raw).replace(/[^\d.-]/g, '')));
+          if (dirty) {
+            await clearWorkbookRange({
+              driveId,
+              itemId,
+              worksheetName: sheetName,
+              address,
+              sessionId,
+              applyTo: 'Contents',
+            });
+            logOut('ALFA_EXCEL_OUTBOUND_CLEARED_DIRTY_CELL', {
+              field: upd.field,
+              address,
+              previous: String(raw).slice(0, 80),
+            });
+          }
+        } catch {
+          /* best-effort */
+        }
+      }
+
+      const fmt = getAlfaExcelDefaultNumFmt(upd.field);
       await updateWorkbookRange({
         driveId,
         itemId,
         worksheetName: sheetName,
         address,
         values: [[toGraphRangeValue(upd.field, upd.value)]],
-        numberFormat: (() => {
-          const fmt = getAlfaExcelDefaultNumFmt(upd.field);
-          return fmt ? [[fmt]] : undefined;
-        })(),
+        numberFormat: fmt ? [[fmt]] : undefined,
         sessionId,
       });
     }
@@ -782,6 +896,73 @@ async function writeOutboundCells({
           after: afterKey,
         };
         throw err;
+      }
+    }
+
+    // Sanear corrimiento viejo (antes de Y–AC):
+    // - fechas/estados en columnas de dinero
+    // - texto (estado/obs) en columnas de fecha
+    for (const [field, idx] of Object.entries(headerMapping || {})) {
+      const isDate = ALFA_EXCEL_DATE_FIELDS.includes(field);
+      const isMoney = ALFA_EXCEL_MONEY_FIELDS.includes(field);
+      if (!isDate && !isMoney) continue;
+      const col = columnNumberToLetter(Number(idx) + 1);
+      if (!col || touchedCols.has(col)) continue;
+      const address = `${col}${excelRowNumber}`;
+      try {
+        const range = await readWorkbookRange({
+          driveId,
+          itemId,
+          worksheetName: sheetName,
+          address,
+          sessionId,
+        });
+        const raw = range?.values?.[0]?.[0];
+        const text = String(range?.text?.[0]?.[0] ?? raw ?? '').trim();
+        if (!text && (raw == null || raw === '')) continue;
+
+        // Detectar por texto visible (Graph): seriales numéricos de fecha se ven como 08-12-26 / 12/08/2026.
+        // No inferir solo por número (montos COP pueden parecer seriales Excel).
+        const looksLikeDateText =
+          Boolean(text) &&
+          (/^\d{1,2}[-/]\d{1,2}([-/]\d{2,4})?$/.test(text) ||
+            /^\d{4}-\d{2}-\d{2}/.test(text));
+        const looksLikeEstadoOrObs =
+          Boolean(text) &&
+          !looksLikeDateText &&
+          (/inspeccionado|solicitud|contactado|cerrado|objetado|desistido|liquidado|sin contactar|document|evacuad|cotizaci|finiquito|sarlaft|visita|evidenc/i.test(
+            text
+          ) ||
+            text.length > 40);
+
+        let shouldClear = false;
+        let reason = null;
+        if (isMoney && (looksLikeDateText || looksLikeEstadoOrObs)) {
+          shouldClear = true;
+          reason = 'date_or_text_in_money_col';
+        } else if (isDate && looksLikeEstadoOrObs) {
+          shouldClear = true;
+          reason = 'text_in_date_col';
+        }
+
+        if (shouldClear) {
+          await clearWorkbookRange({
+            driveId,
+            itemId,
+            worksheetName: sheetName,
+            address,
+            sessionId,
+            applyTo: 'Contents',
+          });
+          logOut('ALFA_EXCEL_OUTBOUND_SANITIZED_SHIFTED_COL', {
+            field,
+            address,
+            reason,
+            previous: text.slice(0, 80),
+          });
+        }
+      } catch {
+        /* best-effort */
       }
     }
 
@@ -896,13 +1077,36 @@ export async function processAlfaExcelOutboundUpdate(doc) {
     const parsed = parseAlfaExcelBuffer(downloaded.buffer);
     const hit = findExcelRowForCase(caseDoc, parsed.rows);
 
+    // Columna SIEMPRE por encabezado vivo del Excel (ignorar letra guardada en outbox).
     const cellUpdates = fields
       .filter((field) => !isAlfaOutboundEmptyValue(changes[field].after))
-      .map((field) => ({
-        field,
-        column: changes[field].column || getOwnershipEntry(field).column,
-        value: changes[field].after,
-      }));
+      .map((field) => {
+        const column = letterFromParsedMapping(parsed.mapping, field);
+        if (!column) {
+          const err = new Error(`OUTBOUND_COLUMN_MISSING_HEADER:${field}`);
+          err.code = 'OUTBOUND_COLUMN_MISSING_HEADER';
+          throw err;
+        }
+        assertOutboundValueTypeOrThrow(field, changes[field].after);
+
+        const entry = getOwnershipEntry(field);
+        const stored = changes[field].column || entry?.column;
+        if (stored && stored !== column) {
+          logOut('ALFA_EXCEL_OUTBOUND_COLUMN_REMAPPED', {
+            outboundId,
+            consecutivo: doc.consecutivo || null,
+            field,
+            stored,
+            resolved: column,
+            note: 'letra_outbox_ignorada_se_usa_encabezado',
+          });
+        }
+        return {
+          field,
+          column,
+          value: changes[field].after,
+        };
+      });
     if (cellUpdates.length === 0) {
       doc.status = 'cancelled';
       doc.lastError = 'empty after skip: ARNALD vacío no borra Excel';
@@ -929,6 +1133,7 @@ export async function processAlfaExcelOutboundUpdate(doc) {
         cellUpdates,
         eTagBefore: written.eTagAfter || eTagBefore,
         downloadedBuffer: downloaded.buffer,
+        headerMapping: parsed.mapping,
       });
     }
 

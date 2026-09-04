@@ -4,6 +4,7 @@
  */
 import {
   ALFA_ESTADOS_UNIFICADOS,
+  aplicarObservacionAutoCierreAlfa,
   estadoAlfaParaSharePoint,
   homologarEstadoAlfa,
   isAlfaEstadoDefinido,
@@ -49,6 +50,32 @@ const placeholder = shouldUpdateAlfaStatus({
   incomingStatus: 'DESISTE',
 });
 assert(placeholder.update === false && placeholder.reason === 'PLACEHOLDER_INCOMING', 'DESISTE sigue siendo placeholder');
+
+assert(
+  aplicarObservacionAutoCierreAlfa('OBJETADO', '') === 'Caso objetado.',
+  'OBJETADO llena observación vacía'
+);
+assert(
+  aplicarObservacionAutoCierreAlfa('DESISTIDO', '') === 'Caso desistido.',
+  'DESISTIDO llena observación vacía'
+);
+assert(
+  aplicarObservacionAutoCierreAlfa('DESISTIDO', 'Caso objetado.') === 'Caso desistido.',
+  'cambia plantilla al pasar de OBJETADO a DESISTIDO'
+);
+assert(
+  aplicarObservacionAutoCierreAlfa('OBJETADO', 'Cliente no acepta oferta') ===
+    'Cliente no acepta oferta',
+  'no pisa observación escrita por el ajustador'
+);
+assert(
+  aplicarObservacionAutoCierreAlfa('Inspeccionado', 'Caso objetado.') === '',
+  'limpia plantilla al salir de OBJETADO'
+);
+assert(
+  aplicarObservacionAutoCierreAlfa('LIQUIDADO', 'Nota previa') === 'Nota previa',
+  'conserva nota al ir a otro cierre'
+);
 
 if (errors.length) {
   console.error('FAIL');

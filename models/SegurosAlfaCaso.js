@@ -70,6 +70,12 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
     reserva: Number,
     valorReclamado: Number,
     valorLiquidado: Number,
+    /** Campos de control de liquidación (derivados del liquidador, no editables manualmente) */
+    liquidadoCoberturaTerremo: Number,
+    deducibleTerremoto: Number,
+    valorLiquidacionCoberturasAdicionales: Number,
+    deducibleCoberturasAdicionales: { type: Number, default: 0 },
+    valorTotalPagar: Number,
     fechaLlamada: Date,
     /** Nota libre que complementa la fecha de llamada (solo ARNALD). */
     observacionLlamada: { type: String, default: '' },
@@ -135,6 +141,8 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
     liquidador: { type: mongoose.Schema.Types.Mixed, default: null },
     /** Borrador del informe único (texto evento, conclusiones, fotos) */
     informeUnico: { type: mongoose.Schema.Types.Mixed, default: null },
+    /** Informe catastrófico (Complex) generado desde este caso. */
+    historialCatastroficoId: { type: String, default: null },
     archivos: { type: [ArchivoAlfaSchema], default: [] },
     /**
      * Soft-archive: caso retirado de la base limpia Alfa (duplicados eliminados por la aseguradora).
@@ -148,6 +156,13 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
      * No implica cupo ni asignación masiva por sí sola.
      */
     firmaAjuste: { type: String, default: '', index: true },
+    /**
+     * Respaldo del equipo Proser que tenía el caso antes de pasarlo a la firma ERA.
+     * Solo informativo: permite devolver el caso a su ajustador original.
+     */
+    ajustadorProserPrevio: { type: String, default: '' },
+    inspectorProserPrevio: { type: String, default: '' },
+    fechaAsignacionFirmaEra: Date,
   },
   {
     collection: 'gsk3cAppsegurosAlfaCasos',

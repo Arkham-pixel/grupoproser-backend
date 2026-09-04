@@ -64,6 +64,14 @@ export const ALFA_EXCEL_COLUMN_MAP = Object.freeze({
   reserva: ['RESERVA'],
   valorReclamado: ['VALOR RECLAMADO'],
   valorLiquidado: ['VALOR LIQUIDADO'],
+  liquidadoCoberturaTerremo: ['LIQUIDADO COBERTURA TERREMOTO'],
+  deducibleTerremoto: ['DEDUCIBLE TERREMOTO'],
+  valorLiquidacionCoberturasAdicionales: [
+    'VALOR LIQUIDACION COBERTURAS ADICIONALES',
+    'VALOR LIQUIDACIÓN COBERTURAS ADICIONALES',
+  ],
+  deducibleCoberturasAdicionales: ['DEDUCIBLE COBERTURAS ADICIONALES'],
+  valorTotalPagar: ['VALOR TOTAL A PAGAR'],
   fechaInspeccion: ['FECHA INSPECCION'],
   fechaUltimoDocumento: ['FECHA ULTIMO DOCUMENTO'],
   fechaLiquidado: ['FECHA LIQUIDADO'],
@@ -139,6 +147,11 @@ export const PROTECTED_ALFA_FIELDS = Object.freeze([
   'observacionesGestion',
   'fechaLlamada',
   'observacionLlamada',
+  'liquidadoCoberturaTerremo',
+  'deducibleTerremoto',
+  'valorLiquidacionCoberturasAdicionales',
+  'deducibleCoberturasAdicionales',
+  'valorTotalPagar',
   'ubicacionPredio',
   'casoPadreId',
   'grupoReclamacion',
@@ -173,6 +186,11 @@ export const ALFA_EXCEL_MONEY_FIELDS = Object.freeze([
   'reserva',
   'valorReclamado',
   'valorLiquidado',
+  'liquidadoCoberturaTerremo',
+  'deducibleTerremoto',
+  'valorLiquidacionCoberturasAdicionales',
+  'deducibleCoberturasAdicionales',
+  'valorTotalPagar',
 ]);
 
 /** Invertido: header normalizado → campo */
