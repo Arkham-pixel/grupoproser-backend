@@ -34,6 +34,13 @@ import {
   notificarGerenciaSura,
   solicitarCorreccionControlHorasSura,
 } from '../controllers/segurosSura.controller.js';
+import {
+  actualizarFacilitadorSura,
+  importarFacilitadoresSura,
+  listarFacilitadoresSura,
+  sugerirFacilitadoresDesdeArnald,
+  validarFacilitadoresSura,
+} from '../controllers/suraFacilitadores.controller.js';
 import { createMulterUpload, attachPersistedFileMiddleware } from '../storage/multerStorageFactory.js';
 import { STORAGE_CATEGORIES, getPublicPathForSingle } from '../services/fileStorageService.js';
 import { verificarToken } from '../middleware/auth.js';
@@ -60,6 +67,12 @@ const excelUpload = multer({
 });
 
 router.get('/', poblarUsuarioOpcional, listarCasosSura);
+
+router.get('/facilitadores', poblarUsuarioOpcional, listarFacilitadoresSura);
+router.get('/facilitadores/validar', poblarUsuarioOpcional, validarFacilitadoresSura);
+router.post('/facilitadores/importar', verificarToken, importarFacilitadoresSura);
+router.post('/facilitadores/sugerir-arnald', verificarToken, sugerirFacilitadoresDesdeArnald);
+router.patch('/facilitadores/:id', verificarToken, actualizarFacilitadorSura);
 
 const persistSuraUpload = attachPersistedFileMiddleware({
   category: STORAGE_CATEGORIES.SEGUROS_SURA,

@@ -1336,7 +1336,10 @@ function refreshAlfaExcelAutoFilter(ws) {
  * Escribe identidad (A–S) + amarillas (T–AF). Nunca toca *_Final.xlsx.
  * Sube por lotes para evitar bloqueos / ECONNRESET en Graph.
  */
-export async function syncMissingArnaldCasosToAlfaExcel({ batchSize = 120 } = {}) {
+export async function syncMissingArnaldCasosToAlfaExcel({
+  batchSize = 120,
+  identificaciones = null,
+} = {}) {
   const resolved = await resolveSourceExcel();
   if (isAlfaExcelFinalProtectedName(resolved.fileName)) {
     const err = new Error(`Prohibido append en Final: ${resolved.fileName}`);
@@ -1359,7 +1362,11 @@ export async function syncMissingArnaldCasosToAlfaExcel({ batchSize = 120 } = {}
     const excelRows = parsed.rows || [];
     if (round === 1) excelRowsBefore = excelRows.length;
 
-    const casos = await SegurosAlfaCaso.find({}).lean();
+    const idFilter =
+      Array.isArray(identificaciones) && identificaciones.length
+        ? { identificacion: { $in: identificaciones.map((v) => String(v).trim()) } }
+        : {};
+    const casos = await SegurosAlfaCaso.find(idFilter).lean();
     const missing = [];
     for (const caso of casos) {
       const id = normId(caso.identificacion);

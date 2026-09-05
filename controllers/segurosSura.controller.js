@@ -569,6 +569,7 @@ export const obtenerCasoSura = async (req, res) => {
       'upload',
       'bandeja-facturacion',
       'notificaciones',
+      'facilitadores',
     ]);
     if (reservados.has(id)) {
       return res.status(404).json({ success: false, error: `Ruta no encontrada: ${id}` });
