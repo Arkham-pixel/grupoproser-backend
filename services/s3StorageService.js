@@ -114,6 +114,7 @@ export async function putObject({
   contentType,
   metadata = {},
   contentLength,
+  abortSignal,
 } = {}) {
   const client = getS3Client();
   const input = {
@@ -131,7 +132,9 @@ export async function putObject({
   } else if (Buffer.isBuffer(body)) {
     input.ContentLength = body.length;
   }
-  const result = await client.send(new PutObjectCommand(input));
+  const result = await client.send(new PutObjectCommand(input), {
+    ...(abortSignal ? { abortSignal } : {}),
+  });
   return { bucket: getBucketName(), key, etag: result?.ETag || null };
 }
 

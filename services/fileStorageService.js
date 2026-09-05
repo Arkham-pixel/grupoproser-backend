@@ -24,6 +24,96 @@ import {
   resolveUploadRelativePath,
 } from '../config/uploadsRoot.js';
 import { normalizarHeicEnArchivoMulter } from '../utils/heicToJpeg.js';
+import { optimizeImageBufferForS3 } from '../utils/optimizeImageForS3.js';
+
+/** Timeout base 90s + ~20s/MB, tope 5 min (capturas PNG grandes en red lenta). */
+function resolveS3UploadTimeoutMs(byteLength = 0) {
+  const fromEnv = parseInt(process.env.S3_UPLOAD_TIMEOUT_MS || '', 10);
+  if (Number.isFinite(fromEnv) && fromEnv >= 30_000) return fromEnv;
+  const mb = Math.max(1, byteLength / (1024 * 1024));
+  return Math.min(300_000, Math.max(90_000, Math.ceil(mb) * 20_000 + 60_000));
+}
+
+function isRetryableS3UploadError(error) {
+  const msg = String(error?.message || error || '');
+  const name = String(error?.name || '');
+  return (
+    /superó \d+s/i.test(msg) ||
+    /ETIMEDOUT|ECONNRESET|EAI_AGAIN|ENOTFOUND|Timeout|NetworkingError|socket hang up|TLS|SlowDown|ServiceUnavailable|InternalError|aborted|AbortError/i.test(
+      msg
+    ) ||
+    /TimeoutError|NetworkingError|Timeout|AbortError/i.test(name) ||
+    error?.$metadata?.httpStatusCode === 503 ||
+    error?.$metadata?.httpStatusCode === 500
+  );
+}
+
+async function putObjectWithTimeout({ key, body, contentType, metadata, timeoutMs, label }) {
+  const controller = new AbortController();
+  let timer;
+  try {
+    return await Promise.race([
+      s3.putObject({
+        key,
+        body,
+        contentType,
+        metadata,
+        abortSignal: controller.signal,
+      }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(
+            new Error(
+              `Subida a S3 superó ${Math.round(timeoutMs / 1000)}s (${label || 'imagen'})`
+            )
+          );
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function putObjectWithRetries({
+  key,
+  body,
+  contentType,
+  metadata,
+  timeoutMs,
+  label,
+  byteLength,
+  maxAttempts = 3,
+}) {
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const started = Date.now();
+    try {
+      await putObjectWithTimeout({
+        key,
+        body,
+        contentType,
+        metadata,
+        timeoutMs,
+        label,
+      });
+      console.log(
+        `☁️ S3 putObject OK — ${key} (${byteLength} bytes, ${Date.now() - started}ms, intento ${attempt}/${maxAttempts})`
+      );
+      return;
+    } catch (error) {
+      lastError = error;
+      const retryable = isRetryableS3UploadError(error);
+      console.warn(
+        `⚠️ S3 putObject fallo intento ${attempt}/${maxAttempts} — ${label} (${byteLength} bytes, ${Date.now() - started}ms): ${error.message}`
+      );
+      if (!retryable || attempt === maxAttempts) break;
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+  throw lastError;
+}
 
 /** Categorías alineadas con carpetas actuales en uploads/ */
 export const STORAGE_CATEGORIES = Object.freeze({
@@ -156,13 +246,6 @@ export async function persistUploadedFile({
     };
   }
 
-  const { key, filename } = buildKeyForUpload(req, {
-    category,
-    originalName: file.originalname,
-    ownerType,
-    ownerId,
-  });
-
   let body;
   if (file.buffer) {
     body = file.buffer;
@@ -172,25 +255,35 @@ export async function persistUploadedFile({
     throw new Error('Archivo sin buffer ni path');
   }
 
-  const S3_TIMEOUT_MS = 60000;
-  await Promise.race([
-    s3.putObject({
-      key,
-      body,
-      contentType: file.mimetype,
-      metadata: {
-        originalName: file.originalname,
-        category,
-      },
-    }),
-    new Promise((_, reject) => {
-      setTimeout(
-        () => reject(new Error(`Subida a S3 superó ${S3_TIMEOUT_MS / 1000}s (${file.originalname || 'imagen'})`)),
-        S3_TIMEOUT_MS
-      );
-    }),
-  ]);
-  console.log(`☁️ S3 putObject OK — ${key}`);
+  const optimized = await optimizeImageBufferForS3(file, body);
+  body = optimized.body;
+  const uploadName = optimized.originalname || file.originalname;
+  const uploadMime = optimized.mimetype || file.mimetype;
+  const uploadSize = optimized.size || body.length || file.size;
+
+  const { key, filename } = buildKeyForUpload(req, {
+    category,
+    originalName: uploadName,
+    ownerType,
+    ownerId,
+  });
+
+  const byteLength = Buffer.isBuffer(body) ? body.length : Number(uploadSize) || 0;
+  const timeoutMs = resolveS3UploadTimeoutMs(byteLength);
+  const label = uploadName || 'imagen';
+
+  await putObjectWithRetries({
+    key,
+    body,
+    contentType: uploadMime,
+    metadata: {
+      originalName: uploadName,
+      category,
+    },
+    timeoutMs,
+    label,
+    byteLength,
+  });
 
   if (file.path && fs.existsSync(file.path)) {
     await fsp.unlink(file.path).catch(() => {});
@@ -201,8 +294,8 @@ export async function persistUploadedFile({
     s3Key: key,
     filename,
     publicPath: buildStoredPublicPath({ driver: 's3', s3Key: key, filename, category }),
-    size: file.size,
-    mimetype: file.mimetype,
+    size: uploadSize,
+    mimetype: uploadMime,
   };
 }
 
