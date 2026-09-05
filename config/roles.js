@@ -84,6 +84,46 @@ const SUFIJOS_LEGACY = [
   'ERA',
 ];
 
+/**
+ * Prefijos de APIs de *módulos* de negocio.
+ * El middleware solo restringe estos; el resto de la plataforma
+ * (storage, borradores, catálogos, historial, auth, agenda, tareas…)
+ * queda libre para TODOS los roles contratista — igual que un usuario normal.
+ *
+ * Al crear un rol nuevo: solo lista aquí sus módulos en CONTRATISTAS_MODULO.apis.
+ * NO agregues /api/storage, /api/arnald-*, /api/historial, etc. (ya están libres).
+ */
+export const APIS_MODULO_CONTRATISTA = [
+  '/api/zurich',
+  '/api/zurich-listado',
+  '/api/seguros-alfa',
+  '/api/sura',
+  '/api/bbva-cat',
+  '/api/bbva-cat-listado',
+  '/api/allianz',
+  '/api/allianz-listado',
+  '/api/allias',
+  '/api/allias-listado',
+  '/api/previsora',
+  '/api/previsora-listado',
+  '/api/equidad-cat',
+  '/api/equidad-fdm',
+  '/api/siniestros-express',
+  '/api/complex',
+  '/api/casos',
+  '/api/riesgos',
+  '/api/puertos',
+  '/api/sg-sst',
+  '/api/propiedades',
+  '/api/inspeccion-propiedades',
+  '/api/siniestros',
+];
+
+/** Factory: cualquier rol registrado aquí hereda plataforma completa + solo sus módulos. */
+function rolContractor({ apis, mensaje, soloLecturaApi = false }) {
+  return { apis, mensaje, soloLecturaApi };
+}
+
 const APIS_TRES = [
   '/api/zurich',
   '/api/zurich-listado',
@@ -91,35 +131,20 @@ const APIS_TRES = [
   '/api/sura',
   '/api/bbva-cat',
   '/api/bbva-cat-listado',
-  '/api/agenda-catastrofico',
 ];
-const APIS_SOLO_ZURICH = ['/api/zurich', '/api/zurich-listado', '/api/agenda-catastrofico'];
-const APIS_SOLO_BBVA = ['/api/bbva-cat', '/api/bbva-cat-listado', '/api/agenda-catastrofico'];
+const APIS_SOLO_ZURICH = ['/api/zurich', '/api/zurich-listado'];
+const APIS_SOLO_BBVA = ['/api/bbva-cat', '/api/bbva-cat-listado'];
 const APIS_SOLO_EQUIDAD = ['/api/equidad-fdm'];
 const APIS_SOLO_EQUIDAD_CAT = [
   '/api/equidad-cat',
   '/api/allianz',
   '/api/allianz-listado',
-  '/api/arnald-drafts',
-  '/api/agenda-catastrofico',
+  '/api/allias',
+  '/api/allias-listado',
 ];
-const APIS_SOLO_EXPRESS = [
-  '/api/siniestros-express',
-  '/api/arnald-drafts',
-  '/api/alertas/protocolo',
-];
-const APIS_SOLO_PREVISORA = [
-  '/api/previsora',
-  '/api/previsora-listado',
-  '/api/tareas',
-  '/api/agenda-catastrofico',
-];
-const APIS_ERA = [
-  '/api/seguros-alfa',
-  '/api/agenda-catastrofico',
-  '/api/arnald-drafts',
-  '/api/historial-formularios',
-];
+const APIS_SOLO_EXPRESS = ['/api/siniestros-express'];
+const APIS_SOLO_PREVISORA = ['/api/previsora', '/api/previsora-listado'];
+const APIS_ERA = ['/api/seguros-alfa'];
 const APIS_CATASTROFICOS = [
   '/api/previsora',
   '/api/previsora-listado',
@@ -131,58 +156,61 @@ const APIS_CATASTROFICOS = [
   '/api/sura',
   '/api/allianz',
   '/api/allianz-listado',
+  '/api/allias',
+  '/api/allias-listado',
   '/api/equidad-cat',
-  '/api/historial-formularios',
-  '/api/tareas',
-  '/api/agenda-catastrofico',
 ];
 
+/**
+ * Todos los contractor_* usan la misma regla de plataforma.
+ * Solo cambia `apis` (qué módulos puede abrir).
+ */
 export const CONTRATISTAS_MODULO = {
-  contractor_zurich: {
+  contractor_zurich: rolContractor({
     apis: APIS_TRES,
     mensaje: 'Su rol solo permite trabajar los módulos Zurich, Alfa, Sura y BBVA.',
-  },
-  contractor_alfa: {
+  }),
+  contractor_alfa: rolContractor({
     apis: APIS_TRES,
     mensaje: 'Su rol solo permite trabajar los módulos Zurich, Alfa, Sura y BBVA.',
-  },
-  contractor_sura: {
+  }),
+  contractor_sura: rolContractor({
     apis: APIS_TRES,
     mensaje: 'Su rol solo permite trabajar los módulos Zurich, Alfa, Sura y BBVA.',
-  },
-  contractor_solo_zurich: {
+  }),
+  contractor_solo_zurich: rolContractor({
     apis: APIS_SOLO_ZURICH,
     mensaje: 'Su rol Zurich solo permite trabajar el módulo Zurich.',
-  },
-  contractor_solo_bbva: {
+  }),
+  contractor_solo_bbva: rolContractor({
     apis: APIS_SOLO_BBVA,
     mensaje: 'Su rol BBVA solo permite trabajar el módulo BBVA CAT.',
-  },
-  contractor_solo_equidad: {
+  }),
+  contractor_solo_equidad: rolContractor({
     apis: APIS_SOLO_EQUIDAD,
     soloLecturaApi: true,
     mensaje: 'Su rol Equidad solo permite Home, Dashboard y bandeja Fundación de la Mujer (Equidad FDM).',
-  },
-  contractor_solo_equidad_cat: {
+  }),
+  contractor_solo_equidad_cat: rolContractor({
     apis: APIS_SOLO_EQUIDAD_CAT,
     mensaje: 'Su rol Equidad CAT solo permite trabajar los módulos Equidad CAT y Allianz.',
-  },
-  contractor_solo_express: {
+  }),
+  contractor_solo_express: rolContractor({
     apis: APIS_SOLO_EXPRESS,
     mensaje: 'Su rol Express solo permite trabajar el módulo Express.',
-  },
-  contractor_solo_previsora: {
+  }),
+  contractor_solo_previsora: rolContractor({
     apis: APIS_SOLO_PREVISORA,
     mensaje: 'Su rol Previsora solo permite Home y el módulo Previsora.',
-  },
-  contractor_catastroficos: {
+  }),
+  contractor_catastroficos: rolContractor({
     apis: APIS_CATASTROFICOS,
     mensaje: 'Su rol Catastróficos solo permite Previsora, Zurich, BBVA, Alfa, Sura, Allianz y Equidad CAT.',
-  },
-  contractor_era: {
+  }),
+  contractor_era: rolContractor({
     apis: APIS_ERA,
     mensaje: 'Su rol ERA solo permite trabajar los casos Alfa que se asignen a la firma.',
-  },
+  }),
 };
 
 export function normalizarRol(rol) {

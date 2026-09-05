@@ -1,23 +1,19 @@
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/secrets.js';
-import { CONTRATISTAS_MODULO, normalizarRol } from '../config/roles.js';
+import {
+  APIS_MODULO_CONTRATISTA,
+  CONTRATISTAS_MODULO,
+  normalizarRol,
+} from '../config/roles.js';
 
-const PREFIJOS_COMUNES = [
-  '/api/storage',
-  '/api/health',
-  '/api/secur-auth',
-  '/api/notificaciones-operativas',
-  '/uploads',
-];
-
-const PREFIJOS_SOLO_LECTURA = [
-  '/api/ciudades',
-  '/api/responsables',
-  '/api/ajustadores-catastrofico',
-  '/api/inspectores-catastrofico',
-  '/api/comunicados',
-  '/api/express-catalogos',
-];
+/**
+ * Restricción de contratistas: solo se bloquean APIs de *módulos* ajenos.
+ * Todo lo demás (storage, borradores, catálogos, historial, auth, etc.)
+ * funciona igual que un usuario normal — evita 403 por whitelist incompleta.
+ */
+function coincidePrefijo(path, prefix) {
+  return path === prefix || path.startsWith(`${prefix}/`);
+}
 
 export function restringirContractorZurich(req, res, next) {
   const authHeader = req.headers.authorization || '';
@@ -39,20 +35,23 @@ export function restringirContractorZurich(req, res, next) {
   if (!config) return next();
 
   const path = String(req.originalUrl || req.url || '').split('?')[0];
-  const coincidePrefijo = (prefix) => path === prefix || path.startsWith(`${prefix}/`);
-  const permitido =
-    [...PREFIJOS_COMUNES, ...config.apis].some(coincidePrefijo) ||
-    (req.method === 'GET' && PREFIJOS_SOLO_LECTURA.some(coincidePrefijo));
-  if (!permitido) {
+  const esApiDeModulo = APIS_MODULO_CONTRATISTA.some((p) => coincidePrefijo(path, p));
+
+  // Plataforma (subir/descargar archivos, borradores, catálogos, etc.): igual que usuario normal.
+  if (!esApiDeModulo) return next();
+
+  const moduloPermitido = (config.apis || []).some((p) => coincidePrefijo(path, p));
+  if (!moduloPermitido) {
     return res.status(403).json({ error: config.mensaje });
   }
-  // Rol bandeja Equidad: solo lectura en su API.
+
+  // Rol bandeja Equidad FDM: solo lectura en su API de módulo.
   if (
     config.soloLecturaApi &&
-    !['GET', 'HEAD', 'OPTIONS'].includes(String(req.method || '').toUpperCase()) &&
-    config.apis.some(coincidePrefijo)
+    !['GET', 'HEAD', 'OPTIONS'].includes(String(req.method || '').toUpperCase())
   ) {
     return res.status(403).json({ error: config.mensaje });
   }
+
   return next();
 }
