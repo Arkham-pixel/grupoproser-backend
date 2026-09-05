@@ -126,6 +126,14 @@ export function tokensPersona(valor) {
     .filter((t) => t.length >= 4);
 }
 
+/** Exacto o misma raíz (Campo/Campos; acentos ya salen en normalizarClavePersona). */
+function tokensPersonaCoinciden(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a))) return true;
+  return false;
+}
+
 export function coincidenPersonas(a, b) {
   const na = normalizarClavePersona(a);
   const nb = normalizarClavePersona(b);
@@ -134,8 +142,8 @@ export function coincidenPersonas(a, b) {
   const tokA = tokensPersona(na);
   const tokB = tokensPersona(nb);
   if (!tokA.length || !tokB.length) return false;
-  const setB = new Set(tokB);
-  return tokA.filter((t) => setB.has(t)).length >= 2;
+  const comunes = tokA.filter((t) => tokB.some((u) => tokensPersonaCoinciden(t, u)));
+  return comunes.length >= 2;
 }
 
 function escapeRegex(texto) {
