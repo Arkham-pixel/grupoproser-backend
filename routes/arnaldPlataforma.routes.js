@@ -1,5 +1,5 @@
 import express from 'express';
-import { verificarToken } from '../middleware/auth.js';
+import { verificarToken, verificarTokenTelemetria } from '../middleware/auth.js';
 import { listarLogsArnald, registrarEventoCliente } from '../controllers/arnaldAudit.controller.js';
 import {
   borrarMiBorrador,
@@ -13,7 +13,7 @@ import {
 const router = express.Router();
 
 router.get('/arnald-logs', verificarToken, listarLogsArnald);
-router.post('/arnald-logs/evento', verificarToken, registrarEventoCliente);
+router.post('/arnald-logs/evento', verificarTokenTelemetria, registrarEventoCliente);
 
 router.get('/arnald-drafts', verificarToken, obtenerMiBorrador);
 router.get('/arnald-drafts/mios', verificarToken, listarMisBorradores);

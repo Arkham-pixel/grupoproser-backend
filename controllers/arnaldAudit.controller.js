@@ -76,7 +76,8 @@ export async function registrarEventoCliente(req, res) {
       nombre: req.body?.nombre || '',
     });
     if (!usuario.usuarioId && !usuario.login) {
-      return res.status(401).json({ message: req.t?.('tokenNotProvided') || 'No autenticado' });
+      // Telemetría: no autenticado → 204 (evita ruido 401/403 en consola del cliente)
+      return res.status(204).end();
     }
 
     const accion = String(req.body?.accion || 'NAVIGATE').toUpperCase();

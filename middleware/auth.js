@@ -48,3 +48,26 @@ export function verificarToken(req, res, next) {
     return res.status(403).json({ mensaje: req.t?.('invalidOrExpiredToken') || 'Token inválido o expirado' });
   }
 }
+
+/**
+ * Auth suave para telemetría: sin token o JWT inválido → 204 (no 403 en consola del navegador).
+ */
+export function verificarTokenTelemetria(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(204).end();
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.usuario = payload;
+    req.user = payload;
+    if (SUPPORTED_LOCALES.includes(payload.locale)) {
+      bindTranslator(req, res);
+    }
+    next();
+  } catch {
+    return res.status(204).end();
+  }
+}
