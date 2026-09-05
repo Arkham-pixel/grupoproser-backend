@@ -80,25 +80,25 @@ const PERSONAS = [
     cedula: '0815104122085',
   },
   {
-    nombre: 'Jose Angel Flores Mena',
-    email: 'angel.flores3dtm@gmail.com',
-    celular: '+52 (77) 7986.4558',
-    fechaNacimiento: '2000-01-27',
-    cedula: '2372119921487',
-  },
-  {
-    nombre: 'Miguel Angel Bojorges Mendez',
-    email: 'mbojorqesm@outlook.com',
-    celular: '+52 (55) 4480.5525',
-    fechaNacimiento: '1989-08-08',
-    cedula: '1997082904240',
-  },
-  {
     nombre: 'Jorge Luis Perez Angulo',
     email: 'eg_rojsiul@hotmail.com',
     celular: '+52 (22) 2510.4796',
     fechaNacimiento: '1987-06-14',
     cedula: '0519072577601',
+  },
+  {
+    nombre: 'Carlos Eduardo Luz Contreras',
+    email: 'charlyluz24@gmail.com',
+    celular: '+52 (55) 6764.3113',
+    fechaNacimiento: '1990-07-14',
+    cedula: '5346081408584',
+  },
+  {
+    nombre: 'Blanca Estela Rivera Diaz',
+    email: 'estela_rd84@msn.com',
+    celular: '+52 (24) 6122.8750',
+    fechaNacimiento: '1984-05-20',
+    cedula: '0186050007215',
   },
 ];
 
