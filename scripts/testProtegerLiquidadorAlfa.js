@@ -85,6 +85,19 @@ assert(
   'preservar (viejo) sí restauraría la copia inicial; por eso CAT no debe usarlo al editar'
 );
 
+const soloPdf = {
+  modelo: 'nsr10',
+  cotizacionesPdf: {
+    completo: { montoFinal: '26900000', paginas: [{ ruta: '/x.pdf' }] },
+  },
+};
+assert(scoreContenidoLiquidadorNsr(soloPdf) > 0, 'cotización PDF cuenta como contenido');
+assert(
+  resolverLiquidadorParaUpdate(soloPdf, vacio)?.cotizacionesPdf?.completo?.montoFinal ===
+    '26900000',
+  'PDF-only debe persistir (no descartarse como vacío)'
+);
+
 const informeLleno = {
   descripcionDanios: 'Daños estructurales observados en muros y cubiertas del predio asegurado.',
   conclusiones: 'Se recomienda continuar con la recolección documental y la liquidación.',

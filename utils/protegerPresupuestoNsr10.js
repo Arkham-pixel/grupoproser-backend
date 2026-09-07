@@ -70,6 +70,28 @@ export function contarItemsFdm(liquidador) {
   return pareceFdm && hayEncabezado ? 1 : 0;
 }
 
+function scoreUnSlotCotizacion(c) {
+  if (!c || typeof c !== 'object') return 0;
+  const paginas = Array.isArray(c.paginas)
+    ? c.paginas.filter((p) => p?.ruta || p?._id || p?.preview || p?.file).length
+    : 0;
+  const monto = String(c.montoFinal ?? '').replace(/[^\d]/g, '');
+  return paginas + (monto.length ? 2 : 0);
+}
+
+/** Cotización PDF (Alfa/Allianz): monto o páginas cuentan como contenido real. */
+export function scoreCotizacionPdf(liquidador) {
+  const slots = liquidador?.cotizacionesPdf;
+  if (slots && typeof slots === 'object') {
+    return (
+      scoreUnSlotCotizacion(slots.materiales) +
+      scoreUnSlotCotizacion(slots.manoObra) +
+      scoreUnSlotCotizacion(slots.completo || liquidador?.cotizacionPdf)
+    );
+  }
+  return scoreUnSlotCotizacion(liquidador?.cotizacionPdf);
+}
+
 /** Peso de contenido real del liquidador (0 = cascarón vacío). */
 export function scoreContenidoLiquidadorNsr(liquidador) {
   if (!liquidador || typeof liquidador !== 'object') return 0;
@@ -78,7 +100,8 @@ export function scoreContenidoLiquidadorNsr(liquidador) {
     contarContenidosNsr(liquidador) +
     contarDetalleCat(liquidador) +
     contarOtrosAmparosAlfa(liquidador) +
-    contarItemsFdm(liquidador)
+    contarItemsFdm(liquidador) +
+    scoreCotizacionPdf(liquidador)
   );
 }
 
@@ -132,6 +155,19 @@ export function preservarPresupuestoNsrSiVacio(nuevo, actual) {
   ) {
     next = { ...next, otrosAmparos: actual.otrosAmparos };
     protegio = true;
+  }
+
+  if (actual.liquidacionCotizacionPdf && !next.liquidacionCotizacionPdf) {
+    next = { ...next, liquidacionCotizacionPdf: actual.liquidacionCotizacionPdf };
+  }
+  if (actual.cotizacionesPdf && !next.cotizacionesPdf) {
+    next = { ...next, cotizacionesPdf: actual.cotizacionesPdf };
+  } else if (scoreCotizacionPdf(actual) > scoreCotizacionPdf(next) && actual.cotizacionesPdf) {
+    next = {
+      ...next,
+      cotizacionesPdf: actual.cotizacionesPdf,
+      cotizacionPdf: actual.cotizacionPdf || actual.cotizacionesPdf?.completo || next.cotizacionPdf,
+    };
   }
 
   // Conservar liquidación / encabezado / firmas si el nuevo viene más vacío
