@@ -18,15 +18,30 @@ const siguienteOrdenArchivos = (archivos = []) => {
   return max + 1;
 };
 
-const buildArchivoFromUpload = (req, etiqueta, rutaLocalPrefix, { descripcion = '', orden = 0 } = {}) => {
+const normalizarOrigenCarga = (valor) => {
+  const t = String(valor || '')
+    .trim()
+    .toLowerCase();
+  if (t === 'analista' || t === 'ajustador') return t;
+  return '';
+};
+
+const buildArchivoFromUpload = (
+  req,
+  etiqueta,
+  rutaLocalPrefix,
+  { descripcion = '', orden = 0, origenCarga = '' } = {}
+) => {
   const file = req.file;
   const usuario = usuarioDesdeReq(req);
+  const origen = normalizarOrigenCarga(origenCarga);
   const base = {
     etiqueta: etiqueta || 'GENERAL',
     descripcion: descripcion != null ? String(descripcion) : '',
     orden: Number.isFinite(Number(orden)) ? Number(orden) : 0,
     subidoPor: usuario,
     fechaSubida: new Date(),
+    ...(origen ? { origenCarga: origen } : {}),
   };
   if (req.fileStorage?.driver === 's3') {
     return {
@@ -74,10 +89,15 @@ export function crearControladoresArchivosListado({
       const etiqueta = String(req.body?.etiqueta || 'GENERAL').trim() || 'GENERAL';
       const descripcion =
         req.body?.descripcion != null ? String(req.body.descripcion) : '';
+      const origenCarga = normalizarOrigenCarga(req.body?.origenCarga);
       caso.archivos = caso.archivos || [];
       const orden = siguienteOrdenArchivos(caso.archivos);
       caso.archivos.push(
-        buildArchivoFromUpload(req, etiqueta, rutaLocalPrefix, { descripcion, orden })
+        buildArchivoFromUpload(req, etiqueta, rutaLocalPrefix, {
+          descripcion,
+          orden,
+          origenCarga,
+        })
       );
       await caso.save();
 

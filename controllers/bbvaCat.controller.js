@@ -985,15 +985,25 @@ const usuarioDesdeReq = (req) => {
   };
 };
 
-const buildArchivoFromUpload = (req, etiqueta, { descripcion = '', orden = 0 } = {}) => {
+const normalizarOrigenCarga = (valor) => {
+  const t = String(valor || '')
+    .trim()
+    .toLowerCase();
+  if (t === 'analista' || t === 'ajustador') return t;
+  return '';
+};
+
+const buildArchivoFromUpload = (req, etiqueta, { descripcion = '', orden = 0, origenCarga = '' } = {}) => {
   const file = req.file;
   const usuario = usuarioDesdeReq(req);
+  const origen = normalizarOrigenCarga(origenCarga);
   const base = {
     etiqueta: etiqueta || 'GENERAL',
     descripcion: descripcion != null ? String(descripcion) : '',
     orden: Number.isFinite(Number(orden)) ? Number(orden) : 0,
     subidoPor: usuario,
     fechaSubida: new Date(),
+    ...(origen ? { origenCarga: origen } : {}),
   };
   if (req.fileStorage?.driver === 's3') {
     return {
@@ -1039,9 +1049,10 @@ export const subirArchivoBbvaCat = async (req, res) => {
     const etiqueta = toStringOrNull(req.body?.etiqueta) || 'GENERAL';
     const descripcion =
       req.body?.descripcion != null ? String(req.body.descripcion) : '';
+    const origenCarga = normalizarOrigenCarga(req.body?.origenCarga);
     caso.archivos = caso.archivos || [];
     const orden = siguienteOrdenArchivos(caso.archivos);
-    const archivo = buildArchivoFromUpload(req, etiqueta, { descripcion, orden });
+    const archivo = buildArchivoFromUpload(req, etiqueta, { descripcion, orden, origenCarga });
     caso.archivos.push(archivo);
     caso.fechaUltimoDocumento = new Date();
     await caso.save();

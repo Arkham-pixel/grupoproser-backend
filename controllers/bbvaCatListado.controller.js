@@ -95,6 +95,27 @@ const PIPELINE_BANDERAS_LISTA_BBVA_CAT = {
     nArchivos: {
       $cond: [{ $isArray: '$archivos' }, { $size: '$archivos' }, 0],
     },
+    /** Legado sin origenCarga = analista (misma regla de handoff histórica). */
+    nArchivosAnalista: {
+      $size: {
+        $filter: {
+          input: { $ifNull: ['$archivos', []] },
+          as: 'a',
+          cond: {
+            $ne: [{ $ifNull: ['$$a.origenCarga', 'analista'] }, 'ajustador'],
+          },
+        },
+      },
+    },
+    nArchivosAjustador: {
+      $size: {
+        $filter: {
+          input: { $ifNull: ['$archivos', []] },
+          as: 'a',
+          cond: { $eq: ['$$a.origenCarga', 'ajustador'] },
+        },
+      },
+    },
   },
 };
 
@@ -380,6 +401,8 @@ export const listarCasosListadoBbvaCat = async (req, res) => {
                 tieneInforme: 1,
                 tieneLiquidador: 1,
                 nArchivos: 1,
+                nArchivosAnalista: 1,
+                nArchivosAjustador: 1,
               },
             },
           ]),

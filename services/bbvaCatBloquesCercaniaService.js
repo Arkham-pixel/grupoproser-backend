@@ -558,7 +558,11 @@ function claveWfBbvaCat(caso = {}) {
 function casoTieneArchivosListado(caso, archivosPorClave) {
   const k = claveWfBbvaCat(caso);
   if (!k) return false;
-  return Number(archivosPorClave.get(k) || 0) > 0;
+  const info = archivosPorClave.get(k);
+  if (info && typeof info === 'object') {
+    return Number(info.analista || 0) > 0;
+  }
+  return Number(info || 0) > 0;
 }
 
 /**
@@ -879,14 +883,24 @@ export function clusterizarPorRadio(puntos = [], radioKm = 2.5) {
 
 async function mapaArchivosPorWfListado() {
   const filas = await BbvaCatListadoCaso.find({})
-    .select('zc siniestro archivos')
+    .select('zc siniestro archivos.origenCarga')
     .lean();
   const archivosPorClave = new Map();
   for (const fila of filas) {
     const k = claveWfBbvaCat(fila);
     if (!k) continue;
-    const n = Array.isArray(fila.archivos) ? fila.archivos.length : 0;
-    archivosPorClave.set(k, (archivosPorClave.get(k) || 0) + n);
+    let analista = 0;
+    let ajustador = 0;
+    for (const a of fila.archivos || []) {
+      if (String(a?.origenCarga || '').toLowerCase() === 'ajustador') ajustador += 1;
+      else analista += 1;
+    }
+    const prev = archivosPorClave.get(k) || { analista: 0, ajustador: 0, total: 0 };
+    archivosPorClave.set(k, {
+      analista: prev.analista + analista,
+      ajustador: prev.ajustador + ajustador,
+      total: prev.total + analista + ajustador,
+    });
   }
   return archivosPorClave;
 }

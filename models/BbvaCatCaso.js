@@ -20,6 +20,12 @@ const ArchivoBbvaCatSchema = new mongoose.Schema(
       login: String,
       nombre: String,
     },
+    /** analista | ajustador — informativo en archivero CAT (inspección). */
+    origenCarga: {
+      type: String,
+      enum: ['analista', 'ajustador'],
+      default: undefined,
+    },
     fechaSubida: { type: Date, default: Date.now },
   },
   { _id: true }

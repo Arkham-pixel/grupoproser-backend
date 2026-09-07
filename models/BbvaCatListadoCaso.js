@@ -17,6 +17,17 @@ const ArchivoBbvaCatListadoSchema = new mongoose.Schema(
       login: String,
       nombre: String,
     },
+    /**
+     * Quién carga al archivero del listado.
+     * - analista: mueve el caso de la cola analista → listado ajustador
+     * - ajustador: fotos/docs de campo; no saca el caso de la cola del analista
+     * Sin valor (legado): se trata como analista.
+     */
+    origenCarga: {
+      type: String,
+      enum: ['analista', 'ajustador'],
+      default: undefined,
+    },
     fechaSubida: { type: Date, default: Date.now },
   },
   { _id: true }
