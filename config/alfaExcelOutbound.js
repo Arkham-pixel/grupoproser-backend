@@ -33,6 +33,17 @@ export function getAlfaExcelOutboundConfig() {
       const n = parseInt(process.env.SHAREPOINT_ALFA_EXCEL_OUTBOUND_MAX_ATTEMPTS || '', 10);
       return Number.isFinite(n) && n > 0 ? n : 5;
     })(),
+    /**
+     * Reconciliación periódica: compara estado ARNALD vs Excel y reencola gaps
+     * (evita casos CERRADO/OBJETADO/DESISTIDO/LIQUIDADO desfasados).
+     */
+    reconcileEnabled: boolEnv(
+      'SHAREPOINT_ALFA_EXCEL_ESTADO_RECONCILE_ENABLED',
+      boolEnv('SHAREPOINT_ALFA_EXCEL_OUTBOUND_ENABLED', false)
+    ),
+    reconcileSchedule: String(
+      process.env.SHAREPOINT_ALFA_EXCEL_ESTADO_RECONCILE_CRON || '*/15 * * * *'
+    ).trim(),
     integrationKey: 'alfa-excel-control-seguimiento',
     rootPath: String(
       process.env.SHAREPOINT_ALFA_EXCEL_IMPORT_PATH ||

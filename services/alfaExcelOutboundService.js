@@ -49,7 +49,11 @@ import {
   toAlfaExcelOperationalFileName,
 } from '../utils/alfaExcelSharePointPath.js';
 import { selectAlfaExcelFromSharePointFolder } from './alfaExcelSharePointImportService.js';
-import { estadoAlfaParaSharePoint } from '../config/alfaExcelStatuses.js';
+import {
+  estadoAlfaParaSharePoint,
+  estadoGestionDesdeEstadoAlfa,
+  isAlfaEstadoDefinido,
+} from '../config/alfaExcelStatuses.js';
 
 function logOut(event, payload = {}) {
   console.log(JSON.stringify({ event, at: new Date().toISOString(), ...payload }));
@@ -345,8 +349,18 @@ export async function enqueueAlfaExcelOutboundFromCaseUpdate({
       for (const [field, diff] of Object.entries(writable)) {
         merged[field] = diff;
       }
-      doc.changes = merged;
-      doc.rejectedAtEnqueue = rejected;
+      // Re-filtrar: un outbox failed viejo no debe reintroducir campos no writable
+      // (p. ej. deducibleTerremoto) y tumbar también estado/fechas.
+      const { writable: cleaned, rejected: rejectedMerged } = filterOutboundWritableChanges(
+        Object.fromEntries(
+          Object.entries(merged).map(([field, diff]) => [
+            field,
+            { before: diff?.before ?? null, after: diff?.after ?? null },
+          ])
+        )
+      );
+      doc.changes = cleaned;
+      doc.rejectedAtEnqueue = [...rejected, ...rejectedMerged];
       doc.consecutivo = afterDoc.consecutivo || doc.consecutivo;
       doc.status = 'pending';
       doc.lastError = null;
@@ -437,6 +451,7 @@ export function findExcelRowForCase(caseDoc, excelRows) {
           allRowNumbers: [byDir[0].rowNumber],
           strategy: `${byDir[0].strategy}+DIRECCION`,
           evidence: { ...(byDir[0].evidence || {}), direccionPredio: true },
+          payload: byDir[0].payload,
         };
       }
       if (byDir.length > 1) {
@@ -452,6 +467,7 @@ export function findExcelRowForCase(caseDoc, excelRows) {
           allRowNumbers: byDir.map((h) => h.rowNumber),
           strategy: `${byDir[0].strategy}+ALL_DUPLICATES`,
           evidence: byDir[0].evidence,
+          payload: byDir[0].payload,
         };
       }
     }
@@ -1036,11 +1052,32 @@ export async function processAlfaExcelOutboundUpdate(doc) {
   });
 
   try {
-    const changes = changesMapToObject(doc.changes);
+    const changesRaw = changesMapToObject(doc.changes);
+    const changes = {};
+    const droppedFields = [];
+    for (const [field, diff] of Object.entries(changesRaw)) {
+      const entry = getOwnershipEntry(field);
+      if (!entry || entry.owner !== 'arnald' || entry.outboundEnabled !== true || !entry.column) {
+        droppedFields.push(field);
+        continue;
+      }
+      changes[field] = diff;
+    }
+    if (droppedFields.length) {
+      logOut('ALFA_EXCEL_OUTBOUND_DROPPED_FIELDS', {
+        outboundId,
+        caseId: String(doc.caseId),
+        consecutivo: doc.consecutivo || null,
+        droppedFields,
+      });
+      doc.changes = changes;
+    }
     const fields = Object.keys(changes);
     if (fields.length === 0) {
       doc.status = 'cancelled';
-      doc.lastError = 'empty changes';
+      doc.lastError = droppedFields.length
+        ? `empty after drop non-writable: ${droppedFields.join(',')}`
+        : 'empty changes';
       await doc.save();
       return { outcome: 'cancelled' };
     }
@@ -1078,38 +1115,56 @@ export async function processAlfaExcelOutboundUpdate(doc) {
     const hit = findExcelRowForCase(caseDoc, parsed.rows);
 
     // Columna SIEMPRE por encabezado vivo del Excel (ignorar letra guardada en outbox).
-    const cellUpdates = fields
-      .filter((field) => !isAlfaOutboundEmptyValue(changes[field].after))
-      .map((field) => {
-        const column = letterFromParsedMapping(parsed.mapping, field);
-        if (!column) {
-          const err = new Error(`OUTBOUND_COLUMN_MISSING_HEADER:${field}`);
-          err.code = 'OUTBOUND_COLUMN_MISSING_HEADER';
-          throw err;
-        }
+    const cellUpdates = [];
+    const missingHeaderFields = [];
+    for (const field of fields) {
+      if (isAlfaOutboundEmptyValue(changes[field].after)) continue;
+      const column = letterFromParsedMapping(parsed.mapping, field);
+      if (!column) {
+        missingHeaderFields.push(field);
+        continue;
+      }
+      try {
         assertOutboundValueTypeOrThrow(field, changes[field].after);
-
-        const entry = getOwnershipEntry(field);
-        const stored = changes[field].column || entry?.column;
-        if (stored && stored !== column) {
-          logOut('ALFA_EXCEL_OUTBOUND_COLUMN_REMAPPED', {
-            outboundId,
-            consecutivo: doc.consecutivo || null,
-            field,
-            stored,
-            resolved: column,
-            note: 'letra_outbox_ignorada_se_usa_encabezado',
-          });
-        }
-        return {
+      } catch (typeErr) {
+        logOut('ALFA_EXCEL_OUTBOUND_SKIP_BAD_TYPE', {
+          outboundId,
           field,
-          column,
-          value: changes[field].after,
-        };
+          error: typeErr.message,
+        });
+        continue;
+      }
+
+      const entry = getOwnershipEntry(field);
+      const stored = changes[field].column || entry?.column;
+      if (stored && stored !== column) {
+        logOut('ALFA_EXCEL_OUTBOUND_COLUMN_REMAPPED', {
+          outboundId,
+          consecutivo: doc.consecutivo || null,
+          field,
+          stored,
+          resolved: column,
+          note: 'letra_outbox_ignorada_se_usa_encabezado',
+        });
+      }
+      cellUpdates.push({
+        field,
+        column,
+        value: changes[field].after,
       });
+    }
+    if (missingHeaderFields.length) {
+      logOut('ALFA_EXCEL_OUTBOUND_SKIP_MISSING_HEADER', {
+        outboundId,
+        consecutivo: doc.consecutivo || null,
+        missingHeaderFields,
+      });
+    }
     if (cellUpdates.length === 0) {
       doc.status = 'cancelled';
-      doc.lastError = 'empty after skip: ARNALD vacío no borra Excel';
+      doc.lastError = missingHeaderFields.length
+        ? `empty after missing headers: ${missingHeaderFields.join(',')}`
+        : 'empty after skip: ARNALD vacío no borra Excel';
       await doc.save();
       return { outcome: 'cancelled', code: 'SKIP_EMPTY_DOES_NOT_CLEAR' };
     }
@@ -1235,7 +1290,6 @@ export async function processAlfaExcelOutboundUpdate(doc) {
     if (
       doc.attempts >= maxAttempts ||
       code === 'AMBIGUOUS_EXCEL_ROW' ||
-      code === 'ALFA_EXCEL_FIELD_NOT_WRITABLE' ||
       code === 'OUTBOUND_CELL_VERIFY_FAILED' ||
       code === 'OUTBOUND_UNEXPECTED_CELL_CHANGE'
     ) {
@@ -1278,6 +1332,28 @@ export async function runAlfaExcelOutboundCycle({ batchSize } = {}) {
   const cfg = getAlfaExcelOutboundConfig();
   const size = batchSize ?? cfg.batchSize;
   const now = new Date();
+
+  // Reintentar failed por campos no writable (ahora se descartan en process).
+  const revived = await AlfaExcelOutboundUpdate.updateMany(
+    {
+      status: 'failed',
+      lastErrorCode: { $in: ['ALFA_EXCEL_FIELD_NOT_WRITABLE', 'OUTBOUND_COLUMN_MISSING_HEADER'] },
+    },
+    {
+      $set: {
+        status: 'pending',
+        attempts: 0,
+        nextRetryAt: now,
+        lastError: null,
+        lastErrorCode: null,
+      },
+    }
+  );
+  if ((revived.modifiedCount || revived.nModified || 0) > 0) {
+    logOut('ALFA_EXCEL_OUTBOUND_REVIVED_FAILED', {
+      n: revived.modifiedCount || revived.nModified,
+    });
+  }
 
   const ids = await AlfaExcelOutboundUpdate.find({
     status: 'pending',
@@ -1477,5 +1553,144 @@ export async function syncMissingArnaldCasosToAlfaExcel({
     excelRowsAfter: excelRowsBefore + totalAppended,
     fileName,
     truncated: true,
+  };
+}
+
+function normEstadoExcelKey(valor) {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Compara estados de cierre/definidos ARNALD vs Excel y reencola gaps.
+ * Evita que un outbox fallido deje CERRADO/OBJETADO/DESISTIDO/LIQUIDADO desfasados.
+ */
+export async function reconcileAlfaExcelEstadoGaps({ apply = true } = {}) {
+  const resolved = await resolveSourceExcel();
+  if (isAlfaExcelFinalProtectedName(resolved.fileName)) {
+    const err = new Error(`Prohibido reconcile en Final: ${resolved.fileName}`);
+    err.code = 'ALFA_EXCEL_FINAL_PROTECTED';
+    throw err;
+  }
+
+  const downloaded = await downloadDriveItemBuffer({
+    driveId: resolved.driveId,
+    itemId: resolved.itemId,
+  });
+  const parsed = parseAlfaExcelBuffer(downloaded.buffer || downloaded);
+  const rows = parsed.rows || [];
+
+  const casos = await SegurosAlfaCaso.find({
+    $and: [
+      { $or: [{ excluidoBaseAlfa: { $exists: false } }, { excluidoBaseAlfa: false }] },
+      {
+        estado: {
+          $in: ['CERRADO', 'OBJETADO', 'DESISTIDO', 'LIQUIDADO', 'ENVIADO ASEGURADORA'],
+        },
+      },
+    ],
+  })
+    .select(
+      'consecutivo identificacion asegurado estado estadoGestion observacionesGestion'
+    )
+    .lean();
+
+  const gaps = [];
+  for (const caso of casos) {
+    if (!isAlfaEstadoDefinido(caso.estado)) continue;
+    let hit = null;
+    try {
+      hit = findExcelRowForCase(caso, rows);
+    } catch (e) {
+      gaps.push({
+        consecutivo: caso.consecutivo,
+        identificacion: caso.identificacion,
+        asegurado: caso.asegurado,
+        estadoArnald: caso.estado,
+        esperadoExcel: estadoAlfaParaSharePoint(caso.estado),
+        issue: e.code || e.message || 'EXCEL_ROW_NOT_FOUND',
+      });
+      continue;
+    }
+    const excelEstado = String(hit.payload?.estado || '').trim();
+    const esperado = estadoAlfaParaSharePoint(caso.estado);
+    if (normEstadoExcelKey(excelEstado) !== normEstadoExcelKey(esperado)) {
+      gaps.push({
+        consecutivo: caso.consecutivo,
+        identificacion: caso.identificacion,
+        asegurado: caso.asegurado,
+        estadoArnald: caso.estado,
+        esperadoExcel: esperado,
+        excelEstado: excelEstado || null,
+        excelRow: hit.rowNumber,
+        issue: 'ESTADO_DESFASADO',
+        _id: caso._id,
+        excelEstadoRaw: excelEstado,
+        estadoGestion: caso.estadoGestion,
+        observacionesGestion: caso.observacionesGestion,
+      });
+    }
+  }
+
+  logOut('ALFA_EXCEL_ESTADO_RECONCILE_SCAN', {
+    fileName: resolved.fileName,
+    excelRows: rows.length,
+    cerrados: casos.length,
+    gaps: gaps.length,
+    byIssue: gaps.reduce((acc, g) => {
+      acc[g.issue] = (acc[g.issue] || 0) + 1;
+      return acc;
+    }, {}),
+  });
+
+  if (!apply) {
+    return {
+      fileName: resolved.fileName,
+      gaps: gaps.length,
+      enqueued: 0,
+      sample: gaps.slice(0, 20).map(({ _id, excelEstadoRaw, estadoGestion, observacionesGestion, ...rest }) => rest),
+      items: gaps,
+    };
+  }
+
+  let enqueued = 0;
+  for (const g of gaps) {
+    if (g.issue !== 'ESTADO_DESFASADO' || !g._id) continue;
+    const caso = await SegurosAlfaCaso.findById(g._id).lean();
+    if (!caso) continue;
+    const before = {
+      ...caso,
+      estado: g.excelEstadoRaw || 'Sin contactar',
+      estadoGestion: 'Sin contactar',
+    };
+    // Forzar diff de estado (+ gestión/obs derivadas) aunque merge previo hubiera fallado.
+    const after = {
+      ...caso,
+      estadoGestion: estadoGestionDesdeEstadoAlfa(caso.estado),
+    };
+    const doc = await enqueueAlfaExcelOutboundFromCaseUpdate({
+      beforeDoc: before,
+      afterDoc: after,
+    });
+    if (doc) enqueued += 1;
+  }
+
+  logOut('ALFA_EXCEL_ESTADO_RECONCILE_ENQUEUED', {
+    fileName: resolved.fileName,
+    gaps: gaps.length,
+    enqueued,
+    missingRows: gaps.filter((g) => g.issue !== 'ESTADO_DESFASADO').length,
+  });
+
+  return {
+    fileName: resolved.fileName,
+    gaps: gaps.length,
+    enqueued,
+    missingRows: gaps.filter((g) => g.issue !== 'ESTADO_DESFASADO').length,
+    sample: gaps.slice(0, 20).map(({ _id, excelEstadoRaw, estadoGestion, observacionesGestion, ...rest }) => rest),
   };
 }

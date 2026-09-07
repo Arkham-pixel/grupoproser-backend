@@ -20,6 +20,7 @@ import { iniciarCronSharePointSync } from './services/cronSharepointSyncService.
 import { iniciarCronAlfaPolicyImport } from './services/cronAlfaPolicyImportService.js';
 import { iniciarCronAlfaExcelSharePointImport } from './services/cronAlfaExcelSharePointImportService.js';
 import { iniciarCronAlfaExcelOutbound } from './services/cronAlfaExcelOutboundService.js';
+import { iniciarCronAlfaExcelEstadoReconcile } from './services/cronAlfaExcelEstadoReconcileService.js';
 import { iniciarCronEquidadFdmExcelSharePointImport } from './services/cronEquidadFdmExcelSharePointImportService.js';
 import { iniciarCronEquidadFdmExcelOutbound } from './services/cronEquidadFdmExcelOutboundService.js';
 import { iniciarSharePointWatchdog } from './services/cronSharePointWatchdogService.js';
@@ -89,6 +90,7 @@ function iniciarServiciosCron() {
   iniciarCronAlfaPolicyImport();
   iniciarCronAlfaExcelSharePointImport();
   iniciarCronAlfaExcelOutbound();
+  iniciarCronAlfaExcelEstadoReconcile();
   iniciarCronEquidadFdmExcelSharePointImport();
   iniciarCronEquidadFdmExcelOutbound();
   iniciarSharePointWatchdog();
