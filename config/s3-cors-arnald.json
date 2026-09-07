@@ -1,0 +1,23 @@
+{
+  "Comment": [
+    "CORS del bucket S3 para ARNALD DataFlow.",
+    "Aplicar en AWS Console → S3 → bucket → Permissions → CORS,",
+    "o: aws s3api put-bucket-cors --bucket NOMBRE --cors-configuration file://s3-cors-arnald.json",
+    "Permite img/fetch desde los orígenes de la app. Las descargas por <a>/<window> no requieren CORS,",
+    "pero el Word (fetch) sí si usa URL firmada."
+  ],
+  "CORSRules": [
+    {
+      "AllowedHeaders": ["*"],
+      "AllowedMethods": ["GET", "HEAD"],
+      "AllowedOrigins": [
+        "https://arnald.grupoproser.com.co",
+        "https://aplicacion.grupoproser.com.co",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173"
+      ],
+      "ExposeHeaders": ["Content-Length", "Content-Type", "ETag"],
+      "MaxAgeSeconds": 3600
+    }
+  ]
+}
