@@ -49,11 +49,13 @@ export function esEmpresaEra(empresa) {
 }
 
 export function esIdentidadEra(identidad = {}) {
+  if (!identidad || typeof identidad !== 'object') return false;
   if (esRolEra(identidad.rol || identidad.role)) return true;
   return esEmpresaEra(identidad.empresa);
 }
 
 export function esIdentidadLiderEra(identidad = {}) {
+  if (!identidad || typeof identidad !== 'object') return false;
   const login = claveDocumentoEra(identidad.login || identidad.cedula);
   if (login && login === LIDER_ERA.login) return true;
   if (!esIdentidadEra(identidad)) return false;
@@ -62,6 +64,7 @@ export function esIdentidadLiderEra(identidad = {}) {
 }
 
 export function esIdentidadLiderProserAjustes(identidad = {}) {
+  if (!identidad || typeof identidad !== 'object') return false;
   const hay = haystackPersona(identidad.name || identidad.nombre || '');
   if (!hay) return false;
   return LIDER_PROSER_AJUSTES.needles.some((n) => hay.includes(haystackPersona(n)));

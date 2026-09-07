@@ -66,6 +66,7 @@ export function esLoginConVistaGlobalAgenda(login) {
 
 /** Login o cédula: ve todos los calendarios generales CAT, sin ser admin. */
 export function esIdentidadConVistaGlobalAgenda(opts = {}) {
+  if (!opts || typeof opts !== 'object') return false;
   return [opts.login, opts.cedula].some((v) => esLoginConVistaGlobalAgenda(v));
 }
 

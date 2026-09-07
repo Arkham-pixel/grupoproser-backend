@@ -200,7 +200,9 @@ function esRolAgendaGlobal(rol) {
   return r === 'admin' || r === 'soporte';
 }
 
-function esVistaAgendaGlobal(identidad = {}) {
+function esVistaAgendaGlobal(identidad) {
+  // `identidad = null` (p. ej. disponibilidadAgenda / cron) no aplica el default de parámetro.
+  if (!identidad || typeof identidad !== 'object') return false;
   return esRolAgendaGlobal(identidad.rol) || esIdentidadConVistaGlobalAgenda(identidad);
 }
 
@@ -273,16 +275,18 @@ export async function listarEventosAgenda({
   const desdeYmd = ymdBogota(desde) || ymdBogota(new Date());
   const hastaYmd = ymdBogota(hasta) || desdeYmd;
   const personaNorm = normNombrePersona(persona);
-  const fuentes = fuentesParaIdentidad(identidad, rolUsuario);
+  const identidadNorm =
+    identidad && typeof identidad === 'object' ? identidad : null;
+  const fuentes = fuentesParaIdentidad(identidadNorm, rolUsuario);
 
   const bloques = await Promise.all(
     fuentes.map(async (fuente) => {
       try {
         let filtro = filtroFechaMongo(fuente.fechaCampo, desdeYmd, hastaYmd);
         if (
-          esIdentidadEra(identidad) &&
+          esIdentidadEra(identidadNorm) &&
           fuente.key === 'alfa' &&
-          !esVistaAgendaGlobal(identidad)
+          !esVistaAgendaGlobal(identidadNorm)
         ) {
           filtro = combinarFiltrosMongo(filtro, await construirFiltroVistaEra());
         }
@@ -302,7 +306,7 @@ export async function listarEventosAgenda({
 
   let eventos = bloques.flat();
   if (filtrarPorIdentidad) {
-    eventos = filtrarEventosPorIdentidad(eventos, identidad);
+    eventos = filtrarEventosPorIdentidad(eventos, identidadNorm);
   }
   if (personaNorm) eventos = eventos.filter((ev) => coincidePersona(ev, personaNorm));
   if (rolVista === 'ajustador') eventos = eventos.filter((ev) => ev.ajustador);
