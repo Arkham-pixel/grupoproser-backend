@@ -626,6 +626,13 @@ export const actualizarCasoSura = async (req, res) => {
       payload.nmroAjste = base.nmroAjste || payload.consecutivo;
     }
 
+    // Al asignar/cambiar ajustador, registrar fecha de asignación si no existe.
+    const ajustadorAntes = String(base.ajustador || base.codiRespnsble || '').trim();
+    const ajustadorDespues = String(payload.ajustador || payload.codiRespnsble || '').trim();
+    if (ajustadorDespues && ajustadorDespues !== ajustadorAntes && !payload.fchaAsgncion) {
+      payload.fchaAsgncion = new Date();
+    }
+
     const faltantes = validarRequeridos(payload);
     if (faltantes.length > 0) {
       return res.status(400).json({

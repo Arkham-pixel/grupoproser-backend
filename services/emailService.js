@@ -244,6 +244,21 @@ function formatearFechaCorreo(valor, datos = {}) {
   }
 }
 
+/** Primer valor usable para correo (ignora vacío / "No especificado"). */
+function textoCorreo(...valores) {
+  for (const valor of valores) {
+    if (valor == null) continue;
+    const texto = String(valor).trim();
+    if (!texto) continue;
+    const lower = texto.toLowerCase();
+    if (lower === 'no especificado' || lower === 'no especificada' || lower === 'n/a' || lower === '—') {
+      continue;
+    }
+    return texto;
+  }
+  return '';
+}
+
 // Función para enviar email de notificación de asignación de caso
 export const enviarNotificacionAsignacion = async (datosCaso) => {
   try {
@@ -452,8 +467,48 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
     console.log('📧 Nombre final del funcionario:', nombreFuncionario);
     
     // Formatear fecha de asignación (formato: 20/11/2025)
-    const fechaFormateada = formatearFechaCorreo(datosCaso.fechaAsignacion, datosCaso);
-    const fechaSiniestroFormateada = formatearFechaCorreo(datosCaso.fechaSiniestro, datosCaso);
+    const fechaFormateada = formatearFechaCorreo(
+      datosCaso.fechaAsignacion || datosCaso.fchaAsgncion,
+      datosCaso
+    );
+    const fechaSiniestroFormateada = formatearFechaCorreo(
+      datosCaso.fechaSiniestro || datosCaso.fchaSinstro,
+      datosCaso
+    );
+    const numeroSiniestroCorreo = textoCorreo(
+      datosCaso.numeroSiniestro,
+      datosCaso.siniestro,
+      datosCaso.nmroSinstro
+    );
+    const aseguradoCorreo = textoCorreo(
+      datosCaso.aseguradoReal,
+      datosCaso.asgrBenfcro,
+      datosCaso.asegurado,
+      datosCaso.tomador
+    );
+    const intermediarioCorreo = textoCorreo(
+      datosCaso.intermediario,
+      datosCaso.nombIntermediario
+    );
+    const tipoPolizaCorreo = textoCorreo(
+      datosCaso.tipoPoliza,
+      datosCaso.cobertura,
+      datosCaso.ramo,
+      datosCaso.causa_siniestro
+    );
+    const ciudadCorreo = textoCorreo(
+      datosCaso.ciudadSiniestro,
+      datosCaso.ciudad,
+      datosCaso.descripcionCiudad,
+      datosCaso.nombreCiudad
+    );
+    const polizaCorreo = textoCorreo(datosCaso.numeroPoliza, datosCaso.nmroPolza);
+    const workflowCorreo = textoCorreo(datosCaso.codigoWorkflow, datosCaso.codWorkflow);
+    const descripcionCorreo = textoCorreo(
+      datosCaso.descripcionSiniestro,
+      datosCaso.descSinstro,
+      datosCaso.observacionLlamada
+    );
     const htmlEnlaceCaso = htmlBotonAccesoCaso(datosCaso);
     
     // Generar HTML según el tipo de caso
@@ -584,7 +639,7 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.claimNumberLabel}</td>
-                  <td style="padding: 8px 0; color: #1f2937; font-weight: 600;">${datosCaso.numeroSiniestro || t.notSpecified}</td>
+                  <td style="padding: 8px 0; color: #1f2937; font-weight: 600;">${numeroSiniestroCorreo || t.notSpecified}</td>
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.claimDate}</td>
@@ -592,11 +647,11 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.policyBranch}</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.tipoPoliza || datosCaso.ramo || t.notSpecified}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${tipoPolizaCorreo || t.notSpecified}</td>
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.workflowCode}</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.codigoWorkflow || t.notSpecified}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${workflowCorreo || t.notSpecified}</td>
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.insurer}</td>
@@ -604,11 +659,11 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.insuredBeneficiary}</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.aseguradoReal || datosCaso.asgrBenfcro || t.notSpecified}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${aseguradoCorreo || t.notSpecified}</td>
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.intermediary}</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.intermediario || datosCaso.asegurado || t.notSpecified}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${intermediarioCorreo || t.notSpecified}</td>
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.insurerOfficer}</td>
@@ -616,11 +671,11 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.claimCity}</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.ciudadSiniestro || datosCaso.descripcionCiudad || t.notSpecifiedF}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${ciudadCorreo || t.notSpecifiedF}</td>
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.policyNumber}</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.numeroPoliza || t.notSpecified}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${polizaCorreo || t.notSpecified}</td>
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; font-weight: bold; color: #374151;">${t.caseStatus}</td>
@@ -640,7 +695,7 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; font-weight: bold; color: #374151; vertical-align: top;">${t.description}</td>
-                  <td style="padding: 8px 0; color: #1f2937;">${datosCaso.descripcionSiniestro || t.notSpecifiedF}</td>
+                  <td style="padding: 8px 0; color: #1f2937;">${descripcionCorreo || t.notSpecifiedF}</td>
                 </tr>
               </table>
             </div>
@@ -675,7 +730,7 @@ export const enviarNotificacionAsignacion = async (datosCaso) => {
     
     const asuntoComplex = getEmailSubject(datosCaso, 'subjectAsignacionComplex', {
       numero: datosCaso.numeroCaso || t.newCase,
-      siniestro: datosCaso.numeroSiniestro || '—',
+      siniestro: numeroSiniestroCorreo || '—',
     });
     
     // Construir objeto mailOptions con todos los datos necesarios

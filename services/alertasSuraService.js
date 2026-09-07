@@ -430,23 +430,73 @@ export async function notificarModificacionCasoSura({
   const consecutivo = despues.consecutivo || antes.consecutivo || '';
   const actorNombre = actor.name || actor.login || 'ARNALD';
 
+  const nombreAsegurado = [
+    despues.asegurado,
+    despues.asgrBenfcro,
+    despues.tomador,
+  ]
+    .map((v) => String(v || '').trim())
+    .find((v) => v && !/^seguros\s+generales\s+suramericana/i.test(v)) || '';
+
+  const fechaAsignacion =
+    despues.fchaAsgncion ||
+    despues.fechaAsignacion ||
+    despues.updatedAt ||
+    despues.createdAt ||
+    new Date();
+
+  const payloadBase = {
+    modulo: 'sura',
+    tipoCaso: 'sura',
+    numeroCaso: consecutivo || despues.nmroAjste || '',
+    consecutivo,
+    casoId,
+    numeroSiniestro: despues.siniestro || despues.nmroSinstro || '',
+    siniestro: despues.siniestro || despues.nmroSinstro || '',
+    nmroSinstro: despues.nmroSinstro || despues.siniestro || '',
+    codigoWorkflow: despues.codWorkflow || '',
+    codWorkflow: despues.codWorkflow || '',
+    fechaSiniestro: despues.fechaSiniestro || despues.fchaSinstro || null,
+    fchaSinstro: despues.fchaSinstro || despues.fechaSiniestro || null,
+    fechaAsignacion,
+    fchaAsgncion: fechaAsignacion,
+    tipoPoliza: despues.cobertura || despues.tipoPoliza || despues.causa_siniestro || '',
+    cobertura: despues.cobertura || '',
+    ramo: despues.cobertura || despues.tipoPoliza || '',
+    aseguradora: 'Seguros Sura',
+    nombreAseguradora: despues.nombreAseguradora || 'Seguros Sura',
+    asegurado: nombreAsegurado,
+    aseguradoReal: nombreAsegurado,
+    asgrBenfcro: nombreAsegurado,
+    tomador: despues.tomador || '',
+    intermediario: despues.nombIntermediario || '',
+    nombIntermediario: despues.nombIntermediario || '',
+    funcionarioAseguradora: despues.funcAsgrdraNombre || '',
+    funcAsgrdraNombre: despues.funcAsgrdraNombre || '',
+    funcAsgrdra: despues.funcAsgrdra || '',
+    numeroPoliza: despues.numeroPoliza || despues.nmroPolza || '',
+    nmroPolza: despues.nmroPolza || despues.numeroPoliza || '',
+    ciudadSiniestro: despues.ciudad || despues.ciudadSiniestro || despues.nombreCiudad || '',
+    ciudad: despues.ciudad || '',
+    descripcionCiudad: despues.descripcionCiudad || despues.ciudad || '',
+    descripcionSiniestro: despues.descSinstro || despues.observacionLlamada || '',
+    descSinstro: despues.descSinstro || '',
+    estado: despues.estado || despues.descripcionEstado || '',
+    descripcionEstado: despues.descripcionEstado || despues.estado || '',
+    codiEstdo: despues.codiEstdo || '',
+    nombreResponsable: despues.ajustador || despues.nombreResponsable || '',
+    quienAsigna: actorNombre,
+    observaciones: `Se actualizó el caso SURA ${consecutivo}.\n\n${cambios.join('\n')}`,
+    enlacePanelOverride: casoId
+      ? `${process.env.FRONTEND_URL || 'https://arnald.proserpuertos.com.co'}/sura/caso?id=${casoId}`
+      : '',
+  };
+
   const resultados = [];
   for (const email of unicos) {
     const r = await enviarNotificacionAsignacion({
-      modulo: 'sura',
-      tipoCaso: 'sura',
-      numeroCaso: consecutivo,
-      consecutivo,
-      casoId,
-      aseguradora: 'Seguros Sura',
-      asegurado: despues.asegurado || despues.tomador || '',
-      nombreResponsable: despues.ajustador || '',
+      ...payloadBase,
       emailResponsable: email,
-      quienAsigna: actorNombre,
-      observaciones: `Se actualizó el caso SURA ${consecutivo}.\n\n${cambios.join('\n')}`,
-      enlacePanelOverride: casoId
-        ? `${process.env.FRONTEND_URL || 'https://arnald.proserpuertos.com.co'}/sura/caso?id=${casoId}`
-        : '',
     });
     resultados.push({ email, ...r });
   }
