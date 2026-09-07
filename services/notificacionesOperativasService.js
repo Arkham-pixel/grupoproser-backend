@@ -488,3 +488,204 @@ export async function marcarTodasLeidas({ userId, login } = {}) {
   });
   return { modified: res.modifiedCount || 0 };
 }
+
+function loginsNotifyTicketsCampana() {
+  return String(process.env.TICKETS_NOTIFY_LOGINS || '1065012991')
+    .split(/[,;]+/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+}
+
+function normalizarLoginTicket(login = '') {
+  return String(login || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '');
+}
+
+/**
+ * Notificación local (campana) al crear un ticket:
+ * solo a los logins de TICKETS_NOTIFY_LOGINS (por defecto Oscar Atencia 1065012991).
+ */
+export async function notificarTicketCreado(ticket, actorExplicito = null) {
+  if (notificacionesDesactivadas() || !ticket) return { creadas: 0 };
+
+  const loginsPermitidos = new Set(
+    loginsNotifyTicketsCampana().map((l) => normalizarLoginTicket(l))
+  );
+  if (!loginsPermitidos.size) return { creadas: 0 };
+
+  const datos = await cargarDatosOperativos(actorExplicito);
+  const destinos = new Map();
+
+  for (const u of datos.users || []) {
+    if (!u?._id) continue;
+    const loginNorm = normalizarLoginTicket(u.login || u.cedula || '');
+    if (!loginNorm || !loginsPermitidos.has(loginNorm)) continue;
+    destinos.set(String(u._id), u);
+  }
+
+  // Si el usuario no está en cache, buscarlo directo por login
+  if (!destinos.size) {
+    for (const login of loginsNotifyTicketsCampana()) {
+      try {
+        const u = await SecurUser.findOne({
+          $or: [
+            { login },
+            { login: { $regex: new RegExp(`^${login}$`, 'i') } },
+            { cedula: login },
+          ],
+        })
+          .select('_id login name role')
+          .lean();
+        if (u?._id) destinos.set(String(u._id), u);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  const ruta = `/tickets?id=${ticket._id}`;
+  const tituloSoporte = `Nuevo ticket ${ticket.numero}`;
+  const mensajeSoporte = `${ticket.creadoPorNombre || ticket.creadoPorLogin}: ${ticket.titulo}`;
+  let creadas = 0;
+
+  for (const u of destinos.values()) {
+    try {
+      await NotificacionOperativa.create({
+        recipientUserId: String(u._id),
+        recipientLogin: String(u.login || ''),
+        recipientRole: String(u.role || ''),
+        tipo: 'ticket',
+        modulo: 'tickets',
+        titulo: tituloSoporte,
+        mensaje: mensajeSoporte,
+        cantidad: 1,
+        ruta,
+        campoAsignacion: ticket.prioridad || '',
+        casos: [
+          {
+            id: String(ticket._id),
+            etiqueta: ticket.numero,
+            consecutivo: ticket.numero,
+            siniestro: ticket.modulo || '',
+            asegurado: ticket.creadoPorNombre || ticket.creadoPorLogin || '',
+          },
+        ],
+      });
+      creadas += 1;
+    } catch (err) {
+      console.error('❌ Notificación ticket (campana):', err.message);
+    }
+  }
+
+  if (!creadas) {
+    console.warn(
+      '⚠️ [tickets] Ningún destinatario de campana encontrado para logins:',
+      [...loginsPermitidos].join(', ')
+    );
+  }
+
+  return { creadas };
+}
+
+/**
+ * Avisa al autor cuando soporte cambia el estado del ticket (progreso de su solicitud).
+ */
+export async function notificarTicketEstadoCambiado(
+  ticket,
+  estadoAnterior,
+  actorExplicito = null,
+  { comentario = '' } = {}
+) {
+  if (notificacionesDesactivadas() || !ticket) return { creadas: 0 };
+  if (!ticket.creadoPorUserId && !ticket.creadoPorLogin) return { creadas: 0 };
+  if (String(estadoAnterior || '') === String(ticket.estado || '')) return { creadas: 0 };
+
+  const actor = actorExplicito || usuarioActualContexto();
+  if (
+    actor &&
+    (String(actor.id || actor._id) === String(ticket.creadoPorUserId) ||
+      String(actor.login || '').toLowerCase() === String(ticket.creadoPorLogin || '').toLowerCase())
+  ) {
+    return { creadas: 0 };
+  }
+
+  const etiquetas = {
+    abierto: 'Abierto',
+    en_progreso: 'En progreso',
+    resuelto: 'Resuelto',
+    cerrado: 'Cerrado',
+  };
+  const desde = etiquetas[estadoAnterior] || String(estadoAnterior || '—').replace(/_/g, ' ');
+  const hasta = etiquetas[ticket.estado] || String(ticket.estado || '').replace(/_/g, ' ');
+
+  let titulo = `Tu ticket ${ticket.numero}: ${hasta}`;
+  if (ticket.estado === 'cerrado') {
+    titulo = `Tu ticket ${ticket.numero} fue cerrado`;
+  } else if (ticket.estado === 'resuelto') {
+    titulo = `Tu ticket ${ticket.numero} fue resuelto`;
+  } else if (ticket.estado === 'en_progreso') {
+    titulo = `Tu ticket ${ticket.numero} está en progreso`;
+  }
+
+  const partesMensaje = [
+    ticket.titulo ? `"${ticket.titulo}"` : '',
+    `Estado: ${desde} → ${hasta}`,
+  ].filter(Boolean);
+  const nota = String(comentario || '').trim();
+  if (nota) partesMensaje.push(`Nota de soporte: ${nota.slice(0, 180)}`);
+
+  let recipientUserId = String(ticket.creadoPorUserId || '');
+  let recipientLogin = String(ticket.creadoPorLogin || '');
+  let recipientRole = String(ticket.creadoPorRol || '');
+
+  if (!recipientUserId && recipientLogin) {
+    try {
+      const u = await SecurUser.findOne({
+        $or: [
+          { login: recipientLogin },
+          { login: { $regex: new RegExp(`^${recipientLogin}$`, 'i') } },
+          { cedula: recipientLogin },
+        ],
+      })
+        .select('_id login role')
+        .lean();
+      if (u?._id) {
+        recipientUserId = String(u._id);
+        recipientLogin = String(u.login || recipientLogin);
+        recipientRole = String(u.role || recipientRole);
+      }
+    } catch {
+      /* continuar con login */
+    }
+  }
+
+  try {
+    await NotificacionOperativa.create({
+      recipientUserId,
+      recipientLogin,
+      recipientRole,
+      tipo: 'ticket',
+      modulo: 'tickets',
+      titulo,
+      mensaje: partesMensaje.join(' · '),
+      cantidad: 1,
+      ruta: `/tickets?id=${ticket._id}`,
+      campoAsignacion: String(ticket.estado || ''),
+      casos: [
+        {
+          id: String(ticket._id),
+          etiqueta: ticket.numero,
+          consecutivo: ticket.numero,
+          siniestro: ticket.modulo || '',
+          asegurado: ticket.creadoPorNombre || ticket.creadoPorLogin || '',
+        },
+      ],
+    });
+    return { creadas: 1 };
+  } catch (err) {
+    console.error('❌ Notificación ticket (estado):', err.message);
+    return { creadas: 0 };
+  }
+}

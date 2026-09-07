@@ -2658,3 +2658,146 @@ export const enviarNotificacionSubtareaReabierta = async (datos = {}) => {
   const info = await deliverMail(mailOptions, { tipo: 'subtareaReabierta' });
   return { success: true, messageId: info.messageId };
 };
+
+function destinatariosTicketsSoporte() {
+  const raw =
+    process.env.TICKETS_NOTIFY_EMAIL ||
+    'danalyst@proserpuertos.com.co';
+  return String(raw)
+    .split(/[,;]+/)
+    .map((e) => e.trim())
+    .filter(Boolean);
+}
+
+function escapeHtml(texto = '') {
+  return String(texto)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function htmlAdjuntosTicket(adjuntos = [], baseUrl) {
+  if (!adjuntos?.length) return '<p style="color:#6b7280;">Sin adjuntos</p>';
+  const items = adjuntos
+    .map((a) => {
+      const nombre = escapeHtml(a.nombre || 'archivo');
+      const ruta = a.ruta || '';
+      const href = ruta.startsWith('http')
+        ? ruta
+        : `${baseUrl}${ruta.startsWith('/') ? ruta : `/${ruta}`}`;
+      return `<li style="margin-bottom:6px;"><a href="${href}" target="_blank" style="color:#2563eb;">📎 ${nombre}</a></li>`;
+    })
+    .join('');
+  return `<ul style="padding-left:18px;margin:8px 0;">${items}</ul>`;
+}
+
+/** Aviso a soporte/TI cuando un usuario reporta un ticket. */
+export const enviarNotificacionTicketSoporte = async (ticket) => {
+  const destinos = destinatariosTicketsSoporte();
+  if (!destinos.length) {
+    return { success: false, message: 'Sin destinatarios de tickets configurados' };
+  }
+
+  const frontendUrl = resolveFrontendUrl();
+  const baseUrl = process.env.BASE_URL || process.env.BACKEND_URL || 'http://localhost:3000';
+  const linkTicket = `${frontendUrl}/tickets?id=${ticket._id}`;
+  const fromAddr = process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@proserpuertos.com.co';
+
+  const mailOptions = {
+    from: `"Grupo Proser - Tickets" <${fromAddr}>`,
+    to: destinos.join(', '),
+    subject: `[Ticket ${ticket.numero}] ${ticket.titulo}`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;color:#111827;">
+        <h2 style="color:#b91c1c;margin-bottom:8px;">Nuevo ticket de plataforma</h2>
+        <p style="margin:0 0 16px;color:#4b5563;">Un usuario reportó un problema o queja en ARNALD.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:14px;">
+          <tr><td style="padding:6px 0;color:#6b7280;width:140px;">Número</td><td style="padding:6px 0;"><strong>${escapeHtml(ticket.numero)}</strong></td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280;">Título</td><td style="padding:6px 0;">${escapeHtml(ticket.titulo)}</td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280;">Tipo</td><td style="padding:6px 0;">${escapeHtml(ticket.tipo)}</td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280;">Módulo</td><td style="padding:6px 0;">${escapeHtml(ticket.modulo)}</td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280;">Prioridad</td><td style="padding:6px 0;">${escapeHtml(ticket.prioridad)}</td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280;">Usuario</td><td style="padding:6px 0;">${escapeHtml(ticket.creadoPorNombre || ticket.creadoPorLogin)} (${escapeHtml(ticket.creadoPorLogin)})</td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280;">Correo</td><td style="padding:6px 0;">${escapeHtml(ticket.creadoPorEmail || '—')}</td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280;">Rol</td><td style="padding:6px 0;">${escapeHtml(ticket.creadoPorRol || '—')}</td></tr>
+        </table>
+        <div style="margin-top:16px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;">
+          <div style="font-weight:600;margin-bottom:6px;">Descripción</div>
+          <div style="white-space:pre-wrap;line-height:1.5;">${escapeHtml(ticket.descripcion)}</div>
+        </div>
+        <div style="margin-top:16px;">
+          <div style="font-weight:600;margin-bottom:4px;">Adjuntos</div>
+          ${htmlAdjuntosTicket(ticket.adjuntos, baseUrl)}
+        </div>
+        <p style="margin-top:20px;">
+          <a href="${linkTicket}" style="display:inline-block;background:#b91c1c;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">
+            Ver ticket en ARNALD
+          </a>
+        </p>
+      </div>
+    `,
+  };
+
+  return enviarMailTicketRobusto(mailOptions, 'ticketSoporte', destinos.join(', '));
+};
+
+/** Confirmación al usuario que creó el ticket. */
+export const enviarConfirmacionTicketUsuario = async (ticket) => {
+  const to = String(ticket.creadoPorEmail || '').trim();
+  if (!to) {
+    return { success: false, message: 'El ticket no tiene email de usuario' };
+  }
+
+  const frontendUrl = resolveFrontendUrl();
+  const linkTicket = `${frontendUrl}/tickets?id=${ticket._id}`;
+  const fromAddr = process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@proserpuertos.com.co';
+
+  const mailOptions = {
+    from: `"Grupo Proser - Tickets" <${fromAddr}>`,
+    to,
+    subject: `Recibimos tu reporte ${ticket.numero}`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;color:#111827;">
+        <h2 style="color:#047857;margin-bottom:8px;">Recibimos tu reporte</h2>
+        <p>Hola ${escapeHtml(ticket.creadoPorNombre || ticket.creadoPorLogin)},</p>
+        <p>Tu ticket <strong>${escapeHtml(ticket.numero)}</strong> fue registrado correctamente. El equipo de soporte lo revisará pronto.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:14px;margin:16px 0;">
+          <tr><td style="padding:6px 0;color:#6b7280;width:120px;">Título</td><td style="padding:6px 0;">${escapeHtml(ticket.titulo)}</td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280;">Módulo</td><td style="padding:6px 0;">${escapeHtml(ticket.modulo)}</td></tr>
+          <tr><td style="padding:6px 0;color:#6b7280;">Estado</td><td style="padding:6px 0;">Abierto</td></tr>
+        </table>
+        <p style="margin-top:16px;">
+          <a href="${linkTicket}" style="display:inline-block;background:#047857;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">
+            Ver mi ticket
+          </a>
+        </p>
+        <p style="margin-top:24px;font-size:12px;color:#6b7280;">Este es un mensaje automático de ARNALD / Grupo Proser.</p>
+      </div>
+    `,
+  };
+
+  return enviarMailTicketRobusto(mailOptions, 'ticketConfirmacion', to);
+};
+
+/**
+ * Envía el correo de ticket o lo encola en outbox para reintento automático.
+ * No lanza excepción: el ticket ya está guardado y el aviso no debe tumbar el flujo.
+ */
+async function enviarMailTicketRobusto(mailOptions, tipo, destinoLog = '') {
+  try {
+    const info = await deliverMail(mailOptions, { tipo, enqueue: false });
+    console.log(`✅ [tickets] ${tipo} enviado a:`, destinoLog || mailOptions.to);
+    return { success: true, messageId: info.messageId, queued: false };
+  } catch (err) {
+    try {
+      const { enqueueOutgoingMail } = await import('./emailOutboxService.js');
+      await enqueueOutgoingMail(mailOptions, { tipo }, err);
+      console.warn(`📥 [tickets] ${tipo} encolado para reintento:`, err.message);
+      return { success: true, queued: true, error: err.message };
+    } catch (queueErr) {
+      console.error(`❌ [tickets] ${tipo} no se pudo enviar ni encolar:`, queueErr.message);
+      return { success: false, queued: false, error: queueErr.message || err.message };
+    }
+  }
+}

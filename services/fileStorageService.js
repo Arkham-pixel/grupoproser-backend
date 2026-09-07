@@ -134,6 +134,7 @@ export const STORAGE_CATEGORIES = Object.freeze({
   PREVISORA: 'previsora',
   EQUIDAD_CAT: 'equidad-cat',
   EQUIDAD_FDM: 'equidad-fdm',
+  TICKETS: 'tickets',
   GENERAL: 'general',
 });
 
@@ -210,6 +211,9 @@ export function buildStoredPublicPath({ driver, category, filename, s3Key }) {
   }
   if (category === STORAGE_CATEGORIES.EQUIDAD_FDM) {
     return `/uploads/equidad-fdm/${filename}`;
+  }
+  if (category === STORAGE_CATEGORIES.TICKETS) {
+    return `/uploads/tickets/${filename}`;
   }
   return `/uploads/${filename}`;
 }
@@ -543,6 +547,7 @@ export function getLocalMulterDestination(category, subfolder) {
     [STORAGE_CATEGORIES.PREVISORA]: path.join(UPLOADS_ROOT, 'previsora'),
     [STORAGE_CATEGORIES.EQUIDAD_CAT]: path.join(UPLOADS_ROOT, 'equidad-cat'),
     [STORAGE_CATEGORIES.EQUIDAD_FDM]: path.join(UPLOADS_ROOT, 'equidad-fdm'),
+    [STORAGE_CATEGORIES.TICKETS]: path.join(UPLOADS_ROOT, 'tickets'),
   };
   return map[category] || UPLOADS_ROOT;
 }

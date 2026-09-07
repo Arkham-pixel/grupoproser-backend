@@ -168,23 +168,23 @@ const APIS_CATASTROFICOS = [
 export const CONTRATISTAS_MODULO = {
   contractor_zurich: rolContractor({
     apis: APIS_TRES,
-    mensaje: 'Su rol solo permite trabajar los módulos Zurich, Alfa, Sura y BBVA.',
+    mensaje: 'Su rol solo permite Home y los módulos Zurich, Alfa, Sura y BBVA.',
   }),
   contractor_alfa: rolContractor({
     apis: APIS_TRES,
-    mensaje: 'Su rol solo permite trabajar los módulos Zurich, Alfa, Sura y BBVA.',
+    mensaje: 'Su rol solo permite Home y los módulos Zurich, Alfa, Sura y BBVA.',
   }),
   contractor_sura: rolContractor({
     apis: APIS_TRES,
-    mensaje: 'Su rol solo permite trabajar los módulos Zurich, Alfa, Sura y BBVA.',
+    mensaje: 'Su rol solo permite Home y los módulos Zurich, Alfa, Sura y BBVA.',
   }),
   contractor_solo_zurich: rolContractor({
     apis: APIS_SOLO_ZURICH,
-    mensaje: 'Su rol Zurich solo permite trabajar el módulo Zurich.',
+    mensaje: 'Su rol Zurich solo permite Home y el módulo Zurich.',
   }),
   contractor_solo_bbva: rolContractor({
     apis: APIS_SOLO_BBVA,
-    mensaje: 'Su rol BBVA solo permite trabajar el módulo BBVA CAT.',
+    mensaje: 'Su rol BBVA solo permite Home y el módulo BBVA CAT.',
   }),
   contractor_solo_equidad: rolContractor({
     apis: APIS_SOLO_EQUIDAD,
@@ -193,11 +193,11 @@ export const CONTRATISTAS_MODULO = {
   }),
   contractor_solo_equidad_cat: rolContractor({
     apis: APIS_SOLO_EQUIDAD_CAT,
-    mensaje: 'Su rol Equidad CAT solo permite trabajar los módulos Equidad CAT y Allianz.',
+    mensaje: 'Su rol Equidad CAT solo permite Home y los módulos Equidad CAT y Allianz.',
   }),
   contractor_solo_express: rolContractor({
     apis: APIS_SOLO_EXPRESS,
-    mensaje: 'Su rol Express solo permite trabajar el módulo Express.',
+    mensaje: 'Su rol Express solo permite Home y el módulo Express.',
   }),
   contractor_solo_previsora: rolContractor({
     apis: APIS_SOLO_PREVISORA,
@@ -205,11 +205,11 @@ export const CONTRATISTAS_MODULO = {
   }),
   contractor_catastroficos: rolContractor({
     apis: APIS_CATASTROFICOS,
-    mensaje: 'Su rol Catastróficos solo permite Previsora, Zurich, BBVA, Alfa, Sura, Allianz y Equidad CAT.',
+    mensaje: 'Su rol Catastróficos solo permite Home y Previsora, Zurich, BBVA, Alfa, Sura, Allianz y Equidad CAT.',
   }),
   contractor_era: rolContractor({
     apis: APIS_ERA,
-    mensaje: 'Su rol ERA solo permite trabajar los casos Alfa que se asignen a la firma.',
+    mensaje: 'Su rol ERA solo permite Home y los casos Alfa que se asignen a la firma.',
   }),
 };
 
