@@ -2835,6 +2835,144 @@ export const enviarConfirmacionTicketUsuario = async (ticket) => {
   return enviarMailTicketRobusto(mailOptions, 'ticketConfirmacion', to);
 };
 
+/** Invita a un nuevo colaborador a firmar acuerdos y completar onboarding remoto. */
+export const enviarInvitacionOnboarding = async (datos = {}) => {
+  const email = String(datos.emailDestino || '').trim();
+  const token = String(datos.token || '').trim();
+  if (!email || !token) {
+    return { success: false, message: 'Email o token faltante' };
+  }
+
+  const frontendUrl = String(datos.frontendUrl || resolveFrontendUrl()).replace(/\/+$/, '');
+  const urlPublica = `${frontendUrl}/onboarding/${token}`;
+  const dias = datos.diasValidez || 14;
+  const nombre = datos.nombreDestino || 'colaborador(a)';
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+    to: email,
+    subject: 'Invitación onboarding — Proser Ajustes / Grupo Proser',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background:#f8f9fa; padding:20px;">
+        <div style="background:#fff; padding:28px; border-radius:10px;">
+          <h1 style="color:#1f2937; font-size:22px; margin:0 0 8px;">Bienvenido(a) a Grupo Proser</h1>
+          <p style="color:#6b7280; margin:0 0 20px;">
+            Hola <strong>${nombre}</strong>, te invitamos a completar tu registro remoto.
+          </p>
+          <ol style="color:#374151; padding-left:20px; line-height:1.6;">
+            <li>Firmar la <strong>Política de tratamiento de datos personales</strong></li>
+            <li>Firmar el <strong>Acuerdo de confidencialidad y no divulgación</strong></li>
+            <li>Crear tu contraseña de acceso</li>
+            <li>Subir hoja de vida, certificado bancario y cédula</li>
+          </ol>
+          <p style="color:#6b7280;">El enlace es válido por <strong>${dias} días</strong>.</p>
+          <div style="text-align:center; margin-top:28px;">
+            <a href="${urlPublica}" style="display:inline-block; background:#c8102e; color:#fff; text-decoration:none; padding:12px 22px; border-radius:8px; font-weight:bold;">
+              Completar registro
+            </a>
+          </div>
+          <p style="color:#9ca3af; font-size:12px; margin-top:24px; text-align:center;">
+            Si el botón no funciona, copia este enlace:<br/>
+            <span style="word-break:break-all;">${urlPublica}</span>
+          </p>
+        </div>
+      </div>
+    `,
+  };
+
+  try {
+    const info = await deliverMail(mailOptions, { tipo: 'onboardingInvitacion' });
+    return { success: true, messageId: info.messageId, urlPublica };
+  } catch (err) {
+    console.error('Error enviando invitación onboarding:', err.message);
+    return { success: false, message: err.message, urlPublica };
+  }
+};
+
+function escapeHtmlEmail(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Envía copia de usuario y contraseña con un letrero destacado (Gmail / Outlook / SMTP configurado).
+ */
+export const enviarCredencialesOnboarding = async (datos = {}) => {
+  const email = String(datos.emailDestino || '').trim();
+  const login = String(datos.login || '').trim();
+  const password = String(datos.password || '');
+  if (!email || !login || !password) {
+    return { success: false, message: 'Faltan email, usuario o contraseña' };
+  }
+
+  const nombre = escapeHtmlEmail(datos.nombreDestino || 'colaborador(a)');
+  const loginSafe = escapeHtmlEmail(login);
+  const passwordSafe = escapeHtmlEmail(password);
+  const frontendUrl = String(datos.frontendUrl || resolveFrontendUrl()).replace(/\/+$/, '');
+  const urlLogin = `${frontendUrl}/login`;
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+    to: email,
+    subject: 'Sus credenciales de acceso — Grupo Proser / ARNALD',
+    html: `
+      <div style="font-family: Arial, Helvetica, sans-serif; max-width: 640px; margin: 0 auto; background:#f3f4f6; padding:24px;">
+        <div style="background:#ffffff; border-radius:12px; overflow:hidden; border:1px solid #e5e7eb;">
+          <div style="background:#111827; color:#fff; padding:20px 24px;">
+            <p style="margin:0; font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:#9ca3af;">Grupo Proser · ARNALD</p>
+            <h1 style="margin:8px 0 0; font-size:22px;">Copia de sus credenciales</h1>
+          </div>
+          <div style="padding:24px;">
+            <p style="color:#4b5563; margin:0 0 16px;">Hola <strong>${nombre}</strong>, guarde esta información. La necesitará para ingresar a la plataforma.</p>
+
+            <!-- Letrero de credenciales -->
+            <div style="margin:20px 0; border:3px solid #c8102e; border-radius:12px; overflow:hidden; background:#fff7f7;">
+              <div style="background:#c8102e; color:#fff; text-align:center; padding:10px 16px; font-weight:bold; font-size:14px; letter-spacing:0.06em; text-transform:uppercase;">
+                Datos de acceso
+              </div>
+              <div style="padding:22px 18px; text-align:center;">
+                <p style="margin:0 0 6px; color:#6b7280; font-size:12px; text-transform:uppercase; letter-spacing:0.08em;">Usuario</p>
+                <p style="margin:0 0 18px; font-size:28px; font-weight:bold; color:#111827; letter-spacing:0.04em; font-family:Consolas, Monaco, monospace;">
+                  ${loginSafe}
+                </p>
+                <div style="height:1px; background:#fecaca; margin:0 auto 18px; max-width:220px;"></div>
+                <p style="margin:0 0 6px; color:#6b7280; font-size:12px; text-transform:uppercase; letter-spacing:0.08em;">Contraseña</p>
+                <p style="margin:0; font-size:24px; font-weight:bold; color:#111827; word-break:break-all; font-family:Consolas, Monaco, monospace;">
+                  ${passwordSafe}
+                </p>
+              </div>
+            </div>
+
+            <p style="color:#6b7280; font-size:13px; margin:0 0 20px;">
+              Su acceso se activará cuando termine de subir hoja de vida, certificado bancario y cédula en el enlace de onboarding.
+            </p>
+            <div style="text-align:center;">
+              <a href="${urlLogin}" style="display:inline-block; background:#c8102e; color:#fff; text-decoration:none; padding:12px 22px; border-radius:8px; font-weight:bold;">
+                Ir al inicio de sesión
+              </a>
+            </div>
+            <p style="color:#9ca3af; font-size:11px; margin-top:24px; text-align:center;">
+              No comparta este correo. Si no solicitó esta cuenta, ignore el mensaje o avise a soporte.
+            </p>
+          </div>
+        </div>
+      </div>
+    `,
+  };
+
+  try {
+    const info = await deliverMail(mailOptions, { tipo: 'onboardingCredenciales' });
+    return { success: true, messageId: info.messageId };
+  } catch (err) {
+    console.error('Error enviando credenciales onboarding:', err.message);
+    return { success: false, message: err.message };
+  }
+};
+
 /**
  * Envía el correo de ticket o lo encola en outbox para reintento automático.
  * No lanza excepción: el ticket ya está guardado y el aviso no debe tumbar el flujo.

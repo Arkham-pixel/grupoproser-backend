@@ -32,6 +32,7 @@ import inspectorCatastroficoRoutes from './routes/inspectorCatastrofico.routes.j
 import estadoRoutes from './routes/estado.routes.js';
 import complexRoutes from './routes/complex.routes.js';
 import complexSubtareaRoutes from './routes/complexSubtarea.routes.js';
+import onboardingRoutes from './routes/onboarding.routes.js';
 import tareasRoutes from './routes/tareas.routes.js';
 import comunicadosRoutes from './routes/comunicados.routes.js';
 import usuariosRoutes from './routes/usuarios.routes.js';
@@ -262,6 +263,7 @@ app.use('/api/estados', estadoRoutes);
 console.log('✅ Ruta /api/estados registrada exitosamente');
 app.use('/api/complex', complexRoutes);
 app.use('/api/complex-subtareas', complexSubtareaRoutes);
+app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/casos', casosRoutes);
 app.use('/api/riesgos', riesgosRoutes);
 app.use('/api/tareas', tareasRoutes);
