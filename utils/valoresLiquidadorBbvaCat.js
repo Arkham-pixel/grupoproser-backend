@@ -37,10 +37,28 @@ function redondear(n) {
 }
 
 function parsePorcentaje(valor) {
-  const n = parseMonto(valor);
-  if (!n) return 0;
-  if (n > 1) return n / 100;
-  return n;
+  if (valor === '' || valor == null) return 0;
+  if (typeof valor === 'string') {
+    const raw = valor.replace(/%/g, '').trim().replace(',', '.');
+    if (!raw || raw === '.' || raw === '-') return 0;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return 0;
+    if (n > 1) return Math.min(1, n / 100);
+    return Math.min(1, n);
+  }
+  const n = Number(valor);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  if (n > 1) return Math.min(1, n / 100);
+  return Math.min(1, n);
+}
+
+function parseCantidadSmmlv(valor) {
+  if (valor === '' || valor == null) return 0;
+  if (typeof valor === 'number') return Number.isFinite(valor) ? valor : 0;
+  const s = String(valor).trim().replace(/\s/g, '').replace(',', '.');
+  if (!s || s === '.' || s === '-') return 0;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
 }
 
 function anioDesdeFecha(fecha) {
@@ -109,12 +127,16 @@ function resolverDeducibleFormato(liquidador = {}) {
   if (saved && typeof saved === 'object') {
     extras.dolares = parseMonto(saved.dolares);
     extras.pesos = parseMonto(saved.pesos);
-    const smmlvSaved = parseMonto(saved.smmlv);
-    if (smmlvSaved > 0) extras.smmlv = smmlvSaved;
-    const pctSaved = parsePorcentaje(saved.porcentaje);
-    const esResidualCinco =
-      Math.abs(pctSaved - 0.05) < 1e-6 && Math.abs(base.porcentaje - 0.02) < 1e-6;
-    if (pctSaved > 0 && !esResidualCinco) extras.porcentaje = pctSaved;
+    if (saved.smmlv !== '' && saved.smmlv != null) {
+      const smmlvSaved = parseCantidadSmmlv(saved.smmlv);
+      if (smmlvSaved > 0) extras.smmlv = smmlvSaved;
+    }
+    if (saved.porcentaje !== '' && saved.porcentaje != null) {
+      const pctSaved = parsePorcentaje(saved.porcentaje);
+      const esResidualCinco =
+        Math.abs(pctSaved - 0.05) < 1e-6 && Math.abs(base.porcentaje - 0.02) < 1e-6;
+      if (pctSaved > 0 && !esResidualCinco) extras.porcentaje = pctSaved;
+    }
   }
   const cfg =
     liquidador.liquidacionCatastrofico?.deducibleConfigPresupuesto ||
@@ -165,6 +187,24 @@ function sumaIndemnizable(liquidador) {
   const det = liquidador?.detalleLiquidacionCat;
   if (Array.isArray(det)) return redondear(sumaFilasDetalle(det));
   return redondear(sumaPresupuesto(liquidador?.evaluacionSismicaNSR10?.presupuesto?.items));
+}
+
+function sumaAsegurableDetalle(liquidador) {
+  const det = liquidador?.detalleLiquidacionCat;
+  if (!Array.isArray(det)) return 0;
+  return redondear(
+    det.reduce((acc, it) => acc + (parseMonto(it?.valorAsegurable) || 0), 0)
+  );
+}
+
+/** Base del % deducible: valor global → asegurable ítems → subtotal (o al revés si leasing). */
+function resolverBasePorcentajeDeducible(dedFmt, { valorGlobal = 0, subTotal = 0, sumaAsegurable = 0 } = {}) {
+  const modo = String(dedFmt?.basePct || 'valor_global');
+  const vg = parseMonto(valorGlobal);
+  const st = parseMonto(subTotal);
+  const sa = parseMonto(sumaAsegurable);
+  if (modo === 'subtotal') return st || sa || vg || 0;
+  return vg || sa || st || 0;
 }
 
 function sumaOtrosAmparos(liquidador) {
@@ -224,7 +264,7 @@ function resolverDeducibleFormatoPdf(liquidador = {}) {
   const base = defaultDeducible(liquidador);
   const saved = liquidador?.liquidacionCotizacionPdf?.deducibleFormato;
   if (!saved || typeof saved !== 'object') return base;
-  const smmlvSaved = parseMonto(saved.smmlv);
+  const smmlvSaved = parseCantidadSmmlv(saved.smmlv);
   const pctSaved = parsePorcentaje(saved.porcentaje);
   return {
     ...base,
@@ -251,9 +291,12 @@ function totalesDesdeLiquidadorBbva(liquidador) {
       0;
     const dedFmt = resolverDeducibleFormatoPdf(liquidador);
     const anio = anioDesdeFecha(enc.fechaSiniestro);
-    const montoSmmlv = redondear(parseMonto(dedFmt.smmlv) * smmlvPorAnio(anio));
-    const basePct =
-      String(dedFmt.basePct || 'valor_global') === 'subtotal' ? totalConAiu : valorGlobal;
+    const montoSmmlv = redondear(parseCantidadSmmlv(dedFmt.smmlv) * smmlvPorAnio(anio));
+    const basePct = resolverBasePorcentajeDeducible(dedFmt, {
+      valorGlobal,
+      subTotal: totalConAiu,
+      sumaAsegurable: valorGlobal,
+    });
     const montoPct = redondear(basePct * parsePorcentaje(dedFmt.porcentaje));
     const montoUsd = redondear(parseMonto(dedFmt.dolares) * parseMonto(enc.trm));
     const montoPesos = redondear(parseMonto(dedFmt.pesos));
@@ -280,12 +323,18 @@ function totalesDesdeLiquidadorBbva(liquidador) {
     parseMonto(enc.valorGlobal) ||
     parseMonto(enc.valorAseguradoInmueble) ||
     parseMonto(liquidador?.liquidacionCatastrofico?.valorAsegurado) ||
+    parseMonto(liquidador?.valorAseguradoInmueble) ||
     0;
-  const baseIndemnizable = valorGlobal > 0 ? redondear(Math.min(totalConAiu, valorGlobal)) : totalConAiu;
+  // Valor global solo alimenta el % del deducible; no topea la indemnización.
+  const baseIndemnizable = totalConAiu;
   const dedFmt = resolverDeducibleFormato(liquidador);
   const anio = anioDesdeFecha(enc.fechaSiniestro);
-  const montoSmmlv = redondear(parseMonto(dedFmt.smmlv) * smmlvPorAnio(anio));
-  const basePct = String(dedFmt.basePct || 'valor_global') === 'subtotal' ? baseIndemnizable : valorGlobal;
+  const montoSmmlv = redondear(parseCantidadSmmlv(dedFmt.smmlv) * smmlvPorAnio(anio));
+  const basePct = resolverBasePorcentajeDeducible(dedFmt, {
+    valorGlobal,
+    subTotal: baseIndemnizable,
+    sumaAsegurable: sumaAsegurableDetalle(liquidador),
+  });
   const montoPct = redondear(basePct * parsePorcentaje(dedFmt.porcentaje));
   const montoUsd = redondear(parseMonto(dedFmt.dolares) * parseMonto(enc.trm));
   const montoPesos = redondear(parseMonto(dedFmt.pesos));
