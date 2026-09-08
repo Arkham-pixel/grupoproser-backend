@@ -318,6 +318,9 @@ export function casoYaInspeccionadoBbvaCat(caso = {}) {
     e === 'PAGADO' ||
     e === 'OBJECION' ||
     e === 'OBJETADO' ||
+    e === 'DESISTIMIENTO' ||
+    e === 'DESISTIDO' ||
+    e === 'CASO AJUSTADO' ||
     e === 'AUTORIZACION ANALISTA' ||
     e === 'LIQUIDADO' ||
     e === 'ENVIADO ASEGURADORA' ||

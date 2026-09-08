@@ -11,9 +11,25 @@ const ESTADOS_VALIDOS = ['abierto', 'en_progreso', 'resuelto', 'cerrado'];
 const TIPOS_VALIDOS = ['queja', 'bug', 'mejora', 'otro'];
 const PRIORIDADES_VALIDAS = ['baja', 'media', 'alta'];
 
-function esAdminOSoporte(req) {
-  const rol = String(req.usuario?.role || req.user?.role || '').toLowerCase();
-  return rol === 'admin' || rol === 'soporte';
+function normalizarLogin(login = '') {
+  return String(login || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '');
+}
+
+/** Logins con bandeja completa (por defecto Oscar Atencia). */
+function loginsBandejaTickets() {
+  return String(process.env.TICKETS_NOTIFY_LOGINS || '1065012991')
+    .split(/[,;]+/)
+    .map((l) => normalizarLogin(l))
+    .filter(Boolean);
+}
+
+function puedeGestionarBandejaTickets(req) {
+  const login = normalizarLogin(req.usuario?.login || req.user?.login || '');
+  if (!login) return false;
+  return loginsBandejaTickets().includes(login);
 }
 
 function usuarioDesdeReq(req) {
@@ -168,13 +184,13 @@ export async function listarTickets(req, res) {
       return res.status(401).json({ success: false, mensaje: 'Usuario no autenticado' });
     }
 
-    const admin = esAdminOSoporte(req);
+    const puedeBandeja = puedeGestionarBandejaTickets(req);
     const vista = String(req.query?.vista || 'mios').toLowerCase();
     const estado = String(req.query?.estado || '').toLowerCase();
     const filtro = {};
 
-    if (vista === 'todos' && admin) {
-      // bandeja completa
+    if (vista === 'todos' && puedeBandeja) {
+      // bandeja completa solo para logins autorizados (p. ej. 1065012991)
     } else {
       filtro.creadoPorLogin = user.login;
     }
@@ -188,7 +204,10 @@ export async function listarTickets(req, res) {
     return res.json({
       success: true,
       data: tickets,
-      meta: { admin, vista: admin && vista === 'todos' ? 'todos' : 'mios' },
+      meta: {
+        puedeBandeja,
+        vista: puedeBandeja && vista === 'todos' ? 'todos' : 'mios',
+      },
     });
   } catch (error) {
     console.error('❌ Error listando tickets:', error);
@@ -212,12 +231,19 @@ export async function obtenerTicket(req, res) {
       return res.status(404).json({ success: false, mensaje: 'Ticket no encontrado' });
     }
 
-    const admin = esAdminOSoporte(req);
-    if (!admin && ticket.creadoPorLogin !== user.login) {
+    const puedeBandeja = puedeGestionarBandejaTickets(req);
+    const esAutor =
+      ticket.creadoPorLogin === user.login ||
+      normalizarLogin(ticket.creadoPorLogin) === normalizarLogin(user.login);
+    if (!puedeBandeja && !esAutor) {
       return res.status(403).json({ success: false, mensaje: 'No tienes acceso a este ticket' });
     }
 
-    return res.json({ success: true, data: ticket, meta: { admin } });
+    return res.json({
+      success: true,
+      data: ticket,
+      meta: { puedeBandeja },
+    });
   } catch (error) {
     console.error('❌ Error obteniendo ticket:', error);
     return res.status(500).json({
@@ -234,10 +260,10 @@ export async function actualizarTicket(req, res) {
     if (!user.id || !user.login) {
       return res.status(401).json({ success: false, mensaje: 'Usuario no autenticado' });
     }
-    if (!esAdminOSoporte(req)) {
+    if (!puedeGestionarBandejaTickets(req)) {
       return res.status(403).json({
         success: false,
-        mensaje: 'Solo admin/soporte pueden actualizar tickets',
+        mensaje: 'No tienes permiso para gestionar la bandeja de tickets',
       });
     }
 
@@ -341,8 +367,11 @@ export async function agregarComentario(req, res) {
       return res.status(404).json({ success: false, mensaje: 'Ticket no encontrado' });
     }
 
-    const admin = esAdminOSoporte(req);
-    if (!admin && ticket.creadoPorLogin !== user.login) {
+    const puedeBandeja = puedeGestionarBandejaTickets(req);
+    const esAutor =
+      ticket.creadoPorLogin === user.login ||
+      normalizarLogin(ticket.creadoPorLogin) === normalizarLogin(user.login);
+    if (!puedeBandeja && !esAutor) {
       return res.status(403).json({ success: false, mensaje: 'No tienes acceso a este ticket' });
     }
 

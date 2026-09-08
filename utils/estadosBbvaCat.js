@@ -7,8 +7,10 @@ export const ESTADOS_BBVA_CAT = [
   'OBJECIÓN',
   'OBJETADO',
   'AUTORIZACIÓN ANALISTA',
+  'CASO AJUSTADO',
   'CASO PARA PAGO',
   'PAGADO',
+  'DESISTIMIENTO',
 ];
 
 export const ESTADO_BBVA_CAT_DEFAULT = 'CASO NUEVO';
@@ -21,8 +23,10 @@ export const FECHA_ACCION_POR_ESTADO_BBVA_CAT = {
   OBJECIÓN: 'fechaObjecion',
   OBJETADO: 'fechaObjetado',
   'AUTORIZACIÓN ANALISTA': 'fechaAutorizacionAnalista',
+  'CASO AJUSTADO': 'fechaCasoAjustado',
   'CASO PARA PAGO': 'fechaCasoParaPago',
   PAGADO: 'fechaCasoPagado',
+  DESISTIMIENTO: 'fechaDesistimiento',
 };
 
 const LEGACY = {
@@ -41,6 +45,10 @@ const LEGACY = {
   INDEMNIZADO: 'PAGADO',
   GIRADO: 'PAGADO',
   'CASE PAID': 'PAGADO',
+  DESISTIDO: 'DESISTIMIENTO',
+  'CASO DESISTIDO': 'DESISTIMIENTO',
+  AJUSTADO: 'CASO AJUSTADO',
+  'CASO AJUSTADO BBVA': 'CASO AJUSTADO',
 };
 
 const sinAcentos = (valor) =>
