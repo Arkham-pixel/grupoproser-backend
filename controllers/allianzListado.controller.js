@@ -9,6 +9,11 @@ import { crearControladoresArchivosListado } from '../utils/archivosCasoListado.
 import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
 import { rechazarSiFranjaOcupada } from '../services/agendaCatastroficoService.js';
 import { homologarCiudadAllianz, resolverUbicacionCatastrofico } from '../utils/ciudadesBbvaCat.js';
+import {
+  BANDERAS_LISTA_CASO,
+  listarCasosLivianos,
+  quiereListaCompleta,
+} from '../utils/listarCasosLivianos.js';
 
 const esVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null';
@@ -287,23 +292,79 @@ export const crearCasoListadoAllianz = async (req, res) => {
   }
 };
 
+const PROYECCION_LISTA_ALLIANZ_LISTADO = {
+  consecutivo: 1,
+  zc: 1,
+  siniestro: 1,
+  identificacion: 1,
+  tipoIdentificacion: 1,
+  numeroPoliza: 1,
+  tipoPoliza: 1,
+  tipoPolizaOtro: 1,
+  causa: 1,
+  asegurado: 1,
+  intermediario: 1,
+  correoIntermediario: 1,
+  telefonoIntermediario: 1,
+  contactoIntermediario: 1,
+  correoAsegurado: 1,
+  telefonoAsegurado: 1,
+  contactoAsegurado: 1,
+  observaciones: 1,
+  direccionPredio: 1,
+  ciudad: 1,
+  departamento: 1,
+  ajustadorLider: 1,
+  ajustador: 1,
+  inspector: 1,
+  fechaAsignacion: 1,
+  fechaVisita: 1,
+  valorAseguradoInmueble: 1,
+  valorAseguradoContenidos: 1,
+  valorReservaPreventivaPromedio: 1,
+  valorComercialInmueble: 1,
+  reserva: 1,
+  observacionReserva: 1,
+  valorReclamado: 1,
+  valorLiquidado: 1,
+  estado: 1,
+  modalidadAtencion: 1,
+  fechaCasoNuevo: 1,
+  fechaCoordinandoInspeccion: 1,
+  fechaAnalisisCaso: 1,
+  fechaSolicitudDocumento: 1,
+  fechaRecepcionDocumento: 1,
+  fechaObjecion: 1,
+  fechaObjetado: 1,
+  fechaAutorizacionAnalista: 1,
+  fechaCasoParaPago: 1,
+  fechaCasoPagado: 1,
+  fechaAnulado: 1,
+  documentoFaltante: 1,
+  observacionPendienteDocumento: 1,
+  motivoObjecion: 1,
+  responsableAporteDocumento: 1,
+  horaInicioCoordinacion: 1,
+  horaFinCoordinacion: 1,
+  createdAt: 1,
+  updatedAt: 1,
+};
+
 export const listarCasosListadoAllianz = async (req, res) => {
   try {
     const { limit = 25, page = 1 } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
-    const [total, documentos] = await Promise.all([
-      AllianzListadoCaso.countDocuments({}),
-      AllianzListadoCaso.find({})
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(Number(limit)),
-    ]);
+    const resultado = await listarCasosLivianos({
+      Model: AllianzListadoCaso,
+      filtro: {},
+      page,
+      limit,
+      quiereCompleto: quiereListaCompleta(req.query),
+      proyeccion: PROYECCION_LISTA_ALLIANZ_LISTADO,
+      addFields: BANDERAS_LISTA_CASO,
+    });
     res.json({
       success: true,
-      total,
-      page: Number(page),
-      limit: Number(limit),
-      data: documentos,
+      ...resultado,
     });
   } catch (error) {
     console.error('❌ Error al listar listado Allianz:', error);

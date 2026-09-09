@@ -35,6 +35,11 @@ import { aplicarRestriccionRolCaso, obtenerIdentidadUsuarioReq, construirFiltroV
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarEstadoDesdeTipoInformeSura, normalizarEstadoSura } from '../utils/estadosSura.js';
 import {
+  BANDERAS_LISTA_SURA,
+  listarCasosLivianos,
+  quiereListaCompleta,
+} from '../utils/listarCasosLivianos.js';
+import {
   normalizarClaveGerente,
   resolverGerenteDesdeLogin,
   usuarioPuedeVerBandejaFacturacion,
@@ -55,6 +60,12 @@ const CAMPOS_NO_COPIAR_COMPLEX = new Set([
   'informeUnico',
   'archivos',
   'ubicacionPredio',
+  'tieneInforme',
+  'tieneLiquidador',
+  'tieneFotosAgil',
+  'tieneSalvamento',
+  'nArchivos',
+  'tipoInforme',
 ]);
 
 const CAMPOS_IDENTIDAD_SURA = new Set([
@@ -513,10 +524,67 @@ export const crearCasoSura = async (req, res) => {
   }
 };
 
+/**
+ * Reporte / dashboard / boletín: no mandar liquidador, informe, fotos ni archivos.
+ * SURA usa strict:false (campos Complex); la inclusión es la única forma de recortar.
+ */
+const PROYECCION_LISTA_SURA = {
+  consecutivo: 1,
+  siniestro: 1,
+  identificacion: 1,
+  asegurado: 1,
+  tomador: 1,
+  ajustadorLider: 1,
+  ajustador: 1,
+  inspector: 1,
+  numeroPoliza: 1,
+  tipoPoliza: 1,
+  direccionPredio: 1,
+  numeroCredito: 1,
+  informacionContacto: 1,
+  correo: 1,
+  celular: 1,
+  sede: 1,
+  sedeRiesgo: 1,
+  canalRadicacion: 1,
+  ciudad: 1,
+  departamento: 1,
+  fechaSiniestro: 1,
+  fechaInicioPoliza: 1,
+  fechaFinPoliza: 1,
+  valorAseguradoInmueble: 1,
+  valorAseguradoContenidos: 1,
+  cobertura: 1,
+  estadoPagoPrimas: 1,
+  valorReservaPreventivaPromedio: 1,
+  valorComercialInmueble: 1,
+  reserva: 1,
+  observacionReserva: 1,
+  valorReclamado: 1,
+  valorLiquidado: 1,
+  fechaLlamada: 1,
+  observacionLlamada: 1,
+  fechaInspeccion: 1,
+  fechaUltimoDocumento: 1,
+  fechaLiquidado: 1,
+  fechaAceptacionLiquidacion: 1,
+  fechaEnvioAseguradora: 1,
+  estado: 1,
+  nmroAjste: 1,
+  nmroSinstro: 1,
+  asgrBenfcro: 1,
+  numDocumento: 1,
+  fchaAsgncion: 1,
+  horaInicioCoordinacion: 1,
+  horaFinCoordinacion: 1,
+  ubicacionPredio: 1,
+  createdAt: 1,
+  updatedAt: 1,
+};
+
 export const listarCasosSura = async (req, res) => {
   try {
     const { limit = 25, page = 1, nmroAjste, consecutivo } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
     const identidad = await obtenerIdentidadUsuarioReq(req);
     const filtroAsignacion = construirFiltroVistaAsignacion(identidad, { modulo: 'sura' });
     let filtroNumero = null;
@@ -526,23 +594,20 @@ export const listarCasosSura = async (req, res) => {
     }
     const filtro = combinarFiltrosMongo(filtroAsignacion, filtroNumero);
     const collation = filtroAsignacion ? collationVistaAsignacion() : undefined;
-    const countQuery = SegurosSuraCaso.countDocuments(filtro);
-    const findQuery = SegurosSuraCaso.find(filtro)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit));
-    if (collation) {
-      countQuery.collation(collation);
-      findQuery.collation(collation);
-    }
-    const [total, documentos] = await Promise.all([countQuery, findQuery]);
+    const resultado = await listarCasosLivianos({
+      Model: SegurosSuraCaso,
+      filtro,
+      collation,
+      page,
+      limit,
+      quiereCompleto: quiereListaCompleta(req.query),
+      proyeccion: PROYECCION_LISTA_SURA,
+      addFields: BANDERAS_LISTA_SURA,
+    });
 
     res.json({
       success: true,
-      total,
-      page: Number(page),
-      limit: Number(limit),
-      data: documentos,
+      ...resultado,
     });
   } catch (error) {
     console.error('❌ Error al listar casos Seguros Sura:', error);

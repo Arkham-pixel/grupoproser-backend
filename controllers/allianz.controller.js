@@ -12,6 +12,11 @@ import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoAllianz, homologarEstadoAllianz } from '../utils/estadosAllianz.js';
 import { homologarCiudadAllianz, resolverUbicacionCatastrofico } from '../utils/ciudadesBbvaCat.js';
+import {
+  BANDERAS_LISTA_CASO,
+  listarCasosLivianos,
+  quiereListaCompleta,
+} from '../utils/listarCasosLivianos.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -728,25 +733,123 @@ export const crearCasoAllianz = async (req, res) => {
   }
 };
 
+/**
+ * Reporte / dashboard: no mandar liquidador, informe ni archivos.
+ * evidenciaCat y severidadCatNiveles sí van: son chicos y el Excel/formulario CAT los usa.
+ */
+const PROYECCION_LISTA_ALLIANZ = {
+  consecutivo: 1,
+  expressCasoId: 1,
+  consecutivoExpress: 1,
+  siniestro: 1,
+  zc: 1,
+  identificacion: 1,
+  tipoIdentificacion: 1,
+  asegurado: 1,
+  intermediario: 1,
+  correoIntermediario: 1,
+  telefonoIntermediario: 1,
+  contactoIntermediario: 1,
+  correoAsegurado: 1,
+  telefonoAsegurado: 1,
+  contactoAsegurado: 1,
+  observaciones: 1,
+  tomador: 1,
+  ajustadorLider: 1,
+  ajustador: 1,
+  inspector: 1,
+  numeroPoliza: 1,
+  tipoPoliza: 1,
+  tipoPolizaOtro: 1,
+  causa: 1,
+  direccionPredio: 1,
+  numeroCredito: 1,
+  informacionContacto: 1,
+  correo: 1,
+  celular: 1,
+  canalRadicacion: 1,
+  ciudad: 1,
+  departamento: 1,
+  fechaSiniestro: 1,
+  fechaInicioPoliza: 1,
+  fechaFinPoliza: 1,
+  valorAseguradoInmueble: 1,
+  valorAseguradoContenidos: 1,
+  cobertura: 1,
+  estadoPagoPrimas: 1,
+  valorReservaPreventivaPromedio: 1,
+  valorComercialInmueble: 1,
+  reserva: 1,
+  observacionReserva: 1,
+  valorReclamado: 1,
+  valorLiquidado: 1,
+  fechaLlamada: 1,
+  observacionLlamada: 1,
+  fechaInspeccion: 1,
+  fechaUltimoDocumento: 1,
+  fechaLiquidado: 1,
+  fechaAceptacionLiquidacion: 1,
+  fechaEnvioAseguradora: 1,
+  fechaAsignacion: 1,
+  fechaVisita: 1,
+  estado: 1,
+  modalidadAtencion: 1,
+  fechaCasoNuevo: 1,
+  fechaCoordinandoInspeccion: 1,
+  fechaAnalisisCaso: 1,
+  fechaSolicitudDocumento: 1,
+  fechaRecepcionDocumento: 1,
+  fechaObjecion: 1,
+  fechaObjetado: 1,
+  fechaAutorizacionAnalista: 1,
+  fechaCasoParaPago: 1,
+  fechaCasoPagado: 1,
+  fechaAnulado: 1,
+  documentoFaltante: 1,
+  observacionPendienteDocumento: 1,
+  motivoObjecion: 1,
+  responsableAporteDocumento: 1,
+  riskId: 1,
+  distanciaEpicentroKm: 1,
+  tipoNegocioHomologado: 1,
+  catUbicacionReferencia: 1,
+  addressNumber: 1,
+  direccionInspeccionSugerida: 1,
+  linkGoogleMaps: 1,
+  grupoInspeccion: 1,
+  afectacion: 1,
+  gradoAfectacion: 1,
+  lucroCesante: 1,
+  severidadCat: 1,
+  severidadCatNiveles: 1,
+  accesoPredio: 1,
+  evidenciaCat: 1,
+  observacionesCat: 1,
+  checklistCatCompleto: 1,
+  historialCatastroficoId: 1,
+  horaInicioCoordinacion: 1,
+  horaFinCoordinacion: 1,
+  createdAt: 1,
+  updatedAt: 1,
+};
+
 export const listarCasosAllianz = async (req, res) => {
   try {
     const { limit = 25, page = 1 } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
     const filtro = debeFiltrarChecklistParaUsuario(req) ? filtroMongoChecklistCatLleno() : {};
-    const [total, documentos] = await Promise.all([
-      AllianzCaso.countDocuments(filtro),
-      AllianzCaso.find(filtro)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(Number(limit)),
-    ]);
+    const resultado = await listarCasosLivianos({
+      Model: AllianzCaso,
+      filtro,
+      page,
+      limit,
+      quiereCompleto: quiereListaCompleta(req.query),
+      proyeccion: PROYECCION_LISTA_ALLIANZ,
+      addFields: BANDERAS_LISTA_CASO,
+    });
 
     res.json({
       success: true,
-      total,
-      page: Number(page),
-      limit: Number(limit),
-      data: documentos,
+      ...resultado,
     });
   } catch (error) {
     console.error('❌ Error al listar casos Allianz:', error);
