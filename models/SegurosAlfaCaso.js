@@ -100,6 +100,15 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
     noAceptacionOferta: { type: Boolean, default: false },
     /** Zona territorial asignada al proveedor de ajuste. */
     zonaAsignada: { type: String, default: '' },
+    /**
+     * Clasificación de pérdida solicitada por la compañía.
+     * PARCIAL | TOTAL | '' (sin clasificar).
+     */
+    tipoPerdida: {
+      type: String,
+      enum: ['', 'PARCIAL', 'TOTAL'],
+      default: '',
+    },
     /** Caso fuera de la zona asignada (requiere aviso / reasignación). */
     fueraDeZona: { type: Boolean, default: false },
     /** Multi-predio: id del caso padre / grupo de reclamación. */

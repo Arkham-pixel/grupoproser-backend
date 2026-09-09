@@ -88,6 +88,14 @@ export const ALFA_EXCEL_COLUMN_MAP = Object.freeze({
     'OBSERVACIONES GESTION',
     'OBSERVACION GESTION',
   ],
+  tipoPerdida: [
+    'TIPO PERDIDA',
+    'TIPO DE PERDIDA',
+    'TIPO DE PÉRDIDA',
+    'TIPO PÉRDIDA',
+    'CLASIFICACION PERDIDA',
+    'CLASIFICACIÓN PÉRDIDA',
+  ],
 });
 
 /** Campos que el Excel puede alimentar (nunca protegidos). */
@@ -130,7 +138,7 @@ export const ALFA_EXCEL_UPDATABLE_FIELDS = Object.freeze([
 
 /**
  * Campos que el Excel NUNCA modifica.
- * `estado` y `estadoGestion` los escribe ARNALD (outbound amarillas).
+ * `estado`, `estadoGestion` y `tipoPerdida` los escribe ARNALD (outbound amarillas).
  * `fechaLlamada` y `observacionLlamada` son solo ARNALD.
  */
 export const PROTECTED_ALFA_FIELDS = Object.freeze([
@@ -145,6 +153,7 @@ export const PROTECTED_ALFA_FIELDS = Object.freeze([
   'estado',
   'estadoGestion',
   'observacionesGestion',
+  'tipoPerdida',
   'fechaLlamada',
   'observacionLlamada',
   'liquidadoCoberturaTerremo',

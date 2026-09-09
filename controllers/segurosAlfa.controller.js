@@ -293,6 +293,16 @@ const buildAlfaPayload = (data = {}, base = {}) =>
         ? Boolean(base.noAceptacionOferta)
         : false,
   zonaAsignada: toStringOrNull(data.zonaAsignada, base.zonaAsignada ?? null) || '',
+  tipoPerdida: (() => {
+    const raw = toStringOrNull(data.tipoPerdida, base.tipoPerdida ?? null);
+    const n = String(raw || '')
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '')
+      .toUpperCase()
+      .trim();
+    if (n === 'PARCIAL' || n === 'TOTAL') return n;
+    return '';
+  })(),
   fueraDeZona:
     data.fueraDeZona != null
       ? Boolean(data.fueraDeZona)
@@ -365,6 +375,7 @@ const mergeImportacionAlfa = (incomingPayload = {}, existente = {}) => {
     estadoGestion: existente.estadoGestion || null,
     observacionesGestion: existente.observacionesGestion || '',
     zonaAsignada: existente.zonaAsignada || '',
+    tipoPerdida: existente.tipoPerdida || '',
     fueraDeZona: Boolean(existente.fueraDeZona),
     casoPadreId: existente.casoPadreId ?? null,
     grupoReclamacion: existente.grupoReclamacion || '',

@@ -1,5 +1,5 @@
 /**
- * OBJETADO / DESISTIDO en ARNALD → CERRADO en SharePoint (ESTADO SINIESTRO).
+ * Estados Alfa → SharePoint: etiquetas reales del boletín (sin forzar CERRADO).
  * Uso: node scripts/testAlfaEstadosSharePoint.mjs
  */
 import {
@@ -25,10 +25,20 @@ assert(homologarEstadoAlfa('DESISTIDO') === 'DESISTIDO', 'ARNALD conserva DESIST
 assert(homologarEstadoAlfa('objetado') === 'OBJETADO', 'alias objetado');
 assert(homologarEstadoAlfa('desistimiento') === 'DESISTIDO', 'alias desistimiento');
 
-assert(estadoAlfaParaSharePoint('OBJETADO') === 'CERRADO', 'SharePoint OBJETADO → CERRADO');
-assert(estadoAlfaParaSharePoint('DESISTIDO') === 'CERRADO', 'SharePoint DESISTIDO → CERRADO');
-assert(estadoAlfaParaSharePoint('CERRADO') === 'CERRADO', 'SharePoint CERRADO se mantiene');
-assert(estadoAlfaParaSharePoint('LIQUIDADO') === 'LIQUIDADO', 'SharePoint LIQUIDADO no se altera');
+assert(estadoAlfaParaSharePoint('OBJETADO') === 'Objetado', 'SharePoint OBJETADO → Objetado');
+assert(estadoAlfaParaSharePoint('DESISTIDO') === 'Desistido', 'SharePoint DESISTIDO → Desistido');
+assert(
+  estadoAlfaParaSharePoint('CERRADO') === 'Cerrado totalmente',
+  'SharePoint CERRADO → etiqueta boletín'
+);
+assert(
+  estadoAlfaParaSharePoint('LIQUIDADO') === 'Liquidado',
+  'SharePoint LIQUIDADO → etiqueta boletín'
+);
+assert(
+  estadoAlfaParaSharePoint('ENVIADO ASEGURADORA') === 'En proceso de pago',
+  'SharePoint ENVIADO → En proceso de pago'
+);
 assert(
   estadoAlfaParaSharePoint('Sin contactar') === 'Sin contactar',
   'SharePoint gestión no se altera'

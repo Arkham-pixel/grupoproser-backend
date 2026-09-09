@@ -51,9 +51,21 @@ import {
 import { selectAlfaExcelFromSharePointFolder } from './alfaExcelSharePointImportService.js';
 import {
   estadoAlfaParaSharePoint,
+  estadoGestionAlfaParaSharePoint,
   estadoGestionDesdeEstadoAlfa,
   isAlfaEstadoDefinido,
 } from '../config/alfaExcelStatuses.js';
+
+function homologarTipoPerdidaOutbound(value) {
+  const n = String(value || '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toUpperCase()
+    .trim();
+  if (n === 'PARCIAL' || n.includes('PARCIAL')) return 'PARCIAL';
+  if (n === 'TOTAL' || n.includes('TOTAL')) return 'TOTAL';
+  return null;
+}
 
 function logOut(event, payload = {}) {
   console.log(JSON.stringify({ event, at: new Date().toISOString(), ...payload }));
@@ -95,6 +107,13 @@ function serializeForOutbox(field, value) {
     const mapped = estadoAlfaParaSharePoint(value);
     return mapped || null;
   }
+  if (field === 'estadoGestion') {
+    const mapped = estadoGestionAlfaParaSharePoint(value);
+    return mapped || null;
+  }
+  if (field === 'tipoPerdida') {
+    return homologarTipoPerdidaOutbound(value);
+  }
   if (ALFA_EXCEL_DATE_FIELDS.includes(field)) {
     const d = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(d.getTime()) || d.getUTCFullYear() < 2000) return null;
@@ -111,6 +130,13 @@ function toExcelCellValue(field, value) {
   if (field === 'estado') {
     const mapped = estadoAlfaParaSharePoint(value);
     return mapped || null;
+  }
+  if (field === 'estadoGestion') {
+    const mapped = estadoGestionAlfaParaSharePoint(value);
+    return mapped || null;
+  }
+  if (field === 'tipoPerdida') {
+    return homologarTipoPerdidaOutbound(value);
   }
   if (ALFA_EXCEL_DATE_FIELDS.includes(field)) {
     const d = value instanceof Date ? value : new Date(value);
@@ -676,6 +702,12 @@ function toGraphRangeValue(field, value) {
   if (value == null || value === '') return '';
   if (field === 'estado') {
     return String(estadoAlfaParaSharePoint(value) || '');
+  }
+  if (field === 'estadoGestion') {
+    return String(estadoGestionAlfaParaSharePoint(value) || '');
+  }
+  if (field === 'tipoPerdida') {
+    return String(homologarTipoPerdidaOutbound(value) || '');
   }
   if (ALFA_EXCEL_DATE_FIELDS.includes(field)) {
     const serial = toExcelSerialDate(value);

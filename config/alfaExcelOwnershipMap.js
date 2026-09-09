@@ -1,10 +1,10 @@
 /**
  * Ownership Excel Control y Seguimiento (hoja BD) — consolidado FAC-Cali operativo (sin _Final).
- * Amarillas (ARNALD outbound): T–AK según encabezados reales del archivo.
+ * Amarillas (ARNALD outbound): T–AL según encabezados reales del archivo.
  * Verdes (Alfa inbound): A–S.
  *
  * REGLA: no crear columnas en código. Solo escribir columnas que YA existen
- * en el consolidado (el usuario insertó Y–AC en SharePoint).
+ * en el consolidado (el usuario insertó Y–AC y AL=TIPO PERDIDA en SharePoint).
  * La letra es referencia; el outbound resuelve primero por encabezado.
  */
 
@@ -152,6 +152,24 @@ export const ALFA_EXCEL_OWNERSHIP = Object.freeze({
     headerAliases: ['OBSERVACION', 'OBSERVACIONES', 'OBSERVACIONES GESTION'],
     outboundEnabled: true,
   },
+  /**
+   * Columna amarilla ARNALD: insertar en el consolidado FAC-Cali con relleno amarillo
+   * (mismo criterio T–AK). El outbound resuelve por encabezado, no por letra fija.
+   */
+  tipoPerdida: {
+    owner: 'arnald',
+    column: 'AL',
+    header: 'TIPO PERDIDA',
+    headerAliases: [
+      'TIPO PERDIDA',
+      'TIPO DE PERDIDA',
+      'TIPO DE PÉRDIDA',
+      'TIPO PÉRDIDA',
+      'CLASIFICACION PERDIDA',
+      'CLASIFICACIÓN PÉRDIDA',
+    ],
+    outboundEnabled: true,
+  },
 });
 
 /** Columnas verdes (A–S) — solo lectura para outbound. */
@@ -238,6 +256,7 @@ export const ALFA_EXCEL_APPEND_FIELDS = Object.freeze([
   'estadoGestion',
   'estado',
   'observacionesGestion',
+  'tipoPerdida',
 ]);
 
 /**
