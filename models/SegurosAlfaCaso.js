@@ -84,15 +84,14 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
     fechaLiquidado: Date,
     fechaAceptacionLiquidacion: Date,
     fechaEnvioAseguradora: Date,
-    /** Estado único del caso (barra Alfa: gestión + cierre). */
+    /** ESTADO SINIESTRO (independiente de estadoGestion). */
     estado: { type: String, required: true },
     /**
-     * Espejo para Excel AD (ESTADO GESTION): los 5 del correo.
-     * Se deriva automáticamente desde `estado`.
+     * ESTADO GESTION (independiente de estado).
      */
     estadoGestion: {
       type: String,
-      default: 'Sin contactar',
+      default: 'EN GESTIÓN',
     },
     /** Observaciones de gestión (obligatorias en ciertos estados). */
     observacionesGestion: { type: String, default: '' },

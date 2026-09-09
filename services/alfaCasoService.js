@@ -14,9 +14,8 @@ import {
 } from '../utils/alfaExcelNormalize.js';
 import { isArnaldOwnedField } from '../config/alfaExcelOwnershipMap.js';
 import {
-  estadoGestionDesdeEstadoAlfa,
+  homologarEstadoGestionAlfa,
   homologarEstadoAlfa,
-  aplicarObservacionAutoCierreAlfa,
 } from '../config/alfaExcelStatuses.js';
 
 const COUNTER_ID = 'seguros_alfa_consecutivo';
@@ -190,16 +189,12 @@ export function buildAlfaCasoPayload(data = {}, base = {}) {
     ),
   };
 
-  // Un solo eje: homologar estado y sincronizar estadoGestion (Excel AD).
-  out.estado = homologarEstadoAlfa(out.estado, {
-    fechaInspeccion: out.fechaInspeccion,
-    estadoGestion: out.estadoGestion || data.estadoGestion || base.estadoGestion,
-  });
-  out.estadoGestion = estadoGestionDesdeEstadoAlfa(out.estado);
-  out.observacionesGestion = aplicarObservacionAutoCierreAlfa(
-    out.estado,
-    out.observacionesGestion
+  // Ejes independientes: estado siniestro y estado gestión no se derivan entre sí.
+  out.estado = homologarEstadoAlfa(out.estado || base.estado || 'PENDIENTE');
+  out.estadoGestion = homologarEstadoGestionAlfa(
+    out.estadoGestion || base.estadoGestion || 'EN GESTIÓN'
   );
+  out.observacionesGestion = String(out.observacionesGestion || '').trim();
   return out;
 }
 
@@ -270,13 +265,10 @@ export async function createAlfaCasoFromImport(data = {}) {
     err.code = 'MISSING_IDENTIFICACION';
     throw err;
   }
-  if (!payload.estado) payload.estado = 'Sin contactar';
-  payload.estado = homologarEstadoAlfa(payload.estado, payload);
-  payload.estadoGestion = estadoGestionDesdeEstadoAlfa(payload.estado);
-  payload.observacionesGestion = aplicarObservacionAutoCierreAlfa(
-    payload.estado,
-    payload.observacionesGestion
-  );
+  if (!payload.estado) payload.estado = 'PENDIENTE';
+  payload.estado = homologarEstadoAlfa(payload.estado || 'PENDIENTE');
+  payload.estadoGestion = homologarEstadoGestionAlfa(payload.estadoGestion || 'EN GESTIÓN');
+  payload.observacionesGestion = String(payload.observacionesGestion || '').trim();
   payload.consecutivo = await generarConsecutivoAlfa();
   delete payload.archivos;
   delete payload.liquidador;

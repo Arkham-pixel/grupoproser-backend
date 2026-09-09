@@ -37,8 +37,7 @@ import { enqueueAlfaExcelOutboundFromCaseUpdate } from '../services/alfaExcelOut
 import { generarConsecutivoAlfa, buildAlfaListadoPipeline } from '../services/alfaCasoService.js';
 import {
   homologarEstadoAlfa,
-  estadoGestionDesdeEstadoAlfa,
-  aplicarObservacionAutoCierreAlfa,
+  homologarEstadoGestionAlfa,
 } from '../config/alfaExcelStatuses.js';
 import {
   geocodeCasosAlfaPendientes,
@@ -385,33 +384,30 @@ const mergeImportacionAlfa = (incomingPayload = {}, existente = {}) => {
   for (const campo of campos) {
     out[campo] = mergeCampoImport(incomingPayload[campo], existente[campo]);
   }
-  if (!out.estado) out.estado = 'Sin contactar';
-  out.estado = homologarEstadoAlfa(out.estado, {
-    fechaInspeccion: out.fechaInspeccion,
-    estadoGestion: out.estadoGestion || existente.estadoGestion,
-  });
-  out.estadoGestion = estadoGestionDesdeEstadoAlfa(out.estado);
-  out.observacionesGestion = aplicarObservacionAutoCierreAlfa(
-    out.estado,
-    out.observacionesGestion || existente.observacionesGestion
+  if (!out.estado) out.estado = 'PENDIENTE';
+  out.estado = homologarEstadoAlfa(out.estado || existente.estado || 'PENDIENTE');
+  out.estadoGestion = homologarEstadoGestionAlfa(
+    out.estadoGestion || existente.estadoGestion || 'EN GESTIÓN'
   );
+  out.observacionesGestion = out.observacionesGestion || existente.observacionesGestion || '';
   return out;
 };
 
 const validarRequeridos = (payload) => {
   const camposRequeridos = [
     ['identificacion', 'identificación'],
-    ['estado', 'estado'],
+    ['estado', 'estado de siniestro'],
+    ['estadoGestion', 'estado de gestión'],
   ];
   return camposRequeridos
     .map(([campo, etiqueta]) => (!payload[campo] ? etiqueta : null))
     .filter(Boolean);
 };
 
-const GESTION_REQUIERE_OBS = new Set(['sin respuesta', 'solicitud de documentos']);
+const GESTION_REQUIERE_OBS = new Set(['sin respuesta', 'sin respuesta efectiva']);
 
 const validarObservacionesGestion = (payload = {}) => {
-  const eg = String(payload.estado || payload.estadoGestion || '')
+  const eg = String(payload.estadoGestion || '')
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
     .trim()
@@ -426,7 +422,7 @@ const validarObservacionesGestion = (payload = {}) => {
   if (payload.noAceptacionOferta) {
     return 'observaciones de gestión (obligatorias si no hay aceptación de oferta)';
   }
-  return 'observaciones de gestión (obligatorias para Sin respuesta / Solicitud de documentos)';
+  return 'observaciones de gestión (obligatorias para SIN RESPUESTA EFECTIVA)';
 };
 
 const ETIQUETAS_EVIDENCIA_BAJO_DEDUCIBLE = new Set([
@@ -463,15 +459,10 @@ const validarCierreBajoDeducible = (payload = {}, base = {}) => {
 };
 
 const asegurarEstadoUnificado = (payload) => {
-  payload.estado = homologarEstadoAlfa(payload.estado, {
-    fechaInspeccion: payload.fechaInspeccion,
-    estadoGestion: payload.estadoGestion,
-  });
-  payload.estadoGestion = estadoGestionDesdeEstadoAlfa(payload.estado);
-  payload.observacionesGestion = aplicarObservacionAutoCierreAlfa(
-    payload.estado,
-    payload.observacionesGestion
-  );
+  payload.estado = homologarEstadoAlfa(payload.estado || 'PENDIENTE');
+  payload.estadoGestion = homologarEstadoGestionAlfa(payload.estadoGestion || 'EN GESTIÓN');
+  // OBS queda solo en Mongo (no outbound a SharePoint/Excel).
+  payload.observacionesGestion = String(payload.observacionesGestion || '').trim();
   return payload;
 };
 
@@ -1895,8 +1886,8 @@ export const crearPredioVinculadoAlfa = async (req, res) => {
             body.valorAseguradoContenidos != null
               ? body.valorAseguradoContenidos
               : base.valorAseguradoContenidos,
-          estado: 'Sin contactar',
-          estadoGestion: 'Sin contactar',
+          estado: 'PENDIENTE',
+          estadoGestion: 'EN GESTIÓN',
           observacionesGestion: body.observacionesGestion || '',
           liquidador: null,
           informeUnico: null,

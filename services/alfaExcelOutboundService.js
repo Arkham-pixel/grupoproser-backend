@@ -52,7 +52,6 @@ import { selectAlfaExcelFromSharePointFolder } from './alfaExcelSharePointImport
 import {
   estadoAlfaParaSharePoint,
   estadoGestionAlfaParaSharePoint,
-  estadoGestionDesdeEstadoAlfa,
   isAlfaEstadoDefinido,
 } from '../config/alfaExcelStatuses.js';
 
@@ -1696,13 +1695,11 @@ export async function reconcileAlfaExcelEstadoGaps({ apply = true } = {}) {
     if (!caso) continue;
     const before = {
       ...caso,
-      estado: g.excelEstadoRaw || 'Sin contactar',
-      estadoGestion: 'Sin contactar',
+      estado: g.excelEstadoRaw || 'PENDIENTE',
     };
-    // Forzar diff de estado (+ gestión/obs derivadas) aunque merge previo hubiera fallado.
+    // Forzar diff solo en estado siniestro (estadoGestion es independiente).
     const after = {
       ...caso,
-      estadoGestion: estadoGestionDesdeEstadoAlfa(caso.estado),
     };
     const doc = await enqueueAlfaExcelOutboundFromCaseUpdate({
       beforeDoc: before,

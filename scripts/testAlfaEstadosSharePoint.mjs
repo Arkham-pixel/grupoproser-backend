@@ -1,15 +1,17 @@
 /**
- * Estados Alfa → SharePoint: etiquetas reales del boletín (sin forzar CERRADO).
+ * Estados Alfa duales → SharePoint (gestión + siniestro independientes).
  * Uso: node scripts/testAlfaEstadosSharePoint.mjs
  */
 import {
-  ALFA_ESTADOS_UNIFICADOS,
+  ALFA_ESTADOS_GESTION,
+  ALFA_ESTADOS_SINIESTRO,
   aplicarObservacionAutoCierreAlfa,
   estadoAlfaParaSharePoint,
+  estadoGestionAlfaParaSharePoint,
   homologarEstadoAlfa,
+  homologarEstadoGestionAlfa,
+  homologarEstadoSiniestroAlfa,
   isAlfaEstadoDefinido,
-  shouldUpdateAlfaStatus,
-  estadoGestionDesdeEstadoAlfa,
 } from '../config/alfaExcelStatuses.js';
 
 const errors = [];
@@ -17,74 +19,38 @@ function assert(cond, msg) {
   if (!cond) errors.push(msg);
 }
 
-assert(ALFA_ESTADOS_UNIFICADOS.includes('OBJETADO'), 'catálogo debe incluir OBJETADO');
-assert(ALFA_ESTADOS_UNIFICADOS.includes('DESISTIDO'), 'catálogo debe incluir DESISTIDO');
+assert(ALFA_ESTADOS_GESTION.includes('EN GESTIÓN'), 'gestión EN GESTIÓN');
+assert(ALFA_ESTADOS_GESTION.includes('CONTACTADO/PROGRAMADO'), 'gestión CONTACTADO/PROGRAMADO');
+assert(ALFA_ESTADOS_SINIESTRO.includes('PENDIENTE'), 'siniestro PENDIENTE');
+assert(ALFA_ESTADOS_SINIESTRO.includes('PENDIENTE ACEPTACION CIFRAS'), 'siniestro cifras');
 
-assert(homologarEstadoAlfa('OBJETADO') === 'OBJETADO', 'ARNALD conserva OBJETADO');
-assert(homologarEstadoAlfa('DESISTIDO') === 'DESISTIDO', 'ARNALD conserva DESISTIDO');
-assert(homologarEstadoAlfa('objetado') === 'OBJETADO', 'alias objetado');
-assert(homologarEstadoAlfa('desistimiento') === 'DESISTIDO', 'alias desistimiento');
-
-assert(estadoAlfaParaSharePoint('OBJETADO') === 'Objetado', 'SharePoint OBJETADO → Objetado');
-assert(estadoAlfaParaSharePoint('DESISTIDO') === 'Desistido', 'SharePoint DESISTIDO → Desistido');
+assert(homologarEstadoGestionAlfa('Sin contactar') === 'EN GESTIÓN', 'legacy→EN GESTIÓN');
 assert(
-  estadoAlfaParaSharePoint('CERRADO') === 'Cerrado totalmente',
-  'SharePoint CERRADO → etiqueta boletín'
+  homologarEstadoGestionAlfa('Contactado y programado') === 'CONTACTADO/PROGRAMADO',
+  'legacy→CONTACTADO/PROGRAMADO'
 );
-assert(
-  estadoAlfaParaSharePoint('LIQUIDADO') === 'Liquidado',
-  'SharePoint LIQUIDADO → etiqueta boletín'
-);
-assert(
-  estadoAlfaParaSharePoint('ENVIADO ASEGURADORA') === 'En proceso de pago',
-  'SharePoint ENVIADO → En proceso de pago'
-);
-assert(
-  estadoAlfaParaSharePoint('Sin contactar') === 'Sin contactar',
-  'SharePoint gestión no se altera'
-);
+assert(homologarEstadoSiniestroAlfa('ENVIADO ASEGURADORA') === 'PROCESO DE PAGO', 'enviado→pago');
+assert(homologarEstadoSiniestroAlfa('OBJETADO') === 'OBJETADO', 'objetado real');
+assert(homologarEstadoSiniestroAlfa('DESISTIDO') === 'DESISTIDO', 'desistido real');
+assert(homologarEstadoAlfa('CERRADO') === 'CERRADO', 'cerrado');
 
-assert(isAlfaEstadoDefinido('OBJETADO'), 'OBJETADO es cierre');
-assert(isAlfaEstadoDefinido('DESISTIDO'), 'DESISTIDO es cierre');
-assert(estadoGestionDesdeEstadoAlfa('OBJETADO') === 'Inspeccionado', 'Excel AD gestión');
-assert(estadoGestionDesdeEstadoAlfa('DESISTIDO') === 'Inspeccionado', 'Excel AD gestión desistido');
-
-const desiste = shouldUpdateAlfaStatus({
-  currentStatus: 'Sin contactar',
-  incomingStatus: 'DESISTIDO',
-});
-assert(desiste.update === true, `DESISTIDO no debe tratarse como placeholder: ${desiste.reason}`);
-
-const placeholder = shouldUpdateAlfaStatus({
-  currentStatus: 'Sin contactar',
-  incomingStatus: 'DESISTE',
-});
-assert(placeholder.update === false && placeholder.reason === 'PLACEHOLDER_INCOMING', 'DESISTE sigue siendo placeholder');
+assert(estadoAlfaParaSharePoint('OBJETADO') === 'OBJETADO', 'SP objetado libre');
+assert(estadoAlfaParaSharePoint('DESISTIDO') === 'DESISTIDO', 'SP desistido libre');
+assert(estadoAlfaParaSharePoint('PROCESO DE PAGO') === 'PROCESO DE PAGO', 'SP pago');
+assert(
+  estadoGestionAlfaParaSharePoint('SIN RESPUESTA EFECTIVA') === 'SIN RESPUESTA EFECTIVA',
+  'SP gestión'
+);
+assert(isAlfaEstadoDefinido('CERRADO'), 'cerrado definido');
+assert(!isAlfaEstadoDefinido('PENDIENTE'), 'pendiente no definido');
 
 assert(
   aplicarObservacionAutoCierreAlfa('OBJETADO', '') === 'Caso objetado.',
-  'OBJETADO llena observación vacía'
+  'obs objetado'
 );
 assert(
   aplicarObservacionAutoCierreAlfa('DESISTIDO', '') === 'Caso desistido.',
-  'DESISTIDO llena observación vacía'
-);
-assert(
-  aplicarObservacionAutoCierreAlfa('DESISTIDO', 'Caso objetado.') === 'Caso desistido.',
-  'cambia plantilla al pasar de OBJETADO a DESISTIDO'
-);
-assert(
-  aplicarObservacionAutoCierreAlfa('OBJETADO', 'Cliente no acepta oferta') ===
-    'Cliente no acepta oferta',
-  'no pisa observación escrita por el ajustador'
-);
-assert(
-  aplicarObservacionAutoCierreAlfa('Inspeccionado', 'Caso objetado.') === '',
-  'limpia plantilla al salir de OBJETADO'
-);
-assert(
-  aplicarObservacionAutoCierreAlfa('LIQUIDADO', 'Nota previa') === 'Nota previa',
-  'conserva nota al ir a otro cierre'
+  'obs desistido'
 );
 
 if (errors.length) {

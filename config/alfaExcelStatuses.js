@@ -1,138 +1,54 @@
 /**
- * Estados oficiales Seguros Alfa — un solo eje (`estado`).
- * Une lineamiento correo (gestión) + cierre de liquidación.
- * `estadoGestion` se deriva para Excel AD (ESTADO GESTION).
+ * Catálogos oficiales Seguros Alfa (ejes independientes).
+ * - `estadoGestion` (AI): GESTION
+ * - `estado` (AJ): SINIESTRO
  */
 
-export const ALFA_ESTADOS_UNIFICADOS = Object.freeze([
-  'Sin contactar',
-  'Contactado y programado',
-  'Inspeccionado',
-  'Sin respuesta',
-  'Solicitud de documentos',
+export const ALFA_ESTADOS_GESTION = Object.freeze([
+  'EN GESTIÓN',
+  'CONTACTADO/PROGRAMADO',
   'LIQUIDADO',
-  'ENVIADO ASEGURADORA',
+  'INSPECCIONADO',
+  'SIN RESPUESTA EFECTIVA',
+]);
+
+export const ALFA_ESTADOS_SINIESTRO = Object.freeze([
+  'PENDIENTE',
+  'DESISTIDO',
   'CERRADO',
   'OBJETADO',
-  'DESISTIDO',
+  'PROCESO DE PAGO',
+  'PENDIENTE ACEPTACION CIFRAS',
 ]);
+
+/**
+ * @deprecated Compatibilidad histórica: antes se usaba un solo eje.
+ * Mantener como alias del catálogo de siniestro.
+ */
+export const ALFA_ESTADOS_UNIFICADOS = ALFA_ESTADOS_SINIESTRO;
 
 /** @deprecated Ya no se fuerzan a CERRADO; SharePoint recibe el estado real. */
 export const ALFA_ESTADOS_SHAREPOINT_COMO_CERRADO = Object.freeze([]);
 
-/** @deprecated Alias del catálogo unificado. */
+/** @deprecated Alias legacy; usar ALFA_ESTADOS_SINIESTRO. */
 export const ALFA_KNOWN_STATUSES = ALFA_ESTADOS_UNIFICADOS;
 
-/** Los 5 del correo (vista Excel AD). */
-export const ALFA_ESTADOS_GESTION = Object.freeze([
-  'Sin contactar',
-  'Contactado y programado',
-  'Inspeccionado',
-  'Sin respuesta',
-  'Solicitud de documentos',
-]);
-
 const STATUS_RANK = Object.freeze({
-  'SIN CONTACTAR': 10,
-  'CONTACTADO Y PROGRAMADO': 20,
-  INSPECCIONADO: 30,
-  'SIN RESPUESTA': 35,
-  'SOLICITUD DE DOCUMENTOS': 40,
-  // legacy
   PENDIENTE: 10,
-  'EN TRAMITE': 15,
-  'EN INSPECCION': 20,
-  DOCUMENTACION: 40,
-  LIQUIDADO: 50,
-  'ENVIADO ASEGURADORA': 60,
+  'PROCESO DE PAGO': 20,
+  'PENDIENTE ACEPTACION CIFRAS': 30,
   CERRADO: 70,
   OBJETADO: 70,
   DESISTIDO: 70,
 });
 
 export const ALFA_EXCEL_ALLOWED_STATUS_TRANSITIONS = Object.freeze({
-  'SIN CONTACTAR': [
-    'CONTACTADO Y PROGRAMADO',
-    'INSPECCIONADO',
-    'SIN RESPUESTA',
-    'SOLICITUD DE DOCUMENTOS',
-    'LIQUIDADO',
-    'ENVIADO ASEGURADORA',
-    'CERRADO',
-    'OBJETADO',
-    'DESISTIDO',
-  ],
-  'CONTACTADO Y PROGRAMADO': [
-    'INSPECCIONADO',
-    'SIN RESPUESTA',
-    'SOLICITUD DE DOCUMENTOS',
-    'LIQUIDADO',
-    'ENVIADO ASEGURADORA',
-    'CERRADO',
-    'OBJETADO',
-    'DESISTIDO',
-  ],
-  INSPECCIONADO: [
-    'SIN RESPUESTA',
-    'SOLICITUD DE DOCUMENTOS',
-    'LIQUIDADO',
-    'ENVIADO ASEGURADORA',
-    'CERRADO',
-    'OBJETADO',
-    'DESISTIDO',
-  ],
-  'SIN RESPUESTA': [
-    'CONTACTADO Y PROGRAMADO',
-    'INSPECCIONADO',
-    'SOLICITUD DE DOCUMENTOS',
-    'LIQUIDADO',
-    'ENVIADO ASEGURADORA',
-    'CERRADO',
-    'OBJETADO',
-    'DESISTIDO',
-  ],
-  'SOLICITUD DE DOCUMENTOS': [
-    'LIQUIDADO',
-    'ENVIADO ASEGURADORA',
-    'CERRADO',
-    'OBJETADO',
-    'DESISTIDO',
-    'INSPECCIONADO',
-  ],
-  LIQUIDADO: ['ENVIADO ASEGURADORA', 'CERRADO', 'OBJETADO', 'DESISTIDO'],
-  'ENVIADO ASEGURADORA': ['CERRADO', 'OBJETADO', 'DESISTIDO'],
+  PENDIENTE: ['PROCESO DE PAGO', 'PENDIENTE ACEPTACION CIFRAS', 'CERRADO', 'OBJETADO', 'DESISTIDO'],
+  'PROCESO DE PAGO': ['PENDIENTE ACEPTACION CIFRAS', 'CERRADO', 'OBJETADO', 'DESISTIDO'],
+  'PENDIENTE ACEPTACION CIFRAS': ['CERRADO', 'OBJETADO', 'DESISTIDO', 'PROCESO DE PAGO'],
   CERRADO: ['OBJETADO', 'DESISTIDO'],
   OBJETADO: ['DESISTIDO', 'CERRADO'],
   DESISTIDO: ['OBJETADO', 'CERRADO'],
-  // legacy keys still accepted in Excel diffs
-  PENDIENTE: [
-    'EN TRAMITE',
-    'EN INSPECCION',
-    'DOCUMENTACION',
-    'LIQUIDADO',
-    'ENVIADO ASEGURADORA',
-    'CERRADO',
-    'OBJETADO',
-    'DESISTIDO',
-  ],
-  'EN TRAMITE': [
-    'EN INSPECCION',
-    'DOCUMENTACION',
-    'LIQUIDADO',
-    'ENVIADO ASEGURADORA',
-    'CERRADO',
-    'OBJETADO',
-    'DESISTIDO',
-  ],
-  'EN INSPECCION': [
-    'DOCUMENTACION',
-    'LIQUIDADO',
-    'ENVIADO ASEGURADORA',
-    'CERRADO',
-    'OBJETADO',
-    'DESISTIDO',
-  ],
-  DOCUMENTACION: ['LIQUIDADO', 'ENVIADO ASEGURADORA', 'CERRADO', 'OBJETADO', 'DESISTIDO'],
 });
 
 export function normalizeAlfaStatus(value) {
@@ -147,25 +63,15 @@ export function normalizeAlfaStatus(value) {
 
 function canonicalDisplayStatus(normalized) {
   const map = {
-    'SIN CONTACTAR': 'Sin contactar',
-    'CONTACTADO Y PROGRAMADO': 'Contactado y programado',
-    'CONTACTADO - PROGRAMADO': 'Contactado y programado',
-    INSPECCIONADO: 'Inspeccionado',
-    'SIN RESPUESTA': 'Sin respuesta',
-    'SIN RESPUESTA EFECTIVA': 'Sin respuesta',
-    'SOLICITUD DE DOCUMENTOS': 'Solicitud de documentos',
-    'EN GESTION': 'Solicitud de documentos',
-    PENDIENTE: 'Sin contactar',
-    'EN TRAMITE': 'Contactado y programado',
-    'EN INSPECCION': 'Contactado y programado',
-    DOCUMENTACION: 'Solicitud de documentos',
-    LIQUIDADO: 'LIQUIDADO',
-    'PENDIENTE ACEPTACION DE CIFRAS': 'LIQUIDADO',
-    'PENDIENTE ACEPTACION CIFRAS': 'LIQUIDADO',
-    'PENDIENTES ACEPTACION CIFRAS': 'LIQUIDADO',
-    'ENVIADO ASEGURADORA': 'ENVIADO ASEGURADORA',
-    'EN PROCESO DE PAGO': 'ENVIADO ASEGURADORA',
-    'PROCESO DE PAGO': 'ENVIADO ASEGURADORA',
+    PENDIENTE: 'PENDIENTE',
+    'PENDIENTE SINIESTRO': 'PENDIENTE',
+    'EN PROCESO DE PAGO': 'PROCESO DE PAGO',
+    'PROCESO DE PAGO': 'PROCESO DE PAGO',
+    'ENVIADO ASEGURADORA': 'PROCESO DE PAGO',
+    LIQUIDADO: 'PENDIENTE ACEPTACION CIFRAS',
+    'PENDIENTE ACEPTACION DE CIFRAS': 'PENDIENTE ACEPTACION CIFRAS',
+    'PENDIENTE ACEPTACION CIFRAS': 'PENDIENTE ACEPTACION CIFRAS',
+    'PENDIENTES ACEPTACION CIFRAS': 'PENDIENTE ACEPTACION CIFRAS',
     CERRADO: 'CERRADO',
     'CERRADO TOTALMENTE': 'CERRADO',
     'CERRADOS TOTALMENTE': 'CERRADO',
@@ -181,61 +87,67 @@ function canonicalDisplayStatus(normalized) {
 }
 
 /**
- * Valor de ESTADO SINIESTRO para Excel / SharePoint (etiquetas del boletín).
- * Escribe el estado real (incl. Objetado / Desistido); no se fuerza a CERRADO.
+ * Homologa estado SINIESTRO al catálogo oficial Alfa.
  */
-export function estadoAlfaParaSharePoint(estado) {
-  const n = normalizeAlfaStatus(estado);
-  if (!n) return '';
+export function homologarEstadoSiniestroAlfa(estado, extras = {}) {
+  const raw = String(estado || '').trim();
+  if (!raw) return 'PENDIENTE';
+  if (ALFA_ESTADOS_SINIESTRO.includes(raw)) return raw;
+  const n = normalizeAlfaStatus(raw);
 
-  const etiquetasReporte = {
-    'SIN CONTACTAR': 'Sin contactar',
-    'CONTACTADO Y PROGRAMADO': 'Contactado - Programado',
-    'CONTACTADO - PROGRAMADO': 'Contactado - Programado',
-    INSPECCIONADO: 'Inspeccionado',
-    'SIN RESPUESTA': 'Sin respuesta efectiva',
-    'SIN RESPUESTA EFECTIVA': 'Sin respuesta efectiva',
-    'SOLICITUD DE DOCUMENTOS': 'En gestión',
-    'EN GESTION': 'En gestión',
-    LIQUIDADO: 'Liquidado',
-    'PENDIENTE ACEPTACION DE CIFRAS': 'Pendiente aceptación de cifras',
-    'PENDIENTE ACEPTACION CIFRAS': 'Pendiente aceptación de cifras',
-    'PENDIENTES ACEPTACION CIFRAS': 'Pendiente aceptación de cifras',
-    'ENVIADO ASEGURADORA': 'En proceso de pago',
-    'EN PROCESO DE PAGO': 'En proceso de pago',
-    'PROCESO DE PAGO': 'En proceso de pago',
-    CERRADO: 'Cerrado totalmente',
-    'CERRADOS TOTALMENTE': 'Cerrado totalmente',
-    'CERRADO TOTALMENTE': 'Cerrado totalmente',
-    OBJETADO: 'Objetado',
-    OBJETADOS: 'Objetado',
-    'CASO OBJETADO': 'Objetado',
-    OBJECION: 'Objetado',
-    DESISTIDO: 'Desistido',
-    DESISTIDOS: 'Desistido',
-    DESISTIMIENTO: 'Desistido',
-  };
-  if (etiquetasReporte[n]) return etiquetasReporte[n];
-  const display = canonicalDisplayStatus(n);
-  return display || String(estado || '').trim();
+  if (n === 'LIQUIDADO') {
+    const acep = String(extras?.liquidador?.aceptacionIndemnizacion || '')
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '')
+      .toUpperCase()
+      .replace(/\s+/g, '_');
+    if (acep === 'ACEPTO' || extras?.fechaAceptacionLiquidacion) return 'PROCESO DE PAGO';
+    return 'PENDIENTE ACEPTACION CIFRAS';
+  }
+
+  return canonicalDisplayStatus(n) || 'PENDIENTE';
 }
 
 /**
- * Valor de ESTADO GESTION para Excel (etiquetas del boletín / correo).
+ * Valor de ESTADO SINIESTRO para Excel/SharePoint.
+ * Requisito: escribir exactamente la etiqueta de compañía almacenada.
+ */
+export function estadoAlfaParaSharePoint(estado) {
+  return homologarEstadoSiniestroAlfa(estado);
+}
+
+/**
+ * Homologa estado GESTION al catálogo oficial Alfa.
+ */
+export function homologarEstadoGestionAlfa(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (ALFA_ESTADOS_GESTION.includes(raw)) return raw;
+
+  const n = normalizeAlfaStatus(raw);
+  const aliases = {
+    'EN GESTION': 'EN GESTIÓN',
+    PENDIENTE: 'EN GESTIÓN',
+    'SIN CONTACTAR': 'EN GESTIÓN',
+    CONTACTADO: 'CONTACTADO/PROGRAMADO',
+    PROGRAMADO: 'CONTACTADO/PROGRAMADO',
+    'CONTACTADO Y PROGRAMADO': 'CONTACTADO/PROGRAMADO',
+    'CONTACTADO - PROGRAMADO': 'CONTACTADO/PROGRAMADO',
+    'EN INSPECCION': 'INSPECCIONADO',
+    INSPECCIONADO: 'INSPECCIONADO',
+    LIQUIDADO: 'LIQUIDADO',
+    'SIN RESPUESTA': 'SIN RESPUESTA EFECTIVA',
+    'SIN RESPUESTA EFECTIVA': 'SIN RESPUESTA EFECTIVA',
+  };
+  return aliases[n] || 'EN GESTIÓN';
+}
+
+/**
+ * Valor de ESTADO GESTION para Excel/SharePoint.
+ * Requisito: escribir exactamente la etiqueta de compañía almacenada.
  */
 export function estadoGestionAlfaParaSharePoint(estadoGestion) {
-  const canon = canonicalEstadoGestion(estadoGestion) || String(estadoGestion || '').trim();
-  if (!canon) return '';
-  const n = normalizeAlfaStatus(canon);
-  const map = {
-    'SIN CONTACTAR': 'Sin contactar',
-    'CONTACTADO Y PROGRAMADO': 'Contactado - Programado',
-    INSPECCIONADO: 'Inspeccionado',
-    'SIN RESPUESTA': 'Sin respuesta efectiva',
-    'SOLICITUD DE DOCUMENTOS': 'En gestión',
-    LIQUIDADO: 'Liquidado',
-  };
-  return map[n] || canon;
+  return homologarEstadoGestionAlfa(estadoGestion);
 }
 
 /** Observación que se escribe sola al marcar OBJETADO / DESISTIDO (Excel OBSERVACION). */
@@ -289,85 +201,35 @@ export function normalizeAlfaEstadoGestion(value) {
  * Canoniza estadoGestion (los 5 del correo) o null.
  */
 export function canonicalEstadoGestion(value) {
-  const n = normalizeAlfaEstadoGestion(value);
-  if (!n) return null;
-  const aliases = {
-    'sin contactar': 'Sin contactar',
-    pendiente: 'Sin contactar',
-    'contactado y programado': 'Contactado y programado',
-    'contactado - programado': 'Contactado y programado',
-    contactado: 'Contactado y programado',
-    programado: 'Contactado y programado',
-    inspeccionado: 'Inspeccionado',
-    'sin respuesta': 'Sin respuesta',
-    'sin respuesta efectiva': 'Sin respuesta',
-    'no contesta': 'Sin respuesta',
-    'solicitud de documentos': 'Solicitud de documentos',
-    'en gestion': 'Solicitud de documentos',
-    documentacion: 'Solicitud de documentos',
-    'documentacion pendiente': 'Solicitud de documentos',
-  };
-  if (aliases[n]) return aliases[n];
-  const hit = ALFA_ESTADOS_GESTION.find((e) => normalizeAlfaEstadoGestion(e) === n);
-  return hit || null;
+  const canon = homologarEstadoGestionAlfa(value);
+  return canon || null;
 }
 
 export function isAlfaEstadoDefinido(estado) {
-  const n = normalizeAlfaStatus(estado);
-  return (
-    n.includes('LIQUIDADO') ||
-    n.includes('ENVIADO') ||
-    n === 'CERRADO' ||
-    n === 'OBJETADO' ||
-    n === 'DESISTIDO'
-  );
+  const n = normalizeAlfaStatus(homologarEstadoSiniestroAlfa(estado));
+  return n === 'PROCESO DE PAGO' || n === 'PENDIENTE ACEPTACION CIFRAS' || n === 'CERRADO' || n === 'OBJETADO' || n === 'DESISTIDO';
 }
 
 /**
- * Homologa cualquier valor legacy / dual al catálogo único.
+ * Homologa estado SINIESTRO (compatibilidad histórica).
  */
-export function homologarEstadoAlfa(valor, extras = {}) {
-  const raw = String(valor || '').trim();
-  if (ALFA_ESTADOS_UNIFICADOS.includes(raw)) return raw;
-
-  const eg = canonicalEstadoGestion(extras.estadoGestion);
-  const norm = normalizeAlfaStatus(raw);
-  const fromCanon = canonicalDisplayStatus(norm);
-  if (fromCanon) {
-    if (
-      (norm === 'EN INSPECCION' || norm === 'EN TRAMITE') &&
-      extras.fechaInspeccion
-    ) {
-      return 'Inspeccionado';
-    }
-    // Si el workflow viejo era genérico y ya había gestión más precisa, preferir gestión
-    if (
-      eg &&
-      (fromCanon === 'Sin contactar' ||
-        fromCanon === 'Contactado y programado' ||
-        fromCanon === 'Solicitud de documentos') &&
-      !isAlfaEstadoDefinido(fromCanon)
-    ) {
-      // Preferir gestión si aporta más detalle (p.ej. Sin respuesta)
-      if (eg === 'Sin respuesta' || eg === 'Inspeccionado') return eg;
-      if (fromCanon === 'Sin contactar' && eg) return eg;
-      if (fromCanon === 'Contactado y programado' && eg === 'Inspeccionado') return eg;
-    }
-    return fromCanon;
-  }
-  if (eg) return eg;
-  return 'Sin contactar';
+export function homologarEstadoAlfa(valor) {
+  return homologarEstadoSiniestroAlfa(valor);
 }
 
 /**
- * Vista Excel AD: solo los 5 del correo.
+ * @deprecated Solo para migración legacy.
+ * No usar para sobrescribir `estadoGestion` en flujos normales.
  */
 export function estadoGestionDesdeEstadoAlfa(estado) {
-  const e = homologarEstadoAlfa(estado);
-  if (e === 'LIQUIDADO') return 'Inspeccionado'; // Excel AD: liquidado operativo sigue en inspección cerrada
-  if (isAlfaEstadoDefinido(e)) return 'Inspeccionado';
-  if (ALFA_ESTADOS_GESTION.includes(e)) return e;
-  return 'Sin contactar';
+  const e = homologarEstadoSiniestroAlfa(estado);
+  if (e === 'PENDIENTE') return 'EN GESTIÓN';
+  if (e === 'PROCESO DE PAGO') return 'LIQUIDADO';
+  if (e === 'PENDIENTE ACEPTACION CIFRAS') return 'LIQUIDADO';
+  if (e === 'CERRADO') return 'LIQUIDADO';
+  if (e === 'OBJETADO') return 'SIN RESPUESTA EFECTIVA';
+  if (e === 'DESISTIDO') return 'SIN RESPUESTA EFECTIVA';
+  return 'EN GESTIÓN';
 }
 
 /**
