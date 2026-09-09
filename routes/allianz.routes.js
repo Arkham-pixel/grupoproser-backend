@@ -34,6 +34,50 @@ const persistAllianz = attachPersistedFileMiddleware({
   ownerIdFromReq: (req) => req.params.id,
 });
 
+/** Proxy de Static Maps: evita el bloqueo CORS del navegador al generar la captura del Word. */
+router.get('/mapa-estatico', async (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  const apiKey = String(process.env.GOOGLE_MAPS_API_KEY || '').trim();
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return res.status(400).json({ message: 'Coordenadas inválidas' });
+  }
+  if (!apiKey) {
+    return res.status(503).json({ message: 'GOOGLE_MAPS_API_KEY no configurada' });
+  }
+
+  const params = new URLSearchParams({
+    center: `${lat},${lng}`,
+    zoom: '18',
+    size: '640x480',
+    maptype: 'satellite',
+    scale: '2',
+    markers: `color:red|${lat},${lng}`,
+    key: apiKey,
+  });
+
+  try {
+    const response = await fetch(`https://maps.googleapis.com/maps/api/staticmap?${params}`, {
+      headers: { Referer: 'https://arnald.grupoproser.com.co/' },
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      return res.status(response.status).json({
+        message: 'Google Maps rechazó la captura',
+        detail: detail.slice(0, 200),
+      });
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    res.set({
+      'Content-Type': response.headers.get('content-type') || 'image/png',
+      'Cache-Control': 'private, max-age=300',
+    });
+    return res.send(bytes);
+  } catch (error) {
+    return res.status(502).json({ message: error.message || 'No se pudo obtener el mapa' });
+  }
+});
+
 router.get('/', listarCasosAllianz);
 router.post('/importar', importarCasosAllianz);
 router.post('/sync-express', syncDesdeExpress);
