@@ -133,6 +133,8 @@ export function homologarEstadoGestionAlfa(value) {
     PROGRAMADO: 'CONTACTADO/PROGRAMADO',
     'CONTACTADO Y PROGRAMADO': 'CONTACTADO/PROGRAMADO',
     'CONTACTADO - PROGRAMADO': 'CONTACTADO/PROGRAMADO',
+    // Legacy operativo: ya hubo contacto / pedida de docs → no es «por llamar».
+    'SOLICITUD DE DOCUMENTOS': 'INSPECCIONADO',
     'EN INSPECCION': 'INSPECCIONADO',
     INSPECCIONADO: 'INSPECCIONADO',
     LIQUIDADO: 'LIQUIDADO',
