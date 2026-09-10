@@ -9,6 +9,7 @@
  * Uso:
  *   node scripts/copiarInformeZurichCatAListadoPorSiniestro.js
  *   node scripts/copiarInformeZurichCatAListadoPorSiniestro.js --apply
+ *   node scripts/copiarInformeZurichCatAListadoPorSiniestro.js --apply --force --only=182118
  */
 import dns from 'dns';
 import dotenv from 'dotenv';
@@ -32,6 +33,10 @@ if (process.env.MONGO_SKIP_PUBLIC_DNS !== '1') {
 }
 
 const APPLY = process.argv.includes('--apply');
+const FORCE = process.argv.includes('--force');
+const ONLY = (process.argv.find((a) => a.startsWith('--only=')) || '')
+  .replace('--only=', '')
+  .trim();
 
 const PEDIDOS = [
   { zc: '318345', stro: '181871', asegurado: 'LA URBANIZACIÓN CUBIK PH' },
@@ -115,6 +120,7 @@ await mongoose.connect(process.env.MONGO_URI_DIRECT || process.env.MONGO_URI, {
 const resumen = [];
 
 for (const pedido of PEDIDOS) {
+  if (ONLY && pedido.stro !== ONLY && pedido.zc !== ONLY) continue;
   const cat = await ZurichCaso.findOne({ siniestro: pedido.stro }).lean();
   const listado = await ZurichListadoCaso.findOne({ siniestro: pedido.stro });
   const fila = {
@@ -145,8 +151,8 @@ for (const pedido of PEDIDOS) {
   const liqLst = listado.liquidador && typeof listado.liquidador === 'object' ? listado.liquidador : null;
   const scoreCat = scoreInforme(iuCat);
   const scoreLst = scoreInforme(iuLst);
-  const copiarInforme = Boolean(iuCat) && scoreCat > scoreLst;
-  const copiarLiquidador = Boolean(liqCat) && scoreLiquidador(liqCat) > scoreLiquidador(liqLst);
+  const copiarInforme = Boolean(iuCat) && (FORCE || scoreCat > scoreLst);
+  const copiarLiquidador = Boolean(liqCat) && (FORCE || scoreLiquidador(liqCat) > scoreLiquidador(liqLst));
   const nArchivosCat = Array.isArray(cat.archivos) ? cat.archivos.length : 0;
   const copiarChecklist = tieneChecklistCat(cat);
 

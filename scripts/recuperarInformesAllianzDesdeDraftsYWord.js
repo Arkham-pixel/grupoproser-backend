@@ -12,21 +12,13 @@
  *   node scripts/recuperarInformesAllianzDesdeDraftsYWord.js
  *   APPLY=1 node scripts/recuperarInformesAllianzDesdeDraftsYWord.js
  */
-import dns from 'dns';
-import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import mongoose from 'mongoose';
-import { resolveFileForRead } from '../services/fileStorageService.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.join(__dirname, '../.env') });
-if (process.env.MONGO_SKIP_PUBLIC_DNS !== '1') {
-  dns.setServers(['8.8.8.8', '1.1.1.1']);
-}
+import { resolveFileForRead, getDownloadUrl } from '../services/fileStorageService.js';
+import { conectarMongoRobusto } from './_conectarMongoRobusto.js';
 
 const APPLY = process.env.APPLY === '1';
+const SOLO = String(process.env.SOLO || '').replace(/\D/g, '');
 const BACKUP_COL = 'gsk3cAppallianzListado_backupInforme_20260910';
 const require = createRequire(import.meta.url);
 let JSZip = null;
@@ -151,13 +143,29 @@ async function streamToBuffer(stream) {
 async function parsearInformeDesdeDocx(ruta, nombreOriginal) {
   if (!JSZip || !ruta) return null;
   try {
-    const file = await resolveFileForRead(ruta);
-    const stream = file?.stream || (file?.exists && file.localPath ? null : file?.stream);
     let buf = null;
-    if (file?.stream) buf = await streamToBuffer(file.stream);
-    if (!buf && file?.localPath) {
-      const fs = await import('fs/promises');
-      buf = await fs.readFile(file.localPath);
+    try {
+      const url = await Promise.race([
+        getDownloadUrl(ruta),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('url timeout')), 8000)),
+      ]);
+      if (url) {
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), 20000);
+        const res = await fetch(url, { signal: ac.signal });
+        clearTimeout(timer);
+        if (res.ok) buf = Buffer.from(await res.arrayBuffer());
+      }
+    } catch (err) {
+      console.warn(`  signed-url ${nombreOriginal}: ${err.message}`);
+    }
+    if (!buf?.length) {
+      const file = await resolveFileForRead(ruta);
+      if (file?.stream) buf = await streamToBuffer(file.stream);
+      if (!buf && file?.localPath) {
+        const fs = await import('fs/promises');
+        buf = await fs.readFile(file.localPath);
+      }
     }
     if (!buf?.length) return null;
     const zip = await JSZip.loadAsync(buf);
@@ -271,19 +279,38 @@ function fusionarInforme(base, extra, origen) {
   return { out, cambios };
 }
 
-await mongoose.connect(process.env.MONGO_URI_DIRECT || process.env.MONGO_URI, {
-  serverSelectionTimeoutMS: 25000,
-});
-const db = mongoose.connection.db;
+const db = await conectarMongoRobusto();
 const col = db.collection('gsk3cAppallianzListadoCasos');
 const draftsCol = db.collection('arnald_form_drafts');
 const backupCol = db.collection(BACKUP_COL);
 
+const filtroCasos = SOLO
+  ? {
+      $or: [
+        { siniestro: new RegExp(SOLO) },
+        { identificacion: new RegExp(SOLO) },
+        { 'archivos.nombreOriginal': new RegExp(SOLO) },
+      ],
+    }
+  : {
+      $or: [{ informeUnico: { $type: 'object' } }, { liquidador: { $type: 'object' } }],
+    };
+
 const casos = await col
-  .find({
-    $or: [{ informeUnico: { $type: 'object' } }, { liquidador: { $type: 'object' } }],
+  .find(filtroCasos)
+  .project({
+    consecutivo: 1,
+    siniestro: 1,
+    identificacion: 1,
+    asegurado: 1,
+    informeUnico: 1,
+    liquidador: 1,
+    'archivos.nombreOriginal': 1,
+    'archivos.nombreArchivo': 1,
+    'archivos.ruta': 1,
   })
   .toArray();
+console.log(`Casos leídos: ${casos.length}${SOLO ? ` (SOLO ${SOLO})` : ''}`);
 
 const drafts = await draftsCol
   .find({ formKey: /allianz-listado-ws:/ })
@@ -350,7 +377,21 @@ for (const caso of casos) {
   if (narrativaVacia && words.length && JSZip) {
     let best = null;
     for (const w of words) {
-      const parsed = await parsearInformeDesdeDocx(w.ruta, w.nombreOriginal || w.nombreArchivo);
+      const nombreW = w.nombreOriginal || w.nombreArchivo;
+      console.log(`  Word ${caso.consecutivo} ${nombreW}`);
+      let parsed = null;
+      try {
+        parsed = await Promise.race([
+          parsearInformeDesdeDocx(w.ruta, nombreW),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('timeout 45s leyendo Word')), 45000)
+          ),
+        ]);
+      } catch (err) {
+        console.warn(`  Word falló ${nombreW}: ${err.message}`);
+        continue;
+      }
+      if (parsed?.error) console.warn(`  Word error ${nombreW}: ${parsed.error}`);
       if (!parsed?.parsed) continue;
       if (!best || parsed.score > best.score) best = parsed;
     }
