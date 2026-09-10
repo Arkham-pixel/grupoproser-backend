@@ -33,6 +33,62 @@ export const BANDERAS_LISTA_SURA = {
     ],
   },
   tieneSalvamento: { $eq: [{ $type: '$salvamento' }, 'object'] },
+  // Totales de liquidación sin mandar el liquidador completo
+  liquidacionPresupuestoTotal: {
+    $ifNull: ['$liquidacionPresupuestoTotal', '$liquidador.resumenReporte.totalPresupuesto'],
+  },
+  liquidacionDeduciblePresupuesto: {
+    $ifNull: [
+      '$liquidacionDeduciblePresupuesto',
+      '$liquidador.resumenReporte.deduciblePresupuesto',
+    ],
+  },
+  liquidacionValorIndemnizarPresupuesto: {
+    $ifNull: [
+      '$liquidacionValorIndemnizarPresupuesto',
+      '$liquidador.resumenReporte.valorIndemnizarPresupuesto',
+    ],
+  },
+  liquidacionTotalContenidos: {
+    $ifNull: ['$liquidacionTotalContenidos', '$liquidador.resumenReporte.totalContenidos'],
+  },
+  liquidacionDeducibleContenidos: {
+    $ifNull: [
+      '$liquidacionDeducibleContenidos',
+      '$liquidador.resumenReporte.deducibleContenidos',
+    ],
+  },
+  liquidacionValorIndemnizarContenidos: {
+    $ifNull: [
+      '$liquidacionValorIndemnizarContenidos',
+      '$liquidador.resumenReporte.valorIndemnizarContenidos',
+    ],
+  },
+  liquidacionTotalIndemnizar: {
+    $ifNull: ['$liquidacionTotalIndemnizar', '$liquidador.resumenReporte.totalIndemnizar'],
+  },
+  valorAseguradoFechaSiniestro: {
+    $ifNull: [
+      '$valorAseguradoFechaSiniestro',
+      {
+        $ifNull: [
+          '$liquidador.resumenReporte.valorAseguradoFechaSiniestro',
+          '$liquidador.evaluacionSismicaNSR10.presupuesto.calculoValorAsegurado.valorAseguradoFechaSiniestro',
+        ],
+      },
+    ],
+  },
+  valorDeducibleCalculo: {
+    $ifNull: [
+      '$valorDeducibleCalculo',
+      {
+        $ifNull: [
+          '$liquidador.resumenReporte.valorDeducibleCalculo',
+          '$liquidador.evaluacionSismicaNSR10.presupuesto.calculoValorAsegurado.valorDeducible',
+        ],
+      },
+    ],
+  },
 };
 
 const clavesProyeccionBanderas = (addFields = {}) =>
