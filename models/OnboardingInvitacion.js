@@ -4,10 +4,10 @@ const firmaSchema = new mongoose.Schema(
   {
     firmado: { type: Boolean, default: false },
     firmadoEn: { type: Date },
-    firmaImagen: { type: String }, // data URL o ruta
+    firmaImagen: { type: String },
     ip: { type: String },
     userAgent: { type: String },
-    documentoId: { type: String }, // Documento en gestor
+    documentoId: { type: String },
   },
   { _id: false }
 );
@@ -24,12 +24,15 @@ const docHrSchema = new mongoose.Schema(
 
 const OnboardingInvitacionSchema = new mongoose.Schema(
   {
-    nombre: { type: String, required: true, trim: true },
-    correo: { type: String, required: true, trim: true, lowercase: true },
+    // Los completa el usuario en el portal (admin solo genera el enlace)
+    nombre: { type: String, default: '', trim: true },
+    correo: { type: String, default: '', trim: true, lowercase: true },
     celular: { type: String, default: '', trim: true },
-    cedula: { type: String, required: true, trim: true },
+    cedula: { type: String, default: '', trim: true },
     fechaNacimiento: { type: Date },
     rol: { type: String, required: true, default: 'usuario' },
+    datosCompletos: { type: Boolean, default: false },
+    notaAdmin: { type: String, default: '', trim: true },
 
     tokenHash: { type: String, index: true, sparse: true },
     tokenExpira: { type: Date },

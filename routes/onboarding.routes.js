@@ -6,8 +6,10 @@ import {
   crearInvitacion,
   listarInvitaciones,
   reenviarInvitacion,
+  cancelarInvitacion,
   obtenerPublica,
   descargarPlantilla,
+  completarDatosPublico,
   firmarAcuerdo,
   registrarCuenta,
   subirDocumentoHr,
@@ -35,6 +37,7 @@ const persistRegistro = attachPersistedFileMiddleware({
 router.get('/public/:token', obtenerPublica);
 router.get('/public/:token/plantilla/:tipo', descargarPlantilla);
 router.get('/public/:token/firmado/:tipo', descargarFirmado);
+router.post('/public/:token/datos', completarDatosPublico);
 router.post('/public/:token/firmar', firmarAcuerdo);
 router.post(
   '/public/:token/registrar',
@@ -57,5 +60,7 @@ router.use(verificarToken);
 router.get('/invitaciones', listarInvitaciones);
 router.post('/invitar', crearInvitacion);
 router.post('/invitaciones/:id/reenviar', reenviarInvitacion);
+router.post('/invitaciones/:id/cancelar', cancelarInvitacion);
+router.post('/cancelar', cancelarInvitacion);
 
 export default router;

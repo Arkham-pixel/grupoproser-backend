@@ -2,11 +2,12 @@
  * Carga Sharepoint_Z.xlsx en Zurich.
  * Condiciones:
  *  - No borra ni reemplaza la colección
- *  - No duplica por ZC / STRO
+ *  - No duplica por ZC / STRO (workflow)
+ *  - Nunca cambia ZC ni número de siniestro/STRO en registros existentes
  *  - Mismo nombre + misma cédula + misma póliza = duplicado (se omite)
  *  - Mismo nombre + misma cédula + distinta póliza = válido (se crea)
- *  - En existentes del listado solo completa huecos (no pisa cédula/póliza)
- *  - Reporte CAT recibe los casos nuevos que no cruzan por ZC/STRO
+ *  - En existentes del listado solo completa huecos (no pisa cédula/póliza/ZC/STRO)
+ *  - No escribe en reporte CAT (gsk3cAppzurichCasos)
  *
  * Uso:
  *   node scripts/importarSharepointZurich.js
@@ -19,10 +20,6 @@ import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import XLSX from 'xlsx';
-import ZurichCaso from '../models/ZurichCaso.js';
-import ZurichListadoCaso from '../models/ZurichListadoCaso.js';
-import InspectorCatastrofico from '../models/InspectorCatastrofico.js';
-import AjustadorCatastrofico from '../models/AjustadorCatastrofico.js';
 import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatastrofico.js';
 import { catalogoPerteneceAModulo, LIDER_ZURICH } from '../utils/filtrarCatalogoPorModulo.js';
 import { homologarEstadoZurich } from '../utils/estadosZurich.js';
@@ -30,6 +27,7 @@ import { homologarCiudadZurich } from '../utils/ciudadesBbvaCat.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '../.env') });
+process.env.SKIP_NOTIFICACIONES_OPERATIVAS = '1';
 
 if (process.env.MONGO_SKIP_PUBLIC_DNS !== '1') {
   dns.setServers(['8.8.8.8', '1.1.1.1']);
@@ -194,6 +192,9 @@ const HEADER_MAP = {
   'Z CLAIM': 'zc',
   STRO: 'siniestro',
   SINIESTRO: 'siniestro',
+  WORKFLOW: 'siniestro',
+  'CODIGO WORKFLOW': 'siniestro',
+  'COD WORKFLOW': 'siniestro',
   AJUSTADOR: 'ajustador',
   'FECHA ASIGNACION': 'fechaAsignacion',
   ASEGURADO: 'asegurado',
@@ -321,14 +322,30 @@ const clavePersonaPoliza = (doc) => {
   return { nom, ced, pol };
 };
 
-await mongoose.connect(process.env.MONGO_URI_DIRECT || process.env.MONGO_URI);
+console.error('[zurich-import] conectando…');
+await mongoose.connect(process.env.MONGO_URI_DIRECT || process.env.MONGO_URI, {
+  family: 4,
+  serverSelectionTimeoutMS: 45000,
+  socketTimeoutMS: 60000,
+  retryWrites: true,
+  retryReads: true,
+  readPreference: 'primaryPreferred',
+});
+const db = mongoose.connection.db;
+const colCat = db.collection('gsk3cAppzurichCasos');
+const colLst = db.collection('gsk3cAppzurichListadoCasos');
+const readOpts = { readPreference: 'secondaryPreferred' };
+console.error('[zurich-import] conectado, parseando excel…');
 const { casos: casosExcel, dupsExcel } = parsearExcel(excelPath);
+console.error('[zurich-import] excel', casosExcel.length, 'dups', dupsExcel.length);
+console.error('[zurich-import] cargando catálogos y casos…');
 const [inspectores, ajustadores, catExistentes, listadoExistentes] = await Promise.all([
-  InspectorCatastrofico.find({}).lean(),
-  AjustadorCatastrofico.find({}).lean(),
-  ZurichCaso.find({}).lean(),
-  ZurichListadoCaso.find({}).lean(),
+  db.collection('gsk3cAppinspectorcatastrofico').find({}, readOpts).toArray(),
+  db.collection('gsk3cAppajustadorcatastrofico').find({}, readOpts).toArray(),
+  colCat.find({}, readOpts).project({ archivos: 0, liquidador: 0, informeUnico: 0 }).toArray(),
+  colLst.find({}, readOpts).project({ archivos: 0, liquidador: 0, informeUnico: 0 }).toArray(),
 ]);
+console.error('[zurich-import] cat', catExistentes.length, 'listado', listadoExistentes.length);
 const inspectoresZurich = inspectores.filter((d) => catalogoPerteneceAModulo(d, 'zurich'));
 const ajustadoresZurich = ajustadores.filter((d) => catalogoPerteneceAModulo(d, 'zurich'));
 const liderZurich =
@@ -345,11 +362,29 @@ for (const doc of catExistentes) {
   if (persona) catPersona.push({ ...persona, doc });
 }
 
+const snapshotIds = [
+  ...catExistentes.map((d) => ({
+    col: 'cat',
+    id: String(d._id),
+    zc: d.zc ?? null,
+    siniestro: d.siniestro ?? null,
+  })),
+  ...listadoExistentes.map((d) => ({
+    col: 'listado',
+    id: String(d._id),
+    zc: d.zc ?? null,
+    siniestro: d.siniestro ?? null,
+  })),
+];
+
 const lstIdx = new Map();
+const lstIdxStro = new Map();
 const lstPersona = [];
 for (const doc of listadoExistentes) {
   const zc = normClave(doc.zc);
+  const stro = normClave(doc.siniestro);
   if (zc && !lstIdx.has(zc)) lstIdx.set(zc, doc);
+  if (stro && !lstIdxStro.has(stro)) lstIdxStro.set(stro, doc);
   const persona = clavePersonaPoliza(doc);
   if (persona) lstPersona.push({ ...persona, doc });
 }
@@ -405,77 +440,9 @@ for (const fila of casosExcel) {
 
   const zcK = normClave(fila.zc);
   const sK = normClave(fila.siniestro);
-  const hitCatZc =
-    (zcK && catIdx.get(`ZC:${zcK}`)) ||
-    (sK && catIdx.get(`S:${sK}`));
-  const dupCatPersona = hitPersonaMismaPoliza(catPersona, fila);
-  const otraPolCat = hitPersonaOtraPoliza(catPersona, fila);
 
-  if (hitCatZc) {
-    resumen.catYaExistian += 1;
-  } else if (dupCatPersona) {
-    resumen.catDuplicadoPersonaPoliza += 1;
-  } else if (fila.identificacion) {
-    if (otraPolCat.length) {
-      resumen.permitidosMismoNombreOtraPoliza.push({
-        destino: 'CAT',
-        zc: fila.zc,
-        asegurado: fila.asegurado,
-        poliza: fila.numeroPoliza || null,
-      });
-    }
-    seqCat += 1;
-    const payloadCat = {
-      consecutivo: `ZURICH-${año}-${mes}-${seqCat}`,
-      zc: fila.zc || null,
-      siniestro: fila.siniestro || null,
-      identificacion: fila.identificacion,
-      tipoIdentificacion: fila.tipoIdentificacion || null,
-      numeroPoliza: fila.numeroPoliza || null,
-      asegurado: fila.asegurado || null,
-      ajustador: asignacion.ajustador || null,
-      ajustadorLider: liderZurich,
-      direccionPredio: fila.direccionPredio || null,
-      ciudad: fila.ciudad || null,
-      departamento: fila.departamento || null,
-      valorAseguradoInmueble: fila.valorAseguradoInmueble ?? null,
-      valorReclamado: fila.valorReclamado ?? null,
-      informacionContacto: fila.informacionContacto || null,
-      telefonoAsegurado: fila.telefonoAsegurado || null,
-      correoAsegurado: fila.correoAsegurado || null,
-      contactoAsegurado: fila.contactoAsegurado || null,
-      celular: fila.celular || null,
-      correo: fila.correo || null,
-      fechaAsignacion: fila.fechaAsignacion || null,
-      fechaInspeccion: fila.fechaInspeccion || null,
-      fechaVisita: fila.fechaInspeccion || null,
-      fechaCasoNuevo: fila.fechaAsignacion || ahora,
-      fechaCoordinandoInspeccion: inspeccionSi ? fila.fechaInspeccion || ahora : null,
-      gradoAfectacion: fila.gradoAfectacion || null,
-      lucroCesante: fila.lucroCesante || null,
-      afectacion: inspeccionSi ? 'SI' : fila.inspeccion || null,
-      observaciones: fila.observaciones || null,
-      observacionesCat: fila.observacionesCat || null,
-      estado: estadoNuevo,
-    };
-    if (!dryRun) {
-      const creado = await ZurichCaso.create(payloadCat);
-      const lean = creado.toObject();
-      if (zcK) catIdx.set(`ZC:${zcK}`, lean);
-      if (sK) catIdx.set(`S:${sK}`, lean);
-      const persona = clavePersonaPoliza(lean);
-      if (persona) catPersona.push({ ...persona, doc: lean });
-    } else {
-      if (zcK) catIdx.set(`ZC:${zcK}`, payloadCat);
-      if (sK) catIdx.set(`S:${sK}`, payloadCat);
-    }
-    resumen.catCreados += 1;
-  } else {
-    resumen.omitidos += 1;
-  }
-
-  if (!zcK) continue;
-  const hitLst = lstIdx.get(zcK);
+  if (!zcK && !sK) continue;
+  const hitLst = (zcK && lstIdx.get(zcK)) || (sK && lstIdxStro.get(sK));
   const dupLstPersona = !hitLst ? hitPersonaMismaPoliza(lstPersona, fila) : null;
   const otraPolLst = hitPersonaOtraPoliza(lstPersona, fila);
   const obsListado = [
@@ -488,8 +455,6 @@ for (const fila of casosExcel) {
 
   if (hitLst) {
     const merge = {
-      zc: completar(fila.zc, hitLst.zc),
-      siniestro: completar(fila.siniestro, hitLst.siniestro),
       identificacion: completar(fila.identificacion, hitLst.identificacion),
       tipoIdentificacion: completar(fila.tipoIdentificacion, hitLst.tipoIdentificacion),
       numeroPoliza: completar(fila.numeroPoliza, hitLst.numeroPoliza),
@@ -507,10 +472,12 @@ for (const fila of casosExcel) {
       fechaVisita: hitLst.fechaVisita || fila.fechaInspeccion || null,
     };
     if (!dryRun) {
-      await ZurichListadoCaso.findByIdAndUpdate(hitLst._id, { $set: merge });
+      await colLst.updateOne({ _id: hitLst._id }, { $set: { ...merge, updatedAt: ahora } });
     }
     resumen.listadoHuecos += 1;
-    lstIdx.set(zcK, { ...hitLst, ...merge });
+    const merged = { ...hitLst, ...merge, zc: hitLst.zc, siniestro: hitLst.siniestro };
+    if (zcK) lstIdx.set(zcK, merged);
+    if (sK) lstIdxStro.set(sK, merged);
   } else if (dupLstPersona) {
     resumen.listadoDuplicadoPersonaPoliza += 1;
   } else {
@@ -553,13 +520,16 @@ for (const fila of casosExcel) {
       ciudad: fila.ciudad,
     });
     if (!dryRun) {
-      const creadoLst = await ZurichListadoCaso.create(payloadLst);
-      const leanLst = creadoLst.toObject();
-      lstIdx.set(zcK, leanLst);
+      const creadoLst = { ...payloadLst, createdAt: ahora, updatedAt: ahora };
+      const insLst = await colLst.insertOne(creadoLst);
+      const leanLst = { ...creadoLst, _id: insLst.insertedId };
+      if (zcK) lstIdx.set(zcK, leanLst);
+      if (sK) lstIdxStro.set(sK, leanLst);
       const persona = clavePersonaPoliza(leanLst);
       if (persona) lstPersona.push({ ...persona, doc: leanLst });
     } else {
-      lstIdx.set(zcK, payloadLst);
+      if (zcK) lstIdx.set(zcK, payloadLst);
+      if (sK) lstIdxStro.set(sK, payloadLst);
     }
     resumen.listadoCreados += 1;
   }
@@ -567,7 +537,49 @@ for (const fila of casosExcel) {
 
 const [catTotal, listadoTotal] = dryRun
   ? [catExistentes.length + resumen.catCreados, listadoExistentes.length + resumen.listadoCreados]
-  : await Promise.all([ZurichCaso.countDocuments(), ZurichListadoCaso.countDocuments()]);
+  : await Promise.all([colCat.countDocuments(), colLst.countDocuments()]);
 
-console.log(JSON.stringify({ ...resumen, catTotal, listadoTotal }, null, 2));
+const idsAlterados = [];
+if (!dryRun) {
+  const catIds = catExistentes.map((d) => d._id);
+  const lstIds = listadoExistentes.map((d) => d._id);
+  const [catAfter, lstAfter] = await Promise.all([
+    colCat
+      .find({ _id: { $in: catIds } })
+      .project({ zc: 1, siniestro: 1 })
+      .toArray(),
+    colLst
+      .find({ _id: { $in: lstIds } })
+      .project({ zc: 1, siniestro: 1 })
+      .toArray(),
+  ]);
+  const afterMap = new Map(
+    [...catAfter.map((d) => [`cat:${d._id}`, d]), ...lstAfter.map((d) => [`listado:${d._id}`, d])]
+  );
+  for (const snap of snapshotIds) {
+    const now = afterMap.get(`${snap.col}:${snap.id}`);
+    if (!now) {
+      idsAlterados.push({ ...snap, motivo: 'desaparecio' });
+      continue;
+    }
+    if (String(now.zc ?? '') !== String(snap.zc ?? '') || String(now.siniestro ?? '') !== String(snap.siniestro ?? '')) {
+      idsAlterados.push({
+        ...snap,
+        zcAhora: now.zc ?? null,
+        siniestroAhora: now.siniestro ?? null,
+      });
+    }
+  }
+}
+
+console.log(
+  JSON.stringify(
+    { ...resumen, catTotal, listadoTotal, idsAlterados: idsAlterados.length, idsAlteradosMuestra: idsAlterados.slice(0, 10) },
+    null,
+    2
+  )
+);
+if (idsAlterados.length) {
+  throw new Error(`Se alteraron ${idsAlterados.length} ZC/STRO existentes. Abortando verificación.`);
+}
 await mongoose.disconnect();

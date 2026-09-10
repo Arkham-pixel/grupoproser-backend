@@ -132,14 +132,18 @@ function recalcularEstado(inv) {
 }
 
 function payloadPublico(inv) {
+  const datosCompletos = Boolean(
+    inv.nombre?.trim() && inv.correo?.trim() && inv.cedula?.trim()
+  );
   return {
     id: inv._id,
-    nombre: inv.nombre,
-    correo: inv.correo,
-    celular: inv.celular,
-    cedula: inv.cedula,
+    nombre: inv.nombre || '',
+    correo: inv.correo || '',
+    celular: inv.celular || '',
+    cedula: inv.cedula || '',
     fechaNacimiento: inv.fechaNacimiento,
     rol: inv.rol,
+    datosCompletos,
     estado: inv.estado,
     tokenExpira: inv.tokenExpira,
     firmaPoliticaDatos: {
@@ -161,6 +165,7 @@ function payloadPublico(inv) {
       cedula: { subido: Boolean(inv.documentosHr?.cedula?.subido) },
     },
     pasos: {
+      datosPersonales: datosCompletos,
       firmarPolitica: Boolean(inv.firmaPoliticaDatos?.firmado),
       firmarConfidencialidad: Boolean(inv.firmaConfidencialidad?.firmado),
       crearCuenta: Boolean(inv.usuarioId),
@@ -204,52 +209,66 @@ function requireAdminSoporte(req, res) {
   return true;
 }
 
-/** Admin: crear invitación remota */
+/** Admin: crear invitación remota (enlace abierto; el usuario llena sus datos) */
 export async function crearInvitacion(req, res) {
   try {
     if (!requireAdminSoporte(req, res)) return;
 
-    const { nombre, correo, celular, cedula, fechaNacimiento, rol, enviarEmail } = req.body;
-    if (!nombre?.trim() || !correo?.trim() || !cedula?.trim()) {
-      return res.status(400).json({ message: 'Nombre, correo y cédula son obligatorios' });
-    }
+    const {
+      rol,
+      notaAdmin,
+      correoNotificar,
+      enviarEmail,
+      // Compat: si aún envían datos prellenados, se aceptan
+      nombre,
+      correo,
+      celular,
+      cedula,
+      fechaNacimiento,
+    } = req.body;
 
     const rolAsignado = rol || 'usuario';
     if (!esRolValido(rolAsignado)) {
       return res.status(400).json({ message: 'Rol inválido' });
     }
 
-    const cedulaTrim = String(cedula).trim();
-    const correoTrim = String(correo).trim().toLowerCase();
+    const nombreTrim = String(nombre || '').trim();
+    const correoTrim = String(correo || correoNotificar || '').trim().toLowerCase();
+    const cedulaTrim = String(cedula || '').trim();
+    const datosPrellenados = Boolean(nombreTrim && correoTrim && cedulaTrim);
 
-    const usuarioExistente = await SecurUser.findOne({
-      $or: [{ email: correoTrim }, { login: cedulaTrim }, { cedula: cedulaTrim }],
-    });
-    if (usuarioExistente) {
-      return res.status(409).json({ message: 'Ya existe un usuario con ese correo o cédula' });
-    }
-
-    const pendiente = await OnboardingInvitacion.findOne({
-      $or: [{ correo: correoTrim }, { cedula: cedulaTrim }],
-      estado: { $nin: ['completado', 'cancelado', 'expirado'] },
-    });
-    if (pendiente) {
-      return res.status(409).json({
-        message: 'Ya hay una invitación activa para este correo o cédula',
-        invitacionId: pendiente._id,
+    if (datosPrellenados) {
+      const usuarioExistente = await SecurUser.findOne({
+        $or: [{ email: correoTrim }, { login: cedulaTrim }, { cedula: cedulaTrim }],
       });
+      if (usuarioExistente) {
+        return res.status(409).json({ message: 'Ya existe un usuario con ese correo o cédula' });
+      }
+
+      const pendiente = await OnboardingInvitacion.findOne({
+        $or: [{ correo: correoTrim }, { cedula: cedulaTrim }],
+        estado: { $nin: ['completado', 'cancelado', 'expirado'] },
+      });
+      if (pendiente) {
+        return res.status(409).json({
+          message: 'Ya hay una invitación activa para este correo o cédula',
+          invitacionId: pendiente._id,
+        });
+      }
     }
 
     const gen = generarTokenAcceso();
     const frontendUrl = frontendUrlDesdeReq(req);
 
     const invitacion = await OnboardingInvitacion.create({
-      nombre: String(nombre).trim(),
+      nombre: nombreTrim,
       correo: correoTrim,
       celular: String(celular || '').trim(),
       cedula: cedulaTrim,
       fechaNacimiento: fechaNacimiento || undefined,
       rol: rolAsignado,
+      datosCompletos: datosPrellenados,
+      notaAdmin: String(notaAdmin || '').trim(),
       tokenHash: gen.hash,
       tokenExpira: new Date(Date.now() + DIAS_TOKEN_DEFAULT * 24 * 60 * 60 * 1000),
       estado: 'pendiente',
@@ -262,11 +281,18 @@ export async function crearInvitacion(req, res) {
 
     const enlace = `${frontendUrl}/onboarding/${gen.raw}`;
     let emailResult = null;
+    const debeEnviar =
+      enviarEmail === true ||
+      enviarEmail === 'true' ||
+      (enviarEmail !== false &&
+        enviarEmail !== 'false' &&
+        Boolean(String(correoNotificar || correoTrim || '').trim()));
+    const emailDestino = correoTrim || String(correoNotificar || '').trim().toLowerCase();
 
-    if (enviarEmail !== false) {
+    if (debeEnviar && emailDestino) {
       emailResult = await enviarInvitacionOnboarding({
-        emailDestino: correoTrim,
-        nombreDestino: invitacion.nombre,
+        emailDestino,
+        nombreDestino: nombreTrim || 'colaborador(a)',
         token: gen.raw,
         frontendUrl,
         diasValidez: DIAS_TOKEN_DEFAULT,
@@ -279,7 +305,7 @@ export async function crearInvitacion(req, res) {
     }
 
     res.status(201).json({
-      message: 'Invitación creada',
+      message: 'Enlace de registro generado',
       invitacion: {
         id: invitacion._id,
         nombre: invitacion.nombre,
@@ -287,6 +313,8 @@ export async function crearInvitacion(req, res) {
         cedula: invitacion.cedula,
         rol: invitacion.rol,
         estado: invitacion.estado,
+        datosCompletos: invitacion.datosCompletos,
+        notaAdmin: invitacion.notaAdmin,
         tokenExpira: invitacion.tokenExpira,
       },
       enlace,
@@ -316,7 +344,7 @@ export async function listarInvitaciones(req, res) {
   }
 }
 
-/** Admin: reenviar enlace */
+/** Admin: reenviar / regenerar enlace (si ya tiene correo, se envía el mail normal) */
 export async function reenviarInvitacion(req, res) {
   try {
     if (!requireAdminSoporte(req, res)) return;
@@ -325,41 +353,121 @@ export async function reenviarInvitacion(req, res) {
     if (inv.estado === 'completado') {
       return res.status(400).json({ message: 'El onboarding ya está completado' });
     }
-    if (inv.estado === 'cancelado') {
-      return res.status(400).json({ message: 'La invitación está cancelada' });
+
+    const correoBody = String(req.body?.correoNotificar || req.body?.correo || '')
+      .trim()
+      .toLowerCase();
+    if (correoBody) {
+      inv.correo = correoBody;
+    }
+
+    // Reactivar cancelada/expirada para poder reenviar el enlace
+    if (inv.estado === 'cancelado' || inv.estado === 'expirado') {
+      inv.estado = recalcularEstado({
+        ...inv.toObject(),
+        estado: 'pendiente',
+        tokenExpira: new Date(Date.now() + DIAS_TOKEN_DEFAULT * 24 * 60 * 60 * 1000),
+      });
+      if (inv.estado === 'cancelado' || inv.estado === 'expirado') {
+        inv.estado = 'pendiente';
+      }
     }
 
     const gen = generarTokenAcceso();
     inv.tokenHash = gen.hash;
     inv.tokenExpira = new Date(Date.now() + DIAS_TOKEN_DEFAULT * 24 * 60 * 60 * 1000);
-    if (inv.estado === 'expirado') inv.estado = recalcularEstado(inv);
 
     const frontendUrl = frontendUrlDesdeReq(req);
     const enlace = `${frontendUrl}/onboarding/${gen.raw}`;
 
-    const emailResult = await enviarInvitacionOnboarding({
-      emailDestino: inv.correo,
-      nombreDestino: inv.nombre,
-      token: gen.raw,
-      frontendUrl,
-      diasValidez: DIAS_TOKEN_DEFAULT,
-    });
-    if (emailResult?.success) {
-      inv.emailEnviado = true;
-      inv.emailEnviadoEn = new Date();
+    const emailDestino = String(inv.correo || '').trim().toLowerCase();
+    let emailResult = null;
+    if (emailDestino) {
+      emailResult = await enviarInvitacionOnboarding({
+        emailDestino,
+        nombreDestino: inv.nombre || 'colaborador(a)',
+        token: gen.raw,
+        frontendUrl,
+        diasValidez: DIAS_TOKEN_DEFAULT,
+      });
+      if (emailResult?.success) {
+        inv.emailEnviado = true;
+        inv.emailEnviadoEn = new Date();
+      }
     }
     await inv.save();
 
     res.json({
-      message: 'Enlace regenerado',
+      message: emailDestino
+        ? emailResult?.success
+          ? `Enlace regenerado y enviado a ${emailDestino}`
+          : `Enlace regenerado, pero no se pudo enviar el correo a ${emailDestino}`
+        : 'Enlace regenerado (sin correo en la invitación; cópielo y envíelo manualmente)',
       enlace,
       tokenUnaVez: gen.raw,
       email: emailResult,
-      invitacion: { id: inv._id, estado: inv.estado, tokenExpira: inv.tokenExpira },
+      invitacion: {
+        id: inv._id,
+        estado: inv.estado,
+        correo: inv.correo,
+        tokenExpira: inv.tokenExpira,
+      },
     });
   } catch (error) {
     console.error('Error reenviando invitación:', error);
     res.status(500).json({ message: 'Error al reenviar invitación' });
+  }
+}
+
+/** Admin: cancelar invitación por id o por cédula/correo */
+export async function cancelarInvitacion(req, res) {
+  try {
+    if (!requireAdminSoporte(req, res)) return;
+
+    const { id } = req.params;
+    const cedula = String(req.body?.cedula || req.query?.cedula || '').trim();
+    const correo = String(req.body?.correo || req.query?.correo || '')
+      .trim()
+      .toLowerCase();
+
+    let filtro = null;
+    if (id && id !== 'por-datos') {
+      filtro = { _id: id };
+    } else if (cedula || correo) {
+      const or = [];
+      if (cedula) or.push({ cedula });
+      if (correo) or.push({ correo });
+      filtro = {
+        $or: or,
+        estado: { $nin: ['completado', 'cancelado', 'expirado'] },
+      };
+    } else {
+      return res.status(400).json({ message: 'Indique id, cédula o correo' });
+    }
+
+    const activas = await OnboardingInvitacion.find(filtro);
+    if (!activas.length) {
+      return res.status(404).json({ message: 'No hay invitación activa para cancelar' });
+    }
+
+    for (const inv of activas) {
+      inv.estado = 'cancelado';
+      await inv.save();
+    }
+
+    res.json({
+      message: `Se canceló ${activas.length} invitación(es)`,
+      canceladas: activas.map((inv) => ({
+        id: inv._id,
+        nombre: inv.nombre,
+        correo: inv.correo,
+        cedula: inv.cedula,
+        estado: inv.estado,
+      })),
+    });
+  } catch (error) {
+    console.error('Error cancelando invitación:', error);
+    res.status(500).json({ message: 'Error al cancelar la invitación' });
   }
 }
 
@@ -372,6 +480,65 @@ export async function obtenerPublica(req, res) {
   } catch (error) {
     console.error('Error obteniendo onboarding público:', error);
     res.status(500).json({ message: 'Error al obtener la invitación' });
+  }
+}
+
+/** Público: el usuario completa sus datos personales en el enlace */
+export async function completarDatosPublico(req, res) {
+  try {
+    const inv = await requireInviteActiva(req, res);
+    if (!inv) return;
+
+    if (inv.usuarioId) {
+      return res.status(400).json({ message: 'La cuenta ya fue creada; no se pueden cambiar los datos' });
+    }
+
+    const nombre = String(req.body.nombre || '').trim();
+    const correo = String(req.body.correo || '').trim().toLowerCase();
+    const celular = String(req.body.celular || '').trim();
+    const cedula = String(req.body.cedula || '').trim();
+    const fechaNacimiento = req.body.fechaNacimiento;
+
+    if (!nombre || !correo || !cedula) {
+      return res.status(400).json({ message: 'Nombre, correo y cédula son obligatorios' });
+    }
+    if (!fechaNacimiento) {
+      return res.status(400).json({ message: 'La fecha de nacimiento es obligatoria' });
+    }
+
+    const usuarioExistente = await SecurUser.findOne({
+      $or: [{ email: correo }, { login: cedula }, { cedula }],
+    });
+    if (usuarioExistente) {
+      return res.status(409).json({ message: 'Ya existe un usuario con ese correo o cédula' });
+    }
+
+    const otraInv = await OnboardingInvitacion.findOne({
+      _id: { $ne: inv._id },
+      $or: [{ correo }, { cedula }],
+      estado: { $nin: ['completado', 'cancelado', 'expirado'] },
+    });
+    if (otraInv) {
+      return res.status(409).json({
+        message: 'Ya hay otra invitación activa con ese correo o cédula',
+      });
+    }
+
+    inv.nombre = nombre;
+    inv.correo = correo;
+    inv.celular = celular;
+    inv.cedula = cedula;
+    inv.fechaNacimiento = fechaNacimiento;
+    inv.datosCompletos = true;
+    await inv.save();
+
+    res.json({
+      message: 'Datos guardados. Continúe con la firma de los acuerdos.',
+      invitacion: payloadPublico(inv),
+    });
+  } catch (error) {
+    console.error('Error completando datos onboarding:', error);
+    res.status(500).json({ message: 'Error al guardar los datos', error: error.message });
   }
 }
 
@@ -404,6 +571,12 @@ export async function firmarAcuerdo(req, res) {
   try {
     const inv = await requireInviteActiva(req, res);
     if (!inv) return;
+
+    if (!inv.nombre?.trim() || !inv.cedula?.trim() || !inv.correo?.trim()) {
+      return res.status(400).json({
+        message: 'Primero complete sus datos personales (nombre, correo y cédula)',
+      });
+    }
 
     if (inv.usuarioId) {
       return res.status(400).json({ message: 'Las firmas ya fueron registradas y la cuenta existe' });

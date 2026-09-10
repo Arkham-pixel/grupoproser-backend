@@ -7,6 +7,7 @@ import {
   digitsReclamacion,
   erroresValidacionPortal,
   filaDesdePlantillaSura,
+  fusionarDesdeCasoSura,
   PROVEEDOR_FACILITADORES_SURA,
   reclamacionTexto13,
   sugerenciaDesdeCasoSura,
@@ -28,7 +29,7 @@ async function cargarCasosSuraParaFacilitadores() {
     siniestro: { $exists: true, $nin: [null, ''] },
   })
     .select(
-      'siniestro estado fechaLlamada observacionLlamada fechaInspeccion fechaEnvioAseguradora fechaLiquidado informeUnico fchaAsgncion createdAt updatedAt'
+      'siniestro estado descripcionEstado estadoPagoPrimas fechaLlamada observacionLlamada fechaInspeccion fchaInspccion fchaContIni fchaInfoFnal fchaInfoPrelm fchaRepoActi fechaUltimoDocumento fechaEnvioAseguradora fechaLiquidado informeUnico fchaAsgncion createdAt updatedAt'
     )
     .lean();
 }
@@ -90,9 +91,7 @@ async function sincronizarDesdeArnald({ quien = '', fillVacios = false } = {}) {
     for (const fila of filas) {
       const caso = porCaso.get(digitsReclamacion(fila.reclamacion));
       if (!caso) continue;
-      const sugerido = sugerenciaDesdeCasoSura(caso);
-      const mezclado = completarVacios(fila, sugerido);
-      mezclado.casoSuraId = caso._id;
+      const mezclado = fusionarDesdeCasoSura(fila, caso);
       updates.push({
         updateOne: {
           filter: { _id: fila._id },
@@ -114,12 +113,48 @@ export async function listarFacilitadoresSura(req, res) {
     let filas = await SuraFacilitadorCaso.find({}).sort({ reclamacion: 1 }).lean();
     const forzarSync = String(req.query.sync || '') === '1';
     let syncInfo = null;
+    const identidad = await obtenerIdentidadUsuarioReq(req);
+    const quien = actor(req, identidad);
 
-    // Solo sincroniza si la colección está vacía o si piden sync=1.
+    // Altas nuevas si vacío / sync forzado.
     if (!filas.length || forzarSync) {
-      const identidad = await obtenerIdentidadUsuarioReq(req);
-      const quien = actor(req, identidad);
       syncInfo = await sincronizarDesdeArnald({ quien, fillVacios: false });
+      filas = await SuraFacilitadorCaso.find({}).sort({ reclamacion: 1 }).lean();
+    }
+
+    // Auto: alinear visita y DOCS si el caso SURA ya avanzó y Facilitadores quedó atrás.
+    const [inspSura, visitasFac, docsEsperados, docsFac] = await Promise.all([
+      SegurosSuraCaso.countDocuments({
+        $or: [
+          { fechaInspeccion: { $nin: [null, ''] } },
+          { fchaInspccion: { $nin: [null, ''] } },
+        ],
+      }),
+      SuraFacilitadorCaso.countDocuments({ visitaRealizada: { $in: ['SI', 'si', 'Si'] } }),
+      SegurosSuraCaso.countDocuments({
+        $or: [
+          { fchaInfoFnal: { $nin: [null, ''] } },
+          { estado: 'INFORME ÚNICO O FINAL' },
+          { 'informeUnico.tipoInforme': { $in: ['unico', 'final', 'Único', 'Final', 'UNICO', 'FINAL'] } },
+        ],
+      }),
+      SuraFacilitadorCaso.countDocuments({ documentacionCompleta: { $in: ['SI', 'si', 'Si'] } }),
+    ]);
+    const necesitaFill =
+      forzarSync ||
+      inspSura > visitasFac ||
+      docsEsperados > docsFac ||
+      String(req.query.fill || '') === '1';
+    if (necesitaFill) {
+      const syncFill = await sincronizarDesdeArnald({ quien, fillVacios: true });
+      syncInfo = {
+        ...(syncInfo || {}),
+        ...syncFill,
+        inspSura,
+        visitasFacAntes: visitasFac,
+        docsEsperados,
+        docsFacAntes: docsFac,
+      };
       filas = await SuraFacilitadorCaso.find({}).sort({ reclamacion: 1 }).lean();
     }
 

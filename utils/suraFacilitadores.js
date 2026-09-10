@@ -1,4 +1,5 @@
 import { normalizarEstadoSura } from './estadosSura.js';
+import SuraFacilitadorCaso from '../models/SuraFacilitadorCaso.js';
 
 export const PROVEEDOR_FACILITADORES_SURA = 'PROSER AJUSTES S.A.S';
 
@@ -71,10 +72,13 @@ export function normalizarEstadoFacilitador(valor) {
 }
 
 function parseFecha(valor) {
-  if (!valor) return null;
-  if (valor instanceof Date && !Number.isNaN(valor.getTime())) return valor;
+  if (valor === undefined || valor === null || valor === '') return null;
+  if (valor instanceof Date && !Number.isNaN(valor.getTime())) {
+    return new Date(valor.getFullYear(), valor.getMonth(), valor.getDate(), 12, 0, 0);
+  }
   const s = String(valor).trim();
-  if (!s) return null;
+  if (!s || s === 'null' || s === 'undefined') return null;
+  // datetime-local / ISO: usar solo el día calendario (evita desfases por hora/TZ).
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
     const [y, m, d] = s.slice(0, 10).split('-').map(Number);
     return new Date(y, m - 1, d, 12, 0, 0);
@@ -84,7 +88,8 @@ function parseFecha(valor) {
     return new Date(y, m - 1, d, 12, 0, 0);
   }
   const dt = new Date(s);
-  return Number.isNaN(dt.getTime()) ? null : dt;
+  if (Number.isNaN(dt.getTime())) return null;
+  return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), 12, 0, 0);
 }
 
 function fechaSiMarca(marca, fecha) {
@@ -147,35 +152,157 @@ export function aplicarPatchFacilitador(base = {}, patch = {}) {
 }
 
 export function estadoFacilitadorDesdeArnald(estado) {
-  const n = normalizarEstadoSura(estado);
-  if (n === 'ANULADO') return 'Anulado';
-  if (n === 'INFORME ÚNICO O FINAL') return 'Tramitado';
+  return estadoFacilitadorDesdeCasoSura({ estado });
+}
+
+/** Fecha de radicación del informe único/final (para marcar Tramitado). */
+export function fechaRadicacionInformeSura(caso = {}) {
+  return (
+    parseFecha(caso.fchaInfoFnal) ||
+    parseFecha(caso.fechaEnvioAseguradora) ||
+    parseFecha(caso.informeUnico?.fechaInforme) ||
+    parseFecha(caso.fechaLiquidado) ||
+    null
+  );
+}
+
+/**
+ * Estado del siniestro (Facilitadores) desde estado de gestión SURA:
+ * - Tramitado: INFORME ÚNICO O FINAL (o tipo único/final) con fecha radicada
+ * - Anulado: ANULADO o Desistido
+ * - Abierto: el resto
+ */
+export function estadoFacilitadorDesdeCasoSura(caso = {}) {
+  const estado = normalizarEstadoSura(caso.estado);
+  const bruto = String(caso.estado || caso.descripcionEstado || '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toUpperCase();
+
+  if (estado === 'ANULADO' || bruto.startsWith('DESIST') || bruto.includes('DESISTIDO')) {
+    return 'Anulado';
+  }
+
+  const tipo = tipoInformeCasoSura(caso);
+  const esUnicoOFinal =
+    estado === 'INFORME ÚNICO O FINAL' || tipo === 'unico' || tipo === 'final';
+  if (esUnicoOFinal && fechaRadicacionInformeSura(caso)) {
+    return 'Tramitado';
+  }
+
   return 'Abierto';
+}
+
+/** Tipo del bloque informeUnico: preliminar | final | unico | ''. */
+function tipoInformeCasoSura(caso = {}) {
+  const t = String(caso?.informeUnico?.tipoInforme || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim();
+  if (t === 'preliminar' || t === 'final' || t === 'unico') return t;
+  return '';
+}
+
+/**
+ * DOCS (documentación completa):
+ * - SI: informe final (fchaInfoFnal) o informe único (tipo unico/final o estado)
+ * - NO: informe preliminar o actualización/último documento (sin final/único)
+ */
+export function docsCompletaDesdeCasoSura(caso = {}) {
+  const estado = normalizarEstadoSura(caso.estado);
+  const tipo = tipoInformeCasoSura(caso);
+  const fechaFinal = parseFecha(caso.fchaInfoFnal);
+  const docsSi =
+    Boolean(fechaFinal) ||
+    tipo === 'unico' ||
+    tipo === 'final' ||
+    estado === 'INFORME ÚNICO O FINAL';
+
+  const fechaDocs = docsSi
+    ? fechaFinal ||
+      parseFecha(caso.informeUnico?.fechaInforme) ||
+      parseFecha(caso.fechaEnvioAseguradora) ||
+      null
+    : null;
+
+  return {
+    documentacionCompleta: docsSi ? 'SI' : 'NO',
+    fechaDocumentacionCompleta: fechaDocs,
+  };
 }
 
 export function sugerenciaDesdeCasoSura(caso = {}) {
   const estado = normalizarEstadoSura(caso.estado);
-  const anulado = estado === 'ANULADO';
-  const unico = estado === 'INFORME ÚNICO O FINAL';
-  const visitaSi = Boolean(caso.fechaInspeccion);
+  const estadoFac = estadoFacilitadorDesdeCasoSura(caso);
+  const cerradoFac = estadoFac === 'Anulado' || estadoFac === 'Tramitado';
+  const fechaInspeccion = parseFecha(caso.fechaInspeccion || caso.fchaInspccion || null);
+  const visitaSi = Boolean(fechaInspeccion);
   const informeSi = Boolean(caso.fechaEnvioAseguradora) || Boolean(caso.informeUnico);
+  const criterio = normalizarCriterioFacilitador(caso.estadoPagoPrimas);
+  // 1.er contacto: SOLO Contacto inicial; si el caso no lo tiene, fecha de inspección.
+  const fechaContactoInicial = parseFecha(caso.fchaContIni);
+  const fechaPrimerContacto = fechaContactoInicial || fechaInspeccion || null;
+  const docs = docsCompletaDesdeCasoSura(caso);
+  const fechaRadicacion = fechaRadicacionInformeSura(caso);
   return {
     casoSuraId: caso._id || null,
     fechaAsignacion: caso.fchaAsgncion || caso.createdAt || null,
-    fechaPrimerContacto: caso.fechaLlamada || null,
-    visitaRealizada: anulado ? 'N/A' : visitaSi ? 'SI' : 'NO',
-    fechaVisita: anulado ? null : caso.fechaInspeccion || null,
-    informeEnviado: anulado ? 'N/A' : informeSi ? 'SI' : 'NO',
-    fechaInforme: anulado ? null : caso.fechaEnvioAseguradora || caso.informeUnico?.fechaInforme || null,
-    documentacionCompleta: anulado ? 'N/A' : 'NO',
-    fechaDocumentacionCompleta: null,
-    casoCerrado: anulado || unico ? 'SI' : 'NO',
-    fechaCierre: anulado || unico
-      ? caso.fechaLiquidado || caso.fechaEnvioAseguradora || caso.updatedAt || null
+    fechaPrimerContacto,
+    visitaRealizada: visitaSi ? 'SI' : 'NO',
+    fechaVisita: visitaSi ? fechaInspeccion : null,
+    informeEnviado: informeSi ? 'SI' : 'NO',
+    fechaInforme: informeSi
+      ? caso.fechaEnvioAseguradora || caso.informeUnico?.fechaInforme || null
       : null,
-    estadoSiniestro: estadoFacilitadorDesdeArnald(estado),
-    ultimoComentario: String(caso.observacionLlamada || '').trim(),
+    documentacionCompleta: docs.documentacionCompleta,
+    fechaDocumentacionCompleta: docs.fechaDocumentacionCompleta,
+    casoCerrado: cerradoFac ? 'SI' : 'NO',
+    fechaCierre: cerradoFac
+      ? fechaRadicacion || caso.fechaLiquidado || caso.updatedAt || null
+      : null,
+    estadoSiniestro: estadoFac,
+    // Todo caso con estado debe llevar comentario: descripción del estado o el propio estado.
+    ultimoComentario: String(
+      caso.descripcionEstado || caso.estado || caso.observacionLlamada || ''
+    ).trim(),
+    criterioDetalle: criterio,
   };
+}
+
+/** Crea o actualiza la fila del Portal de Facilitadores al guardar Gestionar. */
+export async function alimentarFacilitadorDesdeCasoSura(caso, quien = '') {
+  const rec = digitsReclamacion(caso?.siniestro);
+  if (rec.length < 10) return null;
+  const reclamacion = reclamacionTexto13(caso.siniestro);
+  const sugerido = sugerenciaDesdeCasoSura(caso);
+  const actual = await SuraFacilitadorCaso.findOne({ reclamacion }).lean();
+  const base = actual || {
+    reclamacion,
+    proveedor: PROVEEDOR_FACILITADORES_SURA,
+    informacion: '0',
+  };
+  const next = aplicarPatchFacilitador({
+    ...fusionarDesdeCasoSura(base, caso),
+    reclamacion,
+    proveedor: base.proveedor || PROVEEDOR_FACILITADORES_SURA,
+    informacion: '1',
+    criterioDetalle: sugerido.criterioDetalle || base.criterioDetalle || '',
+    ultimoComentario:
+      String(sugerido.ultimoComentario || '').trim() || base.ultimoComentario || '',
+  });
+  delete next._id;
+  delete next.__v;
+  const guardado = await SuraFacilitadorCaso.findOneAndUpdate(
+    { reclamacion },
+    {
+      $set: { ...next, actualizadoPor: quien || base.actualizadoPor || '' },
+      $setOnInsert: { createdAt: new Date() },
+    },
+    { upsert: true, new: true }
+  );
+  return guardado;
 }
 
 export function completarVacios(destino = {}, sugerido = {}) {
@@ -190,19 +317,64 @@ export function completarVacios(destino = {}, sugerido = {}) {
   return aplicarPatchFacilitador(out);
 }
 
+/**
+ * Fusiona datos de Gestionar → Facilitadores.
+ * Visita / fecha visita / 1.er contacto se pisan cuando el caso ya tiene inspección
+ * (aunque en Facilitadores diga NO), porque la fuente de verdad es el caso SURA.
+ */
+export function fusionarDesdeCasoSura(destino = {}, caso = {}) {
+  const sugerido = sugerenciaDesdeCasoSura(caso);
+  const mezclado = completarVacios(destino, sugerido);
+
+  if (sugerido.visitaRealizada === 'SI') {
+    mezclado.visitaRealizada = 'SI';
+    mezclado.fechaVisita = sugerido.fechaVisita;
+  } else if (!destino.visitaRealizada || destino.visitaRealizada === 'N/A') {
+    mezclado.visitaRealizada = sugerido.visitaRealizada || 'NO';
+    mezclado.fechaVisita = sugerido.fechaVisita;
+  }
+
+  // Siempre recalcular 1.er contacto desde el caso (contacto inicial → inspección).
+  mezclado.fechaPrimerContacto = sugerido.fechaPrimerContacto || null;
+
+  // DOCS: final/único = SI; preliminar / último documento = NO.
+  mezclado.documentacionCompleta = sugerido.documentacionCompleta || 'NO';
+  mezclado.fechaDocumentacionCompleta = sugerido.fechaDocumentacionCompleta || null;
+
+  // Estado del siniestro siempre desde gestión SURA.
+  mezclado.estadoSiniestro = sugerido.estadoSiniestro || 'Abierto';
+  mezclado.casoCerrado = sugerido.casoCerrado || 'NO';
+  mezclado.fechaCierre = sugerido.fechaCierre || null;
+
+  if (sugerido.ultimoComentario && !String(destino.ultimoComentario || '').trim()) {
+    mezclado.ultimoComentario = sugerido.ultimoComentario;
+  }
+
+  if (sugerido.criterioDetalle && !String(destino.criterioDetalle || '').trim()) {
+    mezclado.criterioDetalle = sugerido.criterioDetalle;
+  }
+
+  mezclado.casoSuraId = sugerido.casoSuraId || destino.casoSuraId || null;
+  if (sugerido.fechaAsignacion && !destino.fechaAsignacion) {
+    mezclado.fechaAsignacion = sugerido.fechaAsignacion;
+  }
+
+  return aplicarPatchFacilitador(mezclado);
+}
+
 export function erroresValidacionPortal(fila = {}) {
   const errores = [];
   const rec = digitsReclamacion(fila.reclamacion);
   if (rec.length !== 13) errores.push('Reclamación debe tener 13 dígitos');
-  const visita = normalizarSinoNa(fila.visitaRealizada);
-  const informe = normalizarSinoNa(fila.informeEnviado);
-  const docs = normalizarSinoNa(fila.documentacionCompleta);
+  const visita = normalizarSinoNa(fila.visitaRealizada, { permitirNA: false });
+  const informe = normalizarSinoNa(fila.informeEnviado, { permitirNA: false });
+  const docs = normalizarSinoNa(fila.documentacionCompleta, { permitirNA: false });
   const cerrado = normalizarSinoNa(fila.casoCerrado, { permitirNA: false });
-  if (!visita) errores.push('Visita realizada (SI / NO / N/A)');
+  if (!visita) errores.push('Visita realizada (SI / NO)');
   if (visita === 'SI' && !parseFecha(fila.fechaVisita)) errores.push('Fecha de visita');
-  if (!informe) errores.push('Informe enviado (SI / NO / N/A)');
+  if (!informe) errores.push('Informe enviado (SI / NO)');
   if (informe === 'SI' && !parseFecha(fila.fechaInforme)) errores.push('Fecha de informe');
-  if (!docs) errores.push('Documentación completa (SI / NO / N/A)');
+  if (!docs) errores.push('Documentación completa (SI / NO)');
   if (docs === 'SI' && !parseFecha(fila.fechaDocumentacionCompleta)) {
     errores.push('Fecha de documentación completa');
   }

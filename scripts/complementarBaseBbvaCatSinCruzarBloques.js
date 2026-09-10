@@ -129,7 +129,8 @@ async function geocodeNuevos(wfs) {
       if (geo.status === 'sin_direccion') resumen.sinDireccion += 1;
       else resumen.failed += 1;
     }
-    await new Promise((r) => setTimeout(r, 200));
+    // Nominatim (fallback) ~1 req/s
+    await new Promise((r) => setTimeout(r, 1100));
   }
   return resumen;
 }

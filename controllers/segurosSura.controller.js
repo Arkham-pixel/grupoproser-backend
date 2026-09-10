@@ -35,6 +35,9 @@ import { aplicarRestriccionRolCaso, obtenerIdentidadUsuarioReq, construirFiltroV
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarEstadoDesdeTipoInformeSura, normalizarEstadoSura } from '../utils/estadosSura.js';
 import {
+  alimentarFacilitadorDesdeCasoSura,
+} from '../utils/suraFacilitadores.js';
+import {
   BANDERAS_LISTA_SURA,
   listarCasosLivianos,
   quiereListaCompleta,
@@ -48,6 +51,32 @@ import {
 } from '../config/gerentesFacturacion.js';
 
 const SURA_RAZON_SOCIAL = 'SEGUROS GENERALES SURAMERICANA S.A.';
+
+/** Ligia García y Bernardo Sojo: pueden editar a mano el Último comentario. */
+const SURA_LOGINS_ULTIMO_COMENTARIO = new Set(['66901947', '72134505']);
+
+function digitosLogin(valor) {
+  return String(valor ?? '').replace(/\D/g, '');
+}
+
+function puedeEditarUltimoComentarioSura(identidad = {}) {
+  const claves = [identidad.login, identidad.cedula, identidad.documento]
+    .map(digitosLogin)
+    .filter((k) => k.length >= 5);
+  return claves.some((k) => SURA_LOGINS_ULTIMO_COMENTARIO.has(k));
+}
+
+function aplicarRestriccionUltimoComentario(payload, base = {}, identidad = {}) {
+  if (puedeEditarUltimoComentarioSura(identidad)) return payload;
+  const estadoNuevo = String(payload.estado || '').trim();
+  const estadoAntes = String(base.estado || '').trim();
+  if (estadoNuevo && estadoNuevo !== estadoAntes) {
+    payload.descripcionEstado = estadoNuevo;
+  } else {
+    payload.descripcionEstado = base.descripcionEstado || estadoNuevo || '';
+  }
+  return payload;
+}
 
 const CAMPOS_NO_COPIAR_COMPLEX = new Set([
   '_id',
@@ -489,6 +518,8 @@ export const crearCasoSura = async (req, res) => {
   try {
     const payload = buildSuraPayload(req.body);
     payload.consecutivo = await generarConsecutivoSuraLocal();
+    const identidadAltaPre = await obtenerIdentidadUsuarioReq(req).catch(() => ({}));
+    aplicarRestriccionUltimoComentario(payload, {}, identidadAltaPre);
 
     const faltantes = validarRequeridos(payload);
     if (faltantes.length > 0) {
@@ -507,6 +538,15 @@ export const crearCasoSura = async (req, res) => {
     res.status(201).json({ success: true, data: documento });
 
     const identidadAlta = await obtenerIdentidadUsuarioReq(req).catch(() => ({}));
+    const quienAlta = String(
+      identidadAlta?.nombre || identidadAlta?.name || identidadAlta?.login || ''
+    ).trim();
+    alimentarFacilitadorDesdeCasoSura(
+      documento?.toObject ? documento.toObject() : documento,
+      quienAlta
+    ).catch((err) => {
+      console.error('⚠️ No se pudo alimentar Facilitadores SURA (alta):', err?.message || err);
+    });
     notificarModificacionCasoSura({
       antes: {},
       despues: documento?.toObject ? documento.toObject() : documento,
@@ -684,6 +724,7 @@ export const actualizarCasoSura = async (req, res) => {
       cedula: identidad?.cedula,
     });
     const payload = buildSuraPayload(bodyFiltrado, base);
+    aplicarRestriccionUltimoComentario(payload, base, identidad);
     if (!payload.consecutivo) {
       payload.consecutivo = base.consecutivo || (await generarConsecutivoSura());
     }
@@ -735,6 +776,16 @@ export const actualizarCasoSura = async (req, res) => {
     );
 
     res.json({ success: true, data: actualizado });
+
+    const quien = String(
+      identidad?.nombre || identidad?.name || identidad?.login || req.user?.login || ''
+    ).trim();
+    alimentarFacilitadorDesdeCasoSura(
+      actualizado?.toObject ? actualizado.toObject() : actualizado,
+      quien
+    ).catch((err) => {
+      console.error('⚠️ No se pudo alimentar Facilitadores SURA (edición):', err?.message || err);
+    });
 
     notificarModificacionCasoSura({
       antes: base,

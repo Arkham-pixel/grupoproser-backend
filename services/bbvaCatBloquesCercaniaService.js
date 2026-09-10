@@ -194,61 +194,182 @@ function getGoogleMapsApiKey() {
   );
 }
 
+/** Nominatim: resultados demasiado groseros para bloques de visita. */
+const NOMINATIM_TIPOS_SOLO_CIUDAD = new Set([
+  'city',
+  'town',
+  'municipality',
+  'village',
+  'state',
+  'region',
+  'county',
+  'country',
+  'continent',
+  'postcode',
+  'administrative',
+]);
+
+/**
+ * Fallback OSM cuando Google Geocoding HTTP no está autorizado
+ * (key de navegador / proyecto eliminado). Política: ~1 req/s.
+ */
+async function geocodeDireccionNominatim(query) {
+  const q = String(query || '').trim();
+  if (!q) return { status: 'sin_direccion' };
+
+  const intentar = async (qTry) => {
+    const url = new URL('https://nominatim.openstreetmap.org/search');
+    url.searchParams.set('q', qTry);
+    url.searchParams.set('format', 'json');
+    url.searchParams.set('limit', '5');
+    url.searchParams.set('countrycodes', 'co');
+    url.searchParams.set('addressdetails', '1');
+
+    const resp = await fetch(url.toString(), {
+      headers: {
+        'User-Agent': 'GrupoProser-ARNALD/1.0 (bbva-cat-bloques; contacto ops)',
+        Accept: 'application/json',
+      },
+    });
+    if (!resp.ok) {
+      return { status: 'failed', error: `NOMINATIM_HTTP_${resp.status}`, provider: 'nominatim' };
+    }
+    const data = await resp.json().catch(() => []);
+    if (!Array.isArray(data) || !data.length) {
+      return { status: 'failed', error: 'ZERO_RESULTS', provider: 'nominatim' };
+    }
+
+    const elegido =
+      data.find((r) => {
+        const tipo = String(r?.type || '').toLowerCase();
+        const cls = String(r?.class || '').toLowerCase();
+        if (NOMINATIM_TIPOS_SOLO_CIUDAD.has(tipo)) return false;
+        if (cls === 'place' && NOMINATIM_TIPOS_SOLO_CIUDAD.has(tipo)) return false;
+        if (cls === 'boundary') return false;
+        return Number.isFinite(Number(r.lat)) && Number.isFinite(Number(r.lon));
+      }) || null;
+
+    if (!elegido) {
+      return {
+        status: 'failed',
+        error: 'PRECISION_TOO_LOW',
+        locationType: 'APPROXIMATE',
+        formattedAddress: data[0]?.display_name || qTry,
+        provider: 'nominatim',
+      };
+    }
+
+    return {
+      status: 'ok',
+      lat: Number(elegido.lat),
+      lng: Number(elegido.lon),
+      // APPROXIMATE: compatible con ubicacionTienePrecisionCalle / bloques
+      locationType: 'APPROXIMATE',
+      formattedAddress: elegido.display_name || qTry,
+      partialMatch: false,
+      placeTypes: [elegido.class, elegido.type].filter(Boolean),
+      provider: 'nominatim',
+      geocodeQuery: qTry,
+    };
+  };
+
+  // 1) query completa  2) sin apto/torre/conjunto  3) calle + ciudad (última parte)
+  const sinInterior = q
+    .replace(
+      /\b(apto|apartamento|ap|ap\.|torre|tr|t\.|conjunto|conj|cj|edificio|ed|casa|cs|mz|manzana|interior|int)\b[^,]*/gi,
+      ' '
+    )
+    .replace(/\s+/g, ' ')
+    .replace(/,\s*,/g, ',')
+    .trim();
+
+  let geo = await intentar(q);
+  if (geo.status === 'ok') return geo;
+  if (sinInterior && sinInterior !== q) {
+    await new Promise((r) => setTimeout(r, 1100));
+    geo = await intentar(sinInterior);
+    if (geo.status === 'ok') return geo;
+  }
+  return geo;
+}
+
 /**
  * Geocodifica una dirección con Google Geocoding API (HTTP).
+ * Si Google niega la key (proyecto muerto / key solo-navegador), cae a Nominatim.
  * Acepta calle/tramo y APPROXIMATE de lugar (barrio, conjunto, establecimiento).
  * Rechaza APPROXIMATE solo-ciudad (genera bloques falsos).
  */
 export async function geocodeDireccionGoogle(query) {
-  const key = getGoogleMapsApiKey();
-  if (!key) {
-    return { status: 'failed', error: 'GOOGLE_MAPS_API_KEY no configurada en el backend' };
-  }
   const q = String(query || '').trim();
   if (!q) return { status: 'sin_direccion' };
 
-  const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
-  url.searchParams.set('address', q);
-  url.searchParams.set('region', 'co');
-  url.searchParams.set('language', 'es');
-  url.searchParams.set('components', 'country:CO');
-  url.searchParams.set('key', key);
+  const key = getGoogleMapsApiKey();
+  let googleResult = null;
 
-  const resp = await fetch(url.toString());
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
-    return { status: 'failed', error: `HTTP ${resp.status}` };
-  }
-  if (data.status !== 'OK' || !Array.isArray(data.results) || !data.results.length) {
-    return {
+  if (key) {
+    const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+    url.searchParams.set('address', q);
+    url.searchParams.set('region', 'co');
+    url.searchParams.set('language', 'es');
+    url.searchParams.set('components', 'country:CO');
+    url.searchParams.set('key', key);
+
+    const resp = await fetch(url.toString());
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      googleResult = { status: 'failed', error: `HTTP ${resp.status}`, provider: 'google' };
+    } else if (data.status !== 'OK' || !Array.isArray(data.results) || !data.results.length) {
+      googleResult = {
+        status: 'failed',
+        error: data.status || 'ZERO_RESULTS',
+        geocodeStatusGoogle: data.status,
+        provider: 'google',
+      };
+    } else {
+      const elegido = elegirResultadoGeocodeUtil(data.results);
+      if (!elegido?.geometry?.location) {
+        const tipo = data.results[0]?.geometry?.location_type || 'APPROXIMATE';
+        googleResult = {
+          status: 'failed',
+          error: 'PRECISION_TOO_LOW',
+          locationType: tipo,
+          geocodeStatusGoogle: data.status,
+          formattedAddress: data.results[0]?.formatted_address || q,
+          provider: 'google',
+        };
+      } else {
+        const loc = elegido.geometry.location;
+        return {
+          status: 'ok',
+          lat: Number(loc.lat),
+          lng: Number(loc.lng),
+          formattedAddress: elegido.formatted_address || q,
+          locationType: elegido.geometry.location_type || '',
+          partialMatch: Boolean(elegido.partial_match),
+          placeTypes: Array.isArray(elegido.types) ? elegido.types : [],
+          provider: 'google',
+        };
+      }
+    }
+  } else {
+    googleResult = {
       status: 'failed',
-      error: data.status || 'ZERO_RESULTS',
-      geocodeStatusGoogle: data.status,
+      error: 'GOOGLE_MAPS_API_KEY no configurada en el backend',
+      provider: 'google',
     };
   }
 
-  const elegido = elegirResultadoGeocodeUtil(data.results);
-  if (!elegido?.geometry?.location) {
-    const tipo = data.results[0]?.geometry?.location_type || 'APPROXIMATE';
-    return {
-      status: 'failed',
-      error: 'PRECISION_TOO_LOW',
-      locationType: tipo,
-      geocodeStatusGoogle: data.status,
-      formattedAddress: data.results[0]?.formatted_address || q,
-    };
-  }
+  const err = String(googleResult?.error || '');
+  const usarNominatim =
+    !key ||
+    err === 'REQUEST_DENIED' ||
+    err === 'OVER_QUERY_LIMIT' ||
+    err.includes('GOOGLE_MAPS_API_KEY');
 
-  const loc = elegido.geometry.location;
-  return {
-    status: 'ok',
-    lat: Number(loc.lat),
-    lng: Number(loc.lng),
-    formattedAddress: elegido.formatted_address || q,
-    locationType: elegido.geometry.location_type || '',
-    partialMatch: Boolean(elegido.partial_match),
-    placeTypes: Array.isArray(elegido.types) ? elegido.types : [],
-  };
+  if (usarNominatim) {
+    return geocodeDireccionNominatim(q);
+  }
+  return googleResult;
 }
 
 /** Tipos Google que indican solo ciudad/departamento (demasiado grosero para bloques). */
@@ -298,9 +419,16 @@ export function elegirResultadoGeocodeUtil(results = []) {
 /** Precisión útil para planear visitas. Solo-ciudad no se guarda como ok. */
 export function ubicacionTienePrecisionCalle(u = {}) {
   if (u.geocodeStatus === 'manual') return true;
+  // Si el geocoder guardó ok, ya filtró solo-ciudad (Google o Nominatim).
+  if (
+    u.geocodeStatus === 'ok' &&
+    Number.isFinite(Number(u.lat)) &&
+    Number.isFinite(Number(u.lng))
+  ) {
+    return true;
+  }
   const tipo = String(u.locationType || '').toUpperCase();
   if (LOCATION_TYPES_PRECISOS.has(tipo)) return true;
-  // APPROXIMATE con status ok = lugar (barrio/conjunto), no centro de ciudad
   if (tipo === 'APPROXIMATE' && u.geocodeStatus === 'ok') return true;
   return false;
 }
@@ -463,8 +591,8 @@ export async function geocodeCasosBbvaCatPendientes({ limit = 100, force = false
       });
     }
 
-    // Rate-limit suave (~5/s)
-    await new Promise((r) => setTimeout(r, 200));
+    // Nominatim (fallback si Google niega la key) pide ~1 req/s
+    await new Promise((r) => setTimeout(r, 1100));
   }
 
   // Recalcular pendientes reales tras el lote
