@@ -356,9 +356,13 @@ const PROYECCION_LISTA_ALLIANZ_LISTADO = {
 export const listarCasosListadoAllianz = async (req, res) => {
   try {
     const { limit = 25, page = 1 } = req.query;
+    const filtro = {};
+    if (String(req.query.conInforme || '').toLowerCase() === '1' || String(req.query.conInforme || '') === 'true') {
+      filtro.informeUnico = { $type: 'object' };
+    }
     const resultado = await listarCasosLivianos({
       Model: AllianzListadoCaso,
-      filtro: {},
+      filtro,
       page,
       limit,
       quiereCompleto: quiereListaCompleta(req.query),
