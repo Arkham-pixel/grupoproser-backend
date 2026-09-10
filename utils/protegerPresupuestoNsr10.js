@@ -218,6 +218,7 @@ export function scoreContenidoInforme(informe) {
     informe.conclusiones,
     informe.recomendacion,
     informe.analisisCobertura,
+    informe.analisisNexoCausal,
     informe.analisisGeneral?.descripcionEvento,
     informe.analisisGeneral?.conclusiones,
   ]
@@ -226,7 +227,15 @@ export function scoreContenidoInforme(informe) {
   const filasD = (Array.isArray(informe.filasDanios) ? informe.filasDanios : []).filter(
     (f) => t(f?.condicion || f?.observacion || f?.descripcion).length > 15
   ).length;
-  return textos.reduce((n, s) => n + s.length, 0) + filasD * 40;
+  const filasP = (Array.isArray(informe.filasPolizaCobertura) ? informe.filasPolizaCobertura : []).filter(
+    (f) => t(f?.analisis || f?.conclusion).length > 15
+  ).length;
+  const filasPpto = (
+    Array.isArray(informe.filasPresupuestoPreliminar) ? informe.filasPresupuestoPreliminar : []
+  ).filter(
+    (f) => t(f?.descripcion).length > 15 || String(f?.valor || '').replace(/[^\d]/g, '').length > 3
+  ).length;
+  return textos.reduce((n, s) => n + s.length, 0) + filasD * 40 + filasP * 40 + filasPpto * 20;
 }
 
 export function resolverInformeUnicoParaUpdate(incoming, actual) {

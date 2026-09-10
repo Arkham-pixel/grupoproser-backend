@@ -108,4 +108,23 @@ assert(
   'informe vacio no pisa'
 );
 
+const informeAllianzLleno = {
+  descripcionDanios: 'Grietas en muros de mampostería y desprendimiento de pañetes en fachada.',
+  analisisNexoCausal: 'Los daños observados son consistentes con el sismo reportado en la póliza.',
+  conclusiones: 'Se recomienda liquidar conforme al presupuesto de reparación NSR-10.',
+  filasDanios: [{ zona: 'Fachada', condicion: 'Grieta diagonal de 2 mm', nivel: 'MEDIO' }],
+};
+const informeAllianzCascaron = {
+  infoEvento: 'El presente informe se elabora en el marco de la atención del evento sísmico.',
+  descripcionDanios: '',
+  conclusiones: '',
+  filasDanios: [],
+  filasPolizaCobertura: [],
+};
+assert(
+  resolverInformeUnicoParaUpdate(informeAllianzCascaron, informeAllianzLleno) ===
+    informeAllianzLleno,
+  'cascarón Allianz con infoEvento default no pisa textos reales'
+);
+
 console.log('OK protegerPresupuestoNsr10');

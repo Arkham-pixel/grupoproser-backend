@@ -9,7 +9,10 @@ import {
   enviarAlertasAllianzAjustador,
 } from '../services/alertasAllianzService.js';
 import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
-import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
+import {
+  resolverInformeUnicoParaUpdate,
+  resolverLiquidadorParaUpdate,
+} from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoAllianz, homologarEstadoAllianz } from '../utils/estadosAllianz.js';
 import { homologarCiudadAllianz, resolverUbicacionCatastrofico } from '../utils/ciudadesBbvaCat.js';
 import {
@@ -505,12 +508,7 @@ const buildAllianzPayload = (data = {}, base = {}) => {
     return normalizeEvidenciaCat(prev);
   })(),
   liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
-  informeUnico:
-    data.informeUnico !== undefined
-      ? data.informeUnico && typeof data.informeUnico === 'object'
-        ? data.informeUnico
-        : null
-      : base.informeUnico ?? null,
+  informeUnico: resolverInformeUnicoParaUpdate(data.informeUnico, base.informeUnico),
   informeAgil:
     data.informeAgil !== undefined
       ? data.informeAgil && typeof data.informeAgil === 'object'

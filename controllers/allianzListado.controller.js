@@ -3,7 +3,10 @@ import InspectorCatastrofico from '../models/InspectorCatastrofico.js';
 import AjustadorCatastrofico from '../models/AjustadorCatastrofico.js';
 import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatastrofico.js';
 import { catalogoPerteneceAModulo } from '../utils/filtrarCatalogoPorModulo.js';
-import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
+import {
+  resolverInformeUnicoParaUpdate,
+  resolverLiquidadorParaUpdate,
+} from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoAllianz, homologarEstadoAllianz } from '../utils/estadosAllianz.js';
 import { crearControladoresArchivosListado } from '../utils/archivosCasoListado.js';
 import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
@@ -231,7 +234,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       base.responsableAporteDocumento ?? null
     ),
     liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
-    informeUnico: pickObjeto(data.informeUnico, base.informeUnico ?? null),
+    informeUnico: resolverInformeUnicoParaUpdate(data.informeUnico, base.informeUnico),
     informeAgil: pickObjeto(data.informeAgil, base.informeAgil ?? null),
   });
   const ub = resolverUbicacionCatastrofico(payload.ciudad, payload.departamento);
