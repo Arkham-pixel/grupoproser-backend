@@ -58,8 +58,6 @@ const PrevisoraListadoCasoSchema = new mongoose.Schema(
     departamento: String,
     valorAseguradoInmueble: Number,
     valorAseguradoContenidos: Number,
-    valorReservaPreventivaPromedio: Number,
-    valorComercialInmueble: Number,
     reserva: Number,
     observacionReserva: { type: String, default: '' },
     valorReclamado: Number,
@@ -72,17 +70,22 @@ const PrevisoraListadoCasoSchema = new mongoose.Schema(
     estado: { type: String, required: true, default: 'CASO NUEVO' },
     modalidadAtencion: String,
     fechaCasoNuevo: Date,
+    fechaCasoInspeccionado: Date,
     fechaCoordinandoInspeccion: Date,
+    fechaPresentacionCifras: Date,
     fechaAnalisisCaso: Date,
     fechaSolicitudDocumento: Date,
     fechaRecepcionDocumento: Date,
     fechaObjecion: Date,
     fechaAutorizacionAnalista: Date,
+    fechaDesistimiento: Date,
+    fechaCasoCerrado: Date,
     fechaCasoParaPago: Date,
     documentoFaltante: String,
     observacionPendienteDocumento: String,
     motivoObjecion: String,
-    responsableAporteDocumento: String,
+    solicitudAnticipo: String,
+    valorSolicitudAnticipo: Number,
     liquidador: { type: mongoose.Schema.Types.Mixed, default: null },
     informeUnico: { type: mongoose.Schema.Types.Mixed, default: null },
     archivos: { type: [ArchivoPrevisoraListadoSchema], default: [] },
@@ -102,6 +105,7 @@ const PrevisoraListadoCasoSchema = new mongoose.Schema(
 PrevisoraListadoCasoSchema.index({ zc: 1 }, { unique: false, sparse: true });
 PrevisoraListadoCasoSchema.index({ noCaso: 1 }, { unique: false, sparse: true });
 PrevisoraListadoCasoSchema.index({ siniestro: 1, noCaso: 1 }, { unique: false, sparse: true });
+PrevisoraListadoCasoSchema.index({ createdAt: -1 });
 aplicarCamposAgendaCatastrofico(PrevisoraListadoCasoSchema);
 aplicarPluginNotificacionesOperativas(PrevisoraListadoCasoSchema, { modulo: 'previsoraListado' });
 

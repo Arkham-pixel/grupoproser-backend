@@ -11,7 +11,14 @@ import {
 export const DIAS_RECORDATORIO_INACTIVIDAD_PREVISORA = 30;
 
 /** Estados que cierran el caso para alertas (sin recordatorio). */
-const ESTADOS_CERRADOS_PREVISORA = ['CASO PARA PAGO', 'OBJECION', 'CERRADO'];
+const ESTADOS_CERRADOS_PREVISORA = [
+  'CASO CERRADO',
+  'DESISTIMIENTO',
+  'CASO PARA PAGO',
+  'OBJECION',
+  'OBJECIÓN',
+  'CERRADO',
+];
 
 function normalizarEstadoPrevisora(valor) {
   return String(valor ?? '')

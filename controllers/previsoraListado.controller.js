@@ -8,6 +8,11 @@ import { aplicarFechaAccionEstadoPrevisora, homologarEstadoPrevisora } from '../
 import { crearControladoresArchivosListado } from '../utils/archivosCasoListado.js';
 import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
 import { rechazarSiFranjaOcupada } from '../services/agendaCatastroficoService.js';
+import {
+  BANDERAS_LISTA_CASO,
+  listarCasosLivianos,
+  quiereListaCompleta,
+} from '../utils/listarCasosLivianos.js';
 
 const esVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null';
@@ -231,16 +236,6 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       base.valorAseguradoContenidos ?? null,
       { pisar }
     ),
-    valorReservaPreventivaPromedio: parseNumero(
-      data.valorReservaPreventivaPromedio,
-      base.valorReservaPreventivaPromedio ?? null,
-      { pisar }
-    ),
-    valorComercialInmueble: parseNumero(
-      data.valorComercialInmueble,
-      base.valorComercialInmueble ?? null,
-      { pisar }
-    ),
     reserva: parseNumero(data.reserva, base.reserva ?? null, { pisar }),
     observacionReserva: pick(data.observacionReserva, base.observacionReserva ?? null),
     valorReclamado: parseNumero(data.valorReclamado, base.valorReclamado ?? null, { pisar }),
@@ -253,12 +248,23 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     estado: homologarEstadoPrevisora(pick(data.estado, base.estado) || 'CASO NUEVO'),
     modalidadAtencion: pick(data.modalidadAtencion, base.modalidadAtencion ?? null),
     fechaCasoNuevo: pickFecha(data.fechaCasoNuevo, base.fechaCasoNuevo ?? null),
+    fechaCasoInspeccionado: pickFecha(
+      data.fechaCasoInspeccionado,
+      base.fechaCasoInspeccionado ?? base.fechaCoordinandoInspeccion ?? null
+    ),
     fechaCoordinandoInspeccion: pickFecha(
-      data.fechaCoordinandoInspeccion,
-      base.fechaCoordinandoInspeccion ?? null
+      data.fechaCoordinandoInspeccion ?? data.fechaCasoInspeccionado,
+      base.fechaCoordinandoInspeccion ?? base.fechaCasoInspeccionado ?? null
     ),
     ...mapearFranjaAgenda(data, base, pick),
-    fechaAnalisisCaso: pickFecha(data.fechaAnalisisCaso, base.fechaAnalisisCaso ?? null),
+    fechaPresentacionCifras: pickFecha(
+      data.fechaPresentacionCifras,
+      base.fechaPresentacionCifras ?? base.fechaAnalisisCaso ?? null
+    ),
+    fechaAnalisisCaso: pickFecha(
+      data.fechaAnalisisCaso ?? data.fechaPresentacionCifras,
+      base.fechaAnalisisCaso ?? base.fechaPresentacionCifras ?? null
+    ),
     fechaSolicitudDocumento: pickFecha(
       data.fechaSolicitudDocumento,
       base.fechaSolicitudDocumento ?? null
@@ -272,16 +278,26 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       data.fechaAutorizacionAnalista,
       base.fechaAutorizacionAnalista ?? null
     ),
-    fechaCasoParaPago: pickFecha(data.fechaCasoParaPago, base.fechaCasoParaPago ?? null),
+    fechaDesistimiento: pickFecha(data.fechaDesistimiento, base.fechaDesistimiento ?? null),
+    fechaCasoCerrado: pickFecha(
+      data.fechaCasoCerrado,
+      base.fechaCasoCerrado ?? base.fechaCasoParaPago ?? null
+    ),
+    fechaCasoParaPago: pickFecha(
+      data.fechaCasoParaPago ?? data.fechaCasoCerrado,
+      base.fechaCasoParaPago ?? base.fechaCasoCerrado ?? null
+    ),
     documentoFaltante: pick(data.documentoFaltante, base.documentoFaltante ?? null),
     observacionPendienteDocumento: pick(
       data.observacionPendienteDocumento,
       base.observacionPendienteDocumento ?? null
     ),
     motivoObjecion: pick(data.motivoObjecion, base.motivoObjecion ?? null),
-    responsableAporteDocumento: pick(
-      data.responsableAporteDocumento,
-      base.responsableAporteDocumento ?? null
+    solicitudAnticipo: pick(data.solicitudAnticipo, base.solicitudAnticipo ?? null),
+    valorSolicitudAnticipo: parseNumero(
+      data.valorSolicitudAnticipo,
+      base.valorSolicitudAnticipo ?? null,
+      { pisar }
     ),
     liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
     informeUnico: pickObjeto(data.informeUnico, base.informeUnico ?? null),
@@ -348,23 +364,79 @@ export const crearCasoListadoPrevisora = async (req, res) => {
   }
 };
 
+const PROYECCION_LISTA_PREVISORA_LISTADO = {
+  consecutivo: 1,
+  zc: 1,
+  noCaso: 1,
+  siniestro: 1,
+  identificacion: 1,
+  tipoIdentificacion: 1,
+  numeroPoliza: 1,
+  tipoPoliza: 1,
+  tipoPolizaOtro: 1,
+  causa: 1,
+  asegurado: 1,
+  intermediario: 1,
+  correoIntermediario: 1,
+  telefonoIntermediario: 1,
+  contactoIntermediario: 1,
+  correoAsegurado: 1,
+  telefonoAsegurado: 1,
+  contactoAsegurado: 1,
+  observaciones: 1,
+  ciudad: 1,
+  departamento: 1,
+  valorAseguradoInmueble: 1,
+  valorAseguradoContenidos: 1,
+  reserva: 1,
+  observacionReserva: 1,
+  valorReclamado: 1,
+  valorLiquidado: 1,
+  ajustadorLider: 1,
+  ajustador: 1,
+  inspector: 1,
+  fechaAsignacion: 1,
+  fechaVisita: 1,
+  estado: 1,
+  modalidadAtencion: 1,
+  fechaCasoNuevo: 1,
+  fechaCasoInspeccionado: 1,
+  fechaCoordinandoInspeccion: 1,
+  fechaPresentacionCifras: 1,
+  fechaAnalisisCaso: 1,
+  fechaSolicitudDocumento: 1,
+  fechaRecepcionDocumento: 1,
+  fechaObjecion: 1,
+  fechaAutorizacionAnalista: 1,
+  fechaDesistimiento: 1,
+  fechaCasoCerrado: 1,
+  fechaCasoParaPago: 1,
+  documentoFaltante: 1,
+  observacionPendienteDocumento: 1,
+  motivoObjecion: 1,
+  solicitudAnticipo: 1,
+  valorSolicitudAnticipo: 1,
+  horaInicioCoordinacion: 1,
+  horaFinCoordinacion: 1,
+  createdAt: 1,
+  updatedAt: 1,
+};
+
 export const listarCasosListadoPrevisora = async (req, res) => {
   try {
     const { limit = 25, page = 1 } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
-    const [total, documentos] = await Promise.all([
-      PrevisoraListadoCaso.countDocuments({}),
-      PrevisoraListadoCaso.find({})
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(Number(limit)),
-    ]);
+    const resultado = await listarCasosLivianos({
+      Model: PrevisoraListadoCaso,
+      filtro: {},
+      page,
+      limit,
+      quiereCompleto: quiereListaCompleta(req.query),
+      proyeccion: PROYECCION_LISTA_PREVISORA_LISTADO,
+      addFields: BANDERAS_LISTA_CASO,
+    });
     res.json({
       success: true,
-      total,
-      page: Number(page),
-      limit: Number(limit),
-      data: documentos,
+      ...resultado,
     });
   } catch (error) {
     console.error('❌ Error al listar listado Previsora:', error);
@@ -378,7 +450,7 @@ export const listarCasosListadoPrevisora = async (req, res) => {
 
 export const obtenerCasoListadoPrevisora = async (req, res) => {
   try {
-    const documento = await PrevisoraListadoCaso.findById(req.params.id);
+    const documento = await PrevisoraListadoCaso.findById(req.params.id).lean();
     if (!documento) {
       return res.status(404).json({ success: false, error: 'Caso del listado no encontrado' });
     }

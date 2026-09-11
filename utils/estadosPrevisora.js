@@ -1,36 +1,52 @@
-/** Estados operativos CAT Terremoto Previsora (metodología vigente). */
+/** Estados operativos Previsora (flujo vigente). */
 export const ESTADOS_PREVISORA = [
   'CASO NUEVO',
-  'COORDINANDO INSPECCIÓN',
-  'ANÁLISIS DEL CASO',
-  'PENDIENTE DE DOCUMENTO',
-  'OBJECIÓN',
+  'CASO INSPECCIONADO',
+  'PENDIENTE DE DOCUMENTOS',
   'AUTORIZACIÓN ANALISTA',
-  'CASO PARA PAGO',
+  'PRESENTACIÓN DE CIFRAS',
+  'OBJECIÓN',
+  'DESISTIMIENTO',
+  'CASO CERRADO',
 ];
 
 export const ESTADO_PREVISORA_DEFAULT = 'CASO NUEVO';
 
 export const FECHA_ACCION_POR_ESTADO_PREVISORA = {
   'CASO NUEVO': 'fechaCasoNuevo',
-  'COORDINANDO INSPECCIÓN': 'fechaCoordinandoInspeccion',
-  'ANÁLISIS DEL CASO': 'fechaAnalisisCaso',
-  'PENDIENTE DE DOCUMENTO': 'fechaSolicitudDocumento',
-  OBJECIÓN: 'fechaObjecion',
+  'CASO INSPECCIONADO': 'fechaCasoInspeccionado',
+  'PENDIENTE DE DOCUMENTOS': 'fechaSolicitudDocumento',
   'AUTORIZACIÓN ANALISTA': 'fechaAutorizacionAnalista',
-  'CASO PARA PAGO': 'fechaCasoParaPago',
+  'PRESENTACIÓN DE CIFRAS': 'fechaPresentacionCifras',
+  OBJECIÓN: 'fechaObjecion',
+  DESISTIMIENTO: 'fechaDesistimiento',
+  'CASO CERRADO': 'fechaCasoCerrado',
+};
+
+/** Fechas legado que se espejan para agenda, boletines e importaciones. */
+const ESPEJO_FECHA_LEGADO = {
+  fechaCasoInspeccionado: 'fechaCoordinandoInspeccion',
+  fechaPresentacionCifras: 'fechaAnalisisCaso',
+  fechaCasoCerrado: 'fechaCasoParaPago',
 };
 
 const LEGACY = {
   PENDIENTE: 'CASO NUEVO',
   AVISADO: 'CASO NUEVO',
-  'EN INSPECCION': 'COORDINANDO INSPECCIÓN',
-  'EN AJUSTE': 'ANÁLISIS DEL CASO',
-  DOCUMENTACION: 'PENDIENTE DE DOCUMENTO',
-  LIQUIDADO: 'CASO PARA PAGO',
-  'ENVIADO ASEGURADORA': 'CASO PARA PAGO',
-  CERRADO: 'CASO PARA PAGO',
-  'CERRADO MANUAL': 'CASO PARA PAGO',
+  'EN INSPECCION': 'CASO INSPECCIONADO',
+  'COORDINANDO INSPECCION': 'CASO INSPECCIONADO',
+  INSPECCIONADO: 'CASO INSPECCIONADO',
+  'EN AJUSTE': 'PRESENTACIÓN DE CIFRAS',
+  'ANALISIS DEL CASO': 'PRESENTACIÓN DE CIFRAS',
+  DOCUMENTACION: 'PENDIENTE DE DOCUMENTOS',
+  'PENDIENTE DE DOCUMENTO': 'PENDIENTE DE DOCUMENTOS',
+  LIQUIDADO: 'CASO CERRADO',
+  'ENVIADO ASEGURADORA': 'CASO CERRADO',
+  'CASO PARA PAGO': 'CASO CERRADO',
+  CERRADO: 'CASO CERRADO',
+  'CERRADO MANUAL': 'CASO CERRADO',
+  DESISTIDO: 'DESISTIMIENTO',
+  ANULADO: 'DESISTIMIENTO',
 };
 
 const sinAcentos = (valor) =>
@@ -51,16 +67,30 @@ export function homologarEstadoPrevisora(valor) {
   return LEGACY[key] || raw;
 }
 
+function fechaVacia(valor) {
+  if (valor == null || valor === '') return true;
+  if (valor instanceof Date) return Number.isNaN(valor.getTime());
+  return false;
+}
+
 export function aplicarFechaAccionEstadoPrevisora(payload = {}, base = {}) {
   const estado = homologarEstadoPrevisora(payload.estado);
   const out = { ...payload, estado };
   const clave = FECHA_ACCION_POR_ESTADO_PREVISORA[estado];
   const anterior = homologarEstadoPrevisora(base.estado);
-  if (clave && !out[clave] && anterior !== estado) {
+  if (clave && fechaVacia(out[clave]) && anterior !== estado) {
     out[clave] = new Date();
   }
-  if (estado === ESTADO_PREVISORA_DEFAULT && !out.fechaCasoNuevo) {
+  if (estado === ESTADO_PREVISORA_DEFAULT && fechaVacia(out.fechaCasoNuevo)) {
     out.fechaCasoNuevo = out.fechaCasoNuevo || base.fechaCasoNuevo || new Date();
+  }
+  for (const [nuevo, legado] of Object.entries(ESPEJO_FECHA_LEGADO)) {
+    if (!fechaVacia(out[nuevo]) && fechaVacia(out[legado])) {
+      out[legado] = out[nuevo];
+    }
+    if (fechaVacia(out[nuevo]) && !fechaVacia(out[legado] ?? base[legado])) {
+      out[nuevo] = out[legado] || base[legado];
+    }
   }
   return out;
 }

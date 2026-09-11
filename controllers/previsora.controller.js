@@ -11,6 +11,11 @@ import {
 import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoPrevisora, homologarEstadoPrevisora } from '../utils/estadosPrevisora.js';
+import {
+  BANDERAS_LISTA_CASO,
+  listarCasosLivianos,
+  quiereListaCompleta,
+} from '../utils/listarCasosLivianos.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -290,11 +295,12 @@ const generarConsecutivoPrevisora = async () => {
   return `PREVISORA-${año}-${mes}-${maxSecuencial + 1}`;
 };
 
-const buscarCasoPorId = async (idParam) => {
+const buscarCasoPorId = async (idParam, { lean = false } = {}) => {
   if (idParam == null || idParam === '') return null;
   const id = String(idParam).trim();
   if (mongoose.Types.ObjectId.isValid(id)) {
-    const porObjectId = await PrevisoraCaso.findById(id);
+    const query = PrevisoraCaso.findById(id);
+    const porObjectId = lean ? await query.lean() : await query;
     if (porObjectId) return porObjectId;
   }
   return null;
@@ -354,17 +360,9 @@ const buildPrevisoraPayload = (data = {}, base = {}) => {
     data.valorAseguradoContenidos,
     base.valorAseguradoContenidos ?? null
   ),
-  cobertura: toStringOrNull(data.cobertura, base.cobertura ?? null),
-  estadoPagoPrimas: toStringOrNull(data.estadoPagoPrimas, base.estadoPagoPrimas ?? null),
-  valorReservaPreventivaPromedio: parseNumberFlexible(
-    data.valorReservaPreventivaPromedio,
-    base.valorReservaPreventivaPromedio ?? null
-  ),
-  valorComercialInmueble: parseNumberFlexible(
-    data.valorComercialInmueble,
-    base.valorComercialInmueble ?? null
-  ),
-  reserva: parseNumberFlexible(data.reserva, base.reserva ?? null),
+    cobertura: toStringOrNull(data.cobertura, base.cobertura ?? null),
+    estadoPagoPrimas: toStringOrNull(data.estadoPagoPrimas, base.estadoPagoPrimas ?? null),
+    reserva: parseNumberFlexible(data.reserva, base.reserva ?? null),
   observacionReserva: toStringOrNull(data.observacionReserva, base.observacionReserva ?? null) || '',
   valorReclamado: parseNumberFlexible(data.valorReclamado, base.valorReclamado ?? null),
   valorLiquidado: parseNumberFlexible(data.valorLiquidado, base.valorLiquidado ?? null),
@@ -389,12 +387,23 @@ const buildPrevisoraPayload = (data = {}, base = {}) => {
   estado: homologarEstadoPrevisora(toStringOrNull(data.estado, base.estado ?? 'CASO NUEVO')),
   modalidadAtencion: toStringOrNull(data.modalidadAtencion, base.modalidadAtencion ?? null),
   fechaCasoNuevo: parseDateFlexible(data.fechaCasoNuevo, base.fechaCasoNuevo ?? null),
+  fechaCasoInspeccionado: parseDateFlexible(
+    data.fechaCasoInspeccionado,
+    base.fechaCasoInspeccionado ?? base.fechaCoordinandoInspeccion ?? null
+  ),
   fechaCoordinandoInspeccion: parseDateFlexible(
-    data.fechaCoordinandoInspeccion,
-    base.fechaCoordinandoInspeccion ?? null
+    data.fechaCoordinandoInspeccion ?? data.fechaCasoInspeccionado,
+    base.fechaCoordinandoInspeccion ?? base.fechaCasoInspeccionado ?? null
   ),
   ...mapearFranjaAgenda(data, base, toStringOrNull),
-  fechaAnalisisCaso: parseDateFlexible(data.fechaAnalisisCaso, base.fechaAnalisisCaso ?? null),
+  fechaPresentacionCifras: parseDateFlexible(
+    data.fechaPresentacionCifras,
+    base.fechaPresentacionCifras ?? base.fechaAnalisisCaso ?? null
+  ),
+  fechaAnalisisCaso: parseDateFlexible(
+    data.fechaAnalisisCaso ?? data.fechaPresentacionCifras,
+    base.fechaAnalisisCaso ?? base.fechaPresentacionCifras ?? null
+  ),
   fechaSolicitudDocumento: parseDateFlexible(
     data.fechaSolicitudDocumento,
     base.fechaSolicitudDocumento ?? null
@@ -408,16 +417,25 @@ const buildPrevisoraPayload = (data = {}, base = {}) => {
     data.fechaAutorizacionAnalista,
     base.fechaAutorizacionAnalista ?? null
   ),
-  fechaCasoParaPago: parseDateFlexible(data.fechaCasoParaPago, base.fechaCasoParaPago ?? null),
+  fechaDesistimiento: parseDateFlexible(data.fechaDesistimiento, base.fechaDesistimiento ?? null),
+  fechaCasoCerrado: parseDateFlexible(
+    data.fechaCasoCerrado,
+    base.fechaCasoCerrado ?? base.fechaCasoParaPago ?? null
+  ),
+  fechaCasoParaPago: parseDateFlexible(
+    data.fechaCasoParaPago ?? data.fechaCasoCerrado,
+    base.fechaCasoParaPago ?? base.fechaCasoCerrado ?? null
+  ),
   documentoFaltante: toStringOrNull(data.documentoFaltante, base.documentoFaltante ?? null),
   observacionPendienteDocumento: toStringOrNull(
     data.observacionPendienteDocumento,
     base.observacionPendienteDocumento ?? null
   ),
   motivoObjecion: toStringOrNull(data.motivoObjecion, base.motivoObjecion ?? null),
-  responsableAporteDocumento: toStringOrNull(
-    data.responsableAporteDocumento,
-    base.responsableAporteDocumento ?? null
+  solicitudAnticipo: toStringOrNull(data.solicitudAnticipo, base.solicitudAnticipo ?? null),
+  valorSolicitudAnticipo: parseNumberFlexible(
+    data.valorSolicitudAnticipo,
+    base.valorSolicitudAnticipo ?? null
   ),
   riskId: toStringOrNull(data.riskId, base.riskId ?? null),
   distanciaEpicentroKm: parseNumberFlexible(
@@ -534,8 +552,6 @@ export const mapExpressAPrevisora = (express = {}) => ({
   valorAseguradoContenidos: null,
   cobertura: express.amparo || null,
   estadoPagoPrimas: null,
-  valorReservaPreventivaPromedio: null,
-  valorComercialInmueble: null,
   reserva: express.reserva ?? null,
   observacionReserva: '',
   valorReclamado: null,
@@ -588,12 +604,12 @@ const mergeImportacionPrevisora = (incomingPayload = {}, existente = {}) => {
     'valorAseguradoContenidos',
     'cobertura',
     'estadoPagoPrimas',
-    'valorReservaPreventivaPromedio',
-    'valorComercialInmueble',
     'reserva',
     'observacionReserva',
     'valorReclamado',
     'valorLiquidado',
+    'solicitudAnticipo',
+    'valorSolicitudAnticipo',
     'fechaLlamada',
     'observacionLlamada',
     'fechaInspeccion',
@@ -602,6 +618,18 @@ const mergeImportacionPrevisora = (incomingPayload = {}, existente = {}) => {
     'fechaAceptacionLiquidacion',
     'fechaEnvioAseguradora',
     'estado',
+    'fechaCasoNuevo',
+    'fechaCasoInspeccionado',
+    'fechaCoordinandoInspeccion',
+    'fechaPresentacionCifras',
+    'fechaAnalisisCaso',
+    'fechaSolicitudDocumento',
+    'fechaRecepcionDocumento',
+    'fechaObjecion',
+    'fechaAutorizacionAnalista',
+    'fechaDesistimiento',
+    'fechaCasoCerrado',
+    'fechaCasoParaPago',
     'riskId',
     'distanciaEpicentroKm',
     'tipoNegocioHomologado',
@@ -691,25 +719,123 @@ export const crearCasoPrevisora = async (req, res) => {
   }
 };
 
+/**
+ * Reporte / dashboard / boletines: no mandar liquidador, informe ni archivos.
+ * evidenciaCat y severidadCatNiveles sí van: son chicos y el Excel/formulario CAT los usa.
+ */
+const PROYECCION_LISTA_PREVISORA = {
+  consecutivo: 1,
+  expressCasoId: 1,
+  consecutivoExpress: 1,
+  siniestro: 1,
+  zc: 1,
+  identificacion: 1,
+  tipoIdentificacion: 1,
+  asegurado: 1,
+  intermediario: 1,
+  correoIntermediario: 1,
+  telefonoIntermediario: 1,
+  contactoIntermediario: 1,
+  correoAsegurado: 1,
+  telefonoAsegurado: 1,
+  contactoAsegurado: 1,
+  observaciones: 1,
+  tomador: 1,
+  ajustadorLider: 1,
+  ajustador: 1,
+  inspector: 1,
+  numeroPoliza: 1,
+  tipoPoliza: 1,
+  tipoPolizaOtro: 1,
+  causa: 1,
+  direccionPredio: 1,
+  numeroCredito: 1,
+  informacionContacto: 1,
+  correo: 1,
+  celular: 1,
+  canalRadicacion: 1,
+  ciudad: 1,
+  departamento: 1,
+  fechaSiniestro: 1,
+  fechaInicioPoliza: 1,
+  fechaFinPoliza: 1,
+  valorAseguradoInmueble: 1,
+  valorAseguradoContenidos: 1,
+  cobertura: 1,
+  estadoPagoPrimas: 1,
+  reserva: 1,
+  observacionReserva: 1,
+  valorReclamado: 1,
+  valorLiquidado: 1,
+  fechaLlamada: 1,
+  observacionLlamada: 1,
+  fechaInspeccion: 1,
+  fechaUltimoDocumento: 1,
+  fechaLiquidado: 1,
+  fechaAceptacionLiquidacion: 1,
+  fechaEnvioAseguradora: 1,
+  fechaAsignacion: 1,
+  fechaVisita: 1,
+  estado: 1,
+  modalidadAtencion: 1,
+  fechaCasoNuevo: 1,
+  fechaCasoInspeccionado: 1,
+  fechaCoordinandoInspeccion: 1,
+  fechaPresentacionCifras: 1,
+  fechaAnalisisCaso: 1,
+  fechaSolicitudDocumento: 1,
+  fechaRecepcionDocumento: 1,
+  fechaObjecion: 1,
+  fechaAutorizacionAnalista: 1,
+  fechaDesistimiento: 1,
+  fechaCasoCerrado: 1,
+  fechaCasoParaPago: 1,
+  documentoFaltante: 1,
+  observacionPendienteDocumento: 1,
+  motivoObjecion: 1,
+  solicitudAnticipo: 1,
+  valorSolicitudAnticipo: 1,
+  riskId: 1,
+  distanciaEpicentroKm: 1,
+  tipoNegocioHomologado: 1,
+  catUbicacionReferencia: 1,
+  addressNumber: 1,
+  direccionInspeccionSugerida: 1,
+  linkGoogleMaps: 1,
+  grupoInspeccion: 1,
+  afectacion: 1,
+  gradoAfectacion: 1,
+  lucroCesante: 1,
+  severidadCat: 1,
+  severidadCatNiveles: 1,
+  accesoPredio: 1,
+  evidenciaCat: 1,
+  observacionesCat: 1,
+  checklistCatCompleto: 1,
+  historialCatastroficoId: 1,
+  horaInicioCoordinacion: 1,
+  horaFinCoordinacion: 1,
+  createdAt: 1,
+  updatedAt: 1,
+};
+
 export const listarCasosPrevisora = async (req, res) => {
   try {
     const { limit = 25, page = 1 } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
     const filtro = debeFiltrarChecklistParaUsuario(req) ? filtroMongoChecklistCatLleno() : {};
-    const [total, documentos] = await Promise.all([
-      PrevisoraCaso.countDocuments(filtro),
-      PrevisoraCaso.find(filtro)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(Number(limit)),
-    ]);
+    const resultado = await listarCasosLivianos({
+      Model: PrevisoraCaso,
+      filtro,
+      page,
+      limit,
+      quiereCompleto: quiereListaCompleta(req.query),
+      proyeccion: PROYECCION_LISTA_PREVISORA,
+      addFields: BANDERAS_LISTA_CASO,
+    });
 
     res.json({
       success: true,
-      total,
-      page: Number(page),
-      limit: Number(limit),
-      data: documentos,
+      ...resultado,
     });
   } catch (error) {
     console.error('❌ Error al listar casos Previsora:', error);
@@ -723,7 +849,7 @@ export const listarCasosPrevisora = async (req, res) => {
 
 export const obtenerCasoPrevisora = async (req, res) => {
   try {
-    const documento = await buscarCasoPorId(req.params.id);
+    const documento = await buscarCasoPorId(req.params.id, { lean: true });
     if (!documento) {
       return res.status(404).json({ success: false, error: 'Caso Previsora no encontrado' });
     }
@@ -990,6 +1116,47 @@ const siguienteOrdenArchivos = (archivos = []) => {
   return max + 1;
 };
 
+const archivoExt = (name = '') => {
+  const m = String(name).toLowerCase().match(/\.([a-z0-9]+)$/);
+  return m ? m[1] : '';
+};
+
+const ETIQUETAS_ULTIMA_VERSION = new Set([
+  'LIQUIDACION',
+  'FINIQUITO',
+  'INFORME',
+  'INFORME_PRELIMINAR',
+  'INFORME_UNICO',
+  'INFORME_FINAL',
+  'DESPRENDIBLE_CAT',
+]);
+
+const parseReplaceSameSlot = (body, etiqueta) => {
+  const et = String(etiqueta || 'GENERAL').trim().toUpperCase();
+  if (ETIQUETAS_ULTIMA_VERSION.has(et)) return true;
+  return (
+    body?.replaceSameSlot === true ||
+    body?.replaceSameSlot === 'true' ||
+    body?.replaceSameSlot === '1'
+  );
+};
+
+const findArchivoSameSlot = (caso, etiqueta, originalName) => {
+  const et = String(etiqueta || 'GENERAL').toUpperCase();
+  const ext = archivoExt(originalName);
+  const list = Array.isArray(caso.archivos) ? [...caso.archivos] : [];
+  const matches = list.filter((a) => {
+    if (String(a.etiqueta || 'GENERAL').toUpperCase() !== et) return false;
+    if (!ext) return true;
+    return archivoExt(a.nombreOriginal || a.nombreArchivo) === ext;
+  });
+  if (!matches.length) return null;
+  matches.sort(
+    (a, b) => new Date(b.fechaSubida || 0).getTime() - new Date(a.fechaSubida || 0).getTime()
+  );
+  return matches[0];
+};
+
 /** POST /api/previsora/:id/archivos */
 export const subirArchivoPrevisora = async (req, res) => {
   try {
@@ -1008,6 +1175,43 @@ export const subirArchivoPrevisora = async (req, res) => {
     caso.archivos = caso.archivos || [];
     const orden = siguienteOrdenArchivos(caso.archivos);
     const archivo = buildArchivoFromUpload(req, etiqueta, { descripcion, orden });
+
+    if (parseReplaceSameSlot(req.body, etiqueta)) {
+      const existente = findArchivoSameSlot(
+        caso,
+        etiqueta,
+        archivo.nombreOriginal || req.file.originalname
+      );
+      if (existente) {
+        const previousRuta = existente.ruta;
+        const oldId = existente._id;
+        existente.nombreOriginal = archivo.nombreOriginal;
+        existente.nombreArchivo = archivo.nombreArchivo;
+        existente.ruta = archivo.ruta;
+        existente.tamaño = archivo.tamaño;
+        existente.tipoMime = archivo.tipoMime;
+        existente.etiqueta = etiqueta;
+        existente.descripcion = archivo.descripcion;
+        existente.subidoPor = archivo.subidoPor;
+        existente.fechaSubida = new Date();
+        const ext = archivoExt(archivo.nombreOriginal);
+        caso.archivos = caso.archivos.filter((a) => {
+          if (String(a._id) === String(oldId)) return true;
+          if (String(a.etiqueta || 'GENERAL').toUpperCase() !== etiqueta.toUpperCase()) return true;
+          if (ext && archivoExt(a.nombreOriginal || a.nombreArchivo) !== ext) return true;
+          if (a.ruta) deleteStoredFile(a.ruta).catch(() => {});
+          return false;
+        });
+        caso.fechaUltimoDocumento = new Date();
+        await caso.save();
+        const creado = caso.archivos.id(oldId) || existente;
+        if (previousRuta && previousRuta !== archivo.ruta) {
+          deleteStoredFile(previousRuta).catch(() => {});
+        }
+        return res.status(201).json({ success: true, data: creado, casoId: caso._id, replaced: true });
+      }
+    }
+
     caso.archivos.push(archivo);
     caso.fechaUltimoDocumento = new Date();
     await caso.save();

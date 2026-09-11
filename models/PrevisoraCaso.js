@@ -85,8 +85,6 @@ const PrevisoraCasoSchema = new mongoose.Schema(
     valorAseguradoContenidos: Number,
     cobertura: String,
     estadoPagoPrimas: String,
-    valorReservaPreventivaPromedio: Number,
-    valorComercialInmueble: Number,
     reserva: Number,
     /** Nota libre que complementa el valor de reserva. */
     observacionReserva: { type: String, default: '' },
@@ -105,17 +103,22 @@ const PrevisoraCasoSchema = new mongoose.Schema(
     estado: { type: String, required: true, default: 'CASO NUEVO' },
     modalidadAtencion: String,
     fechaCasoNuevo: Date,
+    fechaCasoInspeccionado: Date,
     fechaCoordinandoInspeccion: Date,
+    fechaPresentacionCifras: Date,
     fechaAnalisisCaso: Date,
     fechaSolicitudDocumento: Date,
     fechaRecepcionDocumento: Date,
     fechaObjecion: Date,
     fechaAutorizacionAnalista: Date,
+    fechaDesistimiento: Date,
+    fechaCasoCerrado: Date,
     fechaCasoParaPago: Date,
     documentoFaltante: String,
     observacionPendienteDocumento: String,
     motivoObjecion: String,
-    responsableAporteDocumento: String,
+    solicitudAnticipo: String,
+    valorSolicitudAnticipo: Number,
     /** Campos operativos CAT Previsora (hoja CAT_PREVISORA / exposición) */
     riskId: { type: String, default: null },
     distanciaEpicentroKm: { type: Number, default: null },
@@ -194,6 +197,7 @@ const PrevisoraCasoSchema = new mongoose.Schema(
 
 aplicarCamposAgendaCatastrofico(PrevisoraCasoSchema);
 aplicarPluginNotificacionesOperativas(PrevisoraCasoSchema, { modulo: 'previsora' });
+PrevisoraCasoSchema.index({ createdAt: -1 });
 
 const PrevisoraCaso = mongoose.model(
   'PrevisoraCaso',
