@@ -51,10 +51,24 @@ export function iniciarCronAlfaExcelOutbound() {
         return;
       }
       try {
-        const summary = await runAlfaExcelOutboundWorkerCycle();
-        if (summary.claimed > 0) {
+        // Varias pasadas por tick para vaciar cola rápido (hasta ~100 updates/min).
+        let totalClaimed = 0;
+        let totalSynced = 0;
+        let totalFailed = 0;
+        let durationMs = 0;
+        for (let round = 0; round < 4; round += 1) {
+          if (isAlfaExcelOutboundCycleRunning()) break;
+          const summary = await runAlfaExcelOutboundWorkerCycle();
+          if (summary?.skippedOverlapping) break;
+          totalClaimed += summary.claimed || 0;
+          totalSynced += summary.synced || 0;
+          totalFailed += summary.failed || 0;
+          durationMs += summary.durationMs || 0;
+          if (!(summary.claimed > 0)) break;
+        }
+        if (totalClaimed > 0) {
           console.log(
-            `📤 Alfa Excel outbound: claimed=${summary.claimed} synced=${summary.synced} failed=${summary.failed} durationMs=${summary.durationMs}`
+            `📤 Alfa Excel outbound: claimed=${totalClaimed} synced=${totalSynced} failed=${totalFailed} durationMs=${durationMs}`
           );
         }
       } catch (error) {

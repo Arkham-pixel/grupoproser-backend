@@ -1,5 +1,5 @@
 /**
- * Reserva del caso = suma de capítulos del presupuesto preliminar.
+ * Reserva del caso = pérdida preliminar − deducible (% libre sobre la pérdida).
  * Evita que un reservaSugerida congelado (p. ej. de la IA) pise el total al autoguardar.
  */
 
@@ -19,6 +19,21 @@ export function sumaPresupuestoPreliminarZurich(filas = []) {
   );
 }
 
+function parsearPorcentajeLibreZurich(valor) {
+  if (valor === '' || valor == null) return 0;
+  if (typeof valor === 'number') {
+    return Number.isFinite(valor) && valor > 0 ? valor : 0;
+  }
+  const str = String(valor)
+    .trim()
+    .replace(/%/g, '')
+    .replace(/\s/g, '')
+    .replace(',', '.');
+  if (!str) return 0;
+  const n = Number.parseFloat(str);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 export function aplicarReservaDesdePresupuestoZurich(payload = {}) {
   const informe = payload?.informeUnico;
   if (!informe || typeof informe !== 'object') return payload;
@@ -27,12 +42,17 @@ export function aplicarReservaDesdePresupuestoZurich(payload = {}) {
   if (suma <= 0) {
     return { ...payload, informeUnico: limpio };
   }
+  const pct = parsearPorcentajeLibreZurich(limpio.porcentajeDeducibleReserva);
+  const deducible = pct > 0 ? Math.round((suma * pct) / 100) : 0;
+  const reserva = Math.max(0, suma - deducible);
   return {
     ...payload,
-    reserva: suma,
+    reserva,
     informeUnico: {
       ...limpio,
-      reservaSugerida: String(suma),
+      reservaSugerida: String(reserva),
+      porcentajeDeducibleReserva:
+        limpio.porcentajeDeducibleReserva == null ? '' : String(limpio.porcentajeDeducibleReserva),
     },
   };
 }
@@ -90,6 +110,8 @@ export function fusionarInformeUnicoZurich(incoming, existing) {
     recomendacion: limpioEx.recomendacion,
     analisisCobertura: limpioEx.analisisCobertura,
     coordenadasRiesgo: limpioEx.coordenadasRiesgo || limpioIn.coordenadasRiesgo,
+    porcentajeDeducibleReserva:
+      limpioEx.porcentajeDeducibleReserva ?? limpioIn.porcentajeDeducibleReserva,
     fotosInspeccion: limpioEx.fotosInspeccion?.length
       ? limpioEx.fotosInspeccion
       : limpioIn.fotosInspeccion,
