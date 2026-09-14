@@ -11,8 +11,63 @@ export const quiereListaCompleta = (query = {}) => {
   return v === '1' || v === 'true';
 };
 
+const mongoTexto = (path) => ({
+  $convert: { input: { $ifNull: [path, ''] }, to: 'string', onError: '', onNull: '' },
+});
+
+const mongoStrLen = (path) => ({
+  $strLenCP: { $trim: { input: mongoTexto(path) } },
+});
+
+const mongoTieneTexto = (path, min = 40) => ({ $gt: [mongoStrLen(path), min] });
+
+const mongoArrayOVacio = (path) => ({
+  $cond: [{ $isArray: path }, path, []],
+});
+
+const ETIQUETAS_ARCHIVO_INFORME = ['INFORME_UNICO', 'INFORME_PRELIMINAR', 'INFORME_FINAL'];
+
+/**
+ * Informe con contenido real: narrativa, fotos del informe o Word archivado.
+ * No usa filas de póliza ni infoEvento (llevan plantilla).
+ */
+export const BANDERA_INFORME_LLENO = {
+  $or: [
+    mongoTieneTexto('$informeUnico.descripcionDanios'),
+    mongoTieneTexto('$informeUnico.conclusiones'),
+    mongoTieneTexto('$informeUnico.recomendacion'),
+    mongoTieneTexto('$informeUnico.analisisCobertura'),
+    mongoTieneTexto('$informeUnico.analisisNexoCausal'),
+    {
+      $gt: [{ $size: mongoArrayOVacio('$informeUnico.fotosInspeccion') }, 0],
+    },
+    {
+      $gt: [
+        {
+          $size: {
+            $filter: {
+              input: mongoArrayOVacio('$archivos'),
+              as: 'a',
+              cond: {
+                $in: [
+                  {
+                    $toUpper: mongoTexto('$$a.etiqueta'),
+                  },
+                  ETIQUETAS_ARCHIVO_INFORME,
+                ],
+              },
+            },
+          },
+        },
+        0,
+      ],
+    },
+  ],
+};
+
 export const BANDERAS_LISTA_CASO = {
   tieneInforme: { $eq: [{ $type: '$informeUnico' }, 'object'] },
+  tieneInformeLleno: BANDERA_INFORME_LLENO,
   tieneLiquidador: { $eq: [{ $type: '$liquidador' }, 'object'] },
   nArchivos: {
     $cond: [{ $isArray: '$archivos' }, { $size: '$archivos' }, 0],
