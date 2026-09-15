@@ -145,6 +145,8 @@ async function main() {
       correoAsegurado: correo,
       informacionContacto: [celular, correo].filter(Boolean).join(' | '),
       fechaSiniestro: fechaDia(row[8]),
+      /** Día en que se sube el Excel de asignación a ARNALD (no la fecha analista BBVA). */
+      fechaAsignacion: ahora,
       fechaCasoNuevo: fechaDia(row[9]) || fechaDia(row[8]) || ahora,
       tipoPoliza: ramo.tipoPoliza,
       tipoPolizaOtro: ramo.tipoPolizaOtro || undefined,
@@ -184,6 +186,7 @@ async function main() {
       tipoPolizaOtro: ramo.tipoPolizaOtro || undefined,
       causa: 'TERREMOTO',
       estado: homologarEstadoBbvaCat('CASO NUEVO'),
+      fechaAsignacion: payload.fechaAsignacion,
       fechaCasoNuevo: payload.fechaCasoNuevo,
       observaciones: direccionPredio || '',
     };

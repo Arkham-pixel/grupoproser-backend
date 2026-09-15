@@ -221,6 +221,8 @@ async function main() {
       correoAsegurado: correo,
       informacionContacto: [celular === '0' ? '' : celular, correo].filter(Boolean).join(' | '),
       fechaSiniestro: fechaDia(row[18]),
+      /** Día de carga del Excel a ARNALD (no fecha analista del consolidado). */
+      fechaAsignacion: ahora,
       fechaCasoNuevo: fechaDia(row[19]) || fechaDia(row[17]) || fechaDia(row[4]) || ahora,
       numeroPoliza: toTxt(row[30]) || toTxt(row[7]),
       tipoPoliza: ramo.tipoPoliza,
@@ -268,6 +270,7 @@ async function main() {
       tipoPolizaOtro: ramo.tipoPolizaOtro || undefined,
       causa: payload.causa,
       estado: homologarEstadoBbvaCat('CASO NUEVO'),
+      fechaAsignacion: payload.fechaAsignacion,
       fechaCasoNuevo: payload.fechaCasoNuevo,
       observaciones: direccionPredio || '',
       valorAseguradoInmueble: payload.valorAseguradoInmueble || undefined,
