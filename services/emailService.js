@@ -1559,6 +1559,47 @@ export const enviarNotificacionCreador = async (datosCaso) => {
   }
 };
 
+function normalizarEmailsCopia(valores, emailPrincipal) {
+  const principal = String(emailPrincipal || '').trim().toLowerCase();
+  const seen = new Set(principal ? [principal] : []);
+  const out = [];
+  for (const raw of Array.isArray(valores) ? valores : [valores]) {
+    const email = String(raw || '').trim();
+    if (!email || !email.includes('@')) continue;
+    const key = email.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(email);
+  }
+  return out;
+}
+
+function filasHtmlCopiaFacturacion({
+  nombreDestinatario,
+  emailDestinatario,
+  nombreCopia,
+  emailsCopia,
+  locale,
+}) {
+  const esEn = String(locale || '').toLowerCase().startsWith('en');
+  const copiasTxt = [nombreCopia, ...(Array.isArray(emailsCopia) ? emailsCopia : [])]
+    .filter(Boolean)
+    .filter((v, i, arr) => arr.indexOf(v) === i)
+    .join(' · ');
+  const labelTo = esEn ? 'Sent to' : 'Enviado a';
+  const labelCc = esEn ? 'Copy' : 'Copia';
+  return `
+    ${nombreDestinatario ? `<tr>
+      <td style="padding:8px 0; font-weight:bold; color:#111827;">${labelTo}</td>
+      <td style="padding:8px 0; color:#1f2937;">${nombreDestinatario}${emailDestinatario ? ` (${emailDestinatario})` : ''}</td>
+    </tr>` : ''}
+    ${copiasTxt ? `<tr>
+      <td style="padding:8px 0; font-weight:bold; color:#111827;">${labelCc}</td>
+      <td style="padding:8px 0; color:#1f2937;">${copiasTxt}</td>
+    </tr>` : ''}
+  `;
+}
+
 export const enviarNotificacionControlHoras = async (datos) => {
   try {
     console.log('📧 ===== INICIANDO ENVÍO DE NOTIFICACIÓN DE CONTROL DE HORAS =====');
@@ -1624,9 +1665,13 @@ export const enviarNotificacionControlHoras = async (datos) => {
     }
 
     const emails = [emailDestinatario];
+    const emailsCopia = normalizarEmailsCopia(datos.emailsCopia, emailDestinatario);
 
     console.log('📧 Enviando notificación SOLO a:', emailDestinatario);
     console.log('📧 Nombre destinatario:', nombreDestinatario);
+    if (emailsCopia.length) {
+      console.log('📧 Copia a:', emailsCopia.join(', '));
+    }
 
     const archivos = (datos.archivos || []).map(nombre => `<li style="margin-bottom:4px;">📎 ${nombre}</li>`).join('');
     
@@ -1762,10 +1807,15 @@ export const enviarNotificacionControlHoras = async (datos) => {
     console.log('🔗 [Enlace Caso] NODE_ENV:', process.env.NODE_ENV);
     
     // Construir URL del caso - usar ID si está disponible, sino usar número de caso para búsqueda
-    let urlCaso = null;
+    let urlCaso = datos.urlCaso || null;
     let textoEnlace = t.viewCases;
     
-    if (datos.casoId) {
+    if (urlCaso) {
+      textoEnlace = !isMissingCaseNumber(datos.numeroCaso)
+        ? fillEmailTemplate(t.viewCaseNum, { numero: datos.numeroCaso })
+        : t.viewCase;
+      console.log('✅ [Enlace Caso] URL recibida del módulo:', urlCaso);
+    } else if (datos.casoId) {
       // Si tenemos el ID, usar ruta directa
       urlCaso = `${frontendUrl}/editar-caso/${datos.casoId}`;
       textoEnlace = !isMissingCaseNumber(datos.numeroCaso)
@@ -1802,6 +1852,7 @@ export const enviarNotificacionControlHoras = async (datos) => {
     const mailOptions = {
       from: `"Grupo Proser - Sistema de Casos" <${process.env.EMAIL_USER}>`,
       to: emails[0],
+      cc: emailsCopia.length ? emailsCopia : undefined,
       subject: tieneArchivos
         ? getEmailSubject(datos, 'subjectControlHorasDoc', { numero: datos.numeroCaso || t.noNumberLower })
         : getEmailSubject(datos, 'subjectControlHorasReg', { numero: datos.numeroCaso || t.noNumberLower }),
@@ -1821,6 +1872,13 @@ export const enviarNotificacionControlHoras = async (datos) => {
               ${datos.numeroSiniestro ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">${t.claimNumber}</td><td style="padding:8px 0; color:#1f2937;">${datos.numeroSiniestro}</td></tr>` : ''}
               ${datos.responsable ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">${t.responsibleLabel}</td><td style="padding:8px 0; color:#1f2937;">${datos.responsable}</td></tr>` : ''}
               ${datos.usuario ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">${t.uploadedBy}</td><td style="padding:8px 0; color:#1f2937;">${datos.usuario}</td></tr>` : ''}
+              ${filasHtmlCopiaFacturacion({
+                nombreDestinatario,
+                emailDestinatario,
+                nombreCopia: datos.nombreCopia,
+                emailsCopia,
+                locale: datos.locale,
+              })}
             </table>
             ${htmlResumenControlHoras}
             ${htmlSeccionArchivos}
@@ -1842,6 +1900,8 @@ export const enviarNotificacionControlHoras = async (datos) => {
       messageId: info.messageId,
       destinatarios: emails,
       destinatarioPrincipal: emails[0],
+      emailsCopia,
+      nombreDestinatario,
     };
   } catch (error) {
     console.error('❌ Error enviando notificación de control de horas:', error);
@@ -1996,7 +2056,11 @@ export const enviarNotificacionGerencia = async (datos) => {
     }
 
     const emails = [emailDestinatario];
+    const emailsCopia = normalizarEmailsCopia(datos.emailsCopia, emailDestinatario);
     console.log('📧 Enviando notificación SOLO a:', emailDestinatario);
+    if (emailsCopia.length) {
+      console.log('📧 Copia a:', emailsCopia.join(', '));
+    }
 
     // Construir enlaces de descarga para los archivos
     const baseUrl = process.env.BASE_URL || process.env.BACKEND_URL || 'http://localhost:5000';
@@ -2089,10 +2153,14 @@ export const enviarNotificacionGerencia = async (datos) => {
     console.log('🔗 [Enlace Caso Gerencia] frontendUrl:', frontendUrl);
     console.log('🔗 [Enlace Caso Gerencia] NODE_ENV:', process.env.NODE_ENV);
     
-    let urlCaso = null;
+    let urlCaso = datos.urlCaso || null;
     let textoEnlace = t.viewCases;
     
-    if (datos.casoId) {
+    if (urlCaso) {
+      textoEnlace = !isMissingCaseNumber(datos.numeroCaso)
+        ? fillEmailTemplate(t.viewCaseNum, { numero: datos.numeroCaso })
+        : t.viewCase;
+    } else if (datos.casoId) {
       urlCaso = `${frontendUrl}/editar-caso/${datos.casoId}`;
       textoEnlace = !isMissingCaseNumber(datos.numeroCaso)
         ? fillEmailTemplate(t.viewCaseNum, { numero: datos.numeroCaso })
@@ -2119,6 +2187,7 @@ export const enviarNotificacionGerencia = async (datos) => {
     const mailOptions = {
       from: `"Grupo Proser - Sistema de Casos" <${process.env.EMAIL_USER}>`,
       to: emails[0],
+      cc: emailsCopia.length ? emailsCopia : undefined,
       subject: getEmailSubject(datos, 'subjectGerencia', { numero: datos.numeroCaso || t.noNumberLower }),
       attachments: attachments.length > 0 ? attachments : undefined,
       html: `
@@ -2134,6 +2203,13 @@ export const enviarNotificacionGerencia = async (datos) => {
               ${datos.numeroSiniestro ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">${t.claimNumber}</td><td style="padding:8px 0; color:#1f2937;">${datos.numeroSiniestro}</td></tr>` : ''}
               ${datos.responsable ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">${t.responsibleLabel}</td><td style="padding:8px 0; color:#1f2937;">${datos.responsable}</td></tr>` : ''}
               ${datos.usuario ? `<tr><td style="padding:8px 0; font-weight:bold; color:#111827;">${t.uploadedBy}</td><td style="padding:8px 0; color:#1f2937;">${datos.usuario}</td></tr>` : ''}
+              ${filasHtmlCopiaFacturacion({
+                nombreDestinatario,
+                emailDestinatario,
+                nombreCopia: datos.nombreCopia,
+                emailsCopia,
+                locale: datos.locale,
+              })}
             </table>
             <div style="background-color:#fef3c7; padding:15px; border-radius:8px; border-left:4px solid #f59e0b;">
               <h3 style="margin:0 0 10px 0; color:#92400e;">${t.uploadedFiles}</h3>
@@ -2157,7 +2233,10 @@ export const enviarNotificacionGerencia = async (datos) => {
     return {
       success: true,
       messageId: info.messageId,
-      destinatarios: emails
+      destinatarios: emails,
+      destinatarioPrincipal: emails[0],
+      emailsCopia,
+      nombreDestinatario,
     };
   } catch (error) {
     console.error('❌ Error enviando notificación de gerencia:', error);

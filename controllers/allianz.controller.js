@@ -14,6 +14,7 @@ import {
   resolverLiquidadorParaUpdate,
 } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoAllianz, homologarEstadoAllianz } from '../utils/estadosAllianz.js';
+import { homologarTipoPolizaAllianz } from '../utils/tiposPolizaAllianz.js';
 import { homologarCiudadAllianz, resolverUbicacionCatastrofico } from '../utils/ciudadesBbvaCat.js';
 import {
   BANDERAS_LISTA_CASO,
@@ -341,7 +342,10 @@ const buildAllianzPayload = (data = {}, base = {}) => {
   ajustador: toStringOrNull(data.ajustador, base.ajustador ?? null),
   inspector: toStringOrNull(data.inspector, base.inspector ?? null),
   numeroPoliza: toStringOrNull(data.numeroPoliza, base.numeroPoliza ?? null),
-  tipoPoliza: toStringOrNull(data.tipoPoliza, base.tipoPoliza ?? null),
+  tipoPoliza: homologarTipoPolizaAllianz(
+    toStringOrNull(data.tipoPoliza, base.tipoPoliza ?? null),
+    toStringOrNull(data.tipoPolizaOtro, base.tipoPolizaOtro ?? null)
+  ),
   tipoPolizaOtro: toStringOrNull(data.tipoPolizaOtro, base.tipoPolizaOtro ?? null),
   causa: toStringOrNull(data.causa, base.causa ?? null),
   direccionPredio: toStringOrNull(data.direccionPredio, base.direccionPredio ?? null),
@@ -400,9 +404,14 @@ const buildAllianzPayload = (data = {}, base = {}) => {
   estado: homologarEstadoAllianz(toStringOrNull(data.estado, base.estado ?? 'CASO NUEVO')),
   modalidadAtencion: toStringOrNull(data.modalidadAtencion, base.modalidadAtencion ?? null),
   fechaCasoNuevo: parseDateFlexible(data.fechaCasoNuevo, base.fechaCasoNuevo ?? null),
+  fechaPrimerContacto: parseDateFlexible(data.fechaPrimerContacto, base.fechaPrimerContacto ?? null),
   fechaCoordinandoInspeccion: parseDateFlexible(
     data.fechaCoordinandoInspeccion,
     base.fechaCoordinandoInspeccion ?? null
+  ),
+  fechaInspeccionRealizada: parseDateFlexible(
+    data.fechaInspeccionRealizada,
+    base.fechaInspeccionRealizada ?? null
   ),
   ...mapearFranjaAgenda(data, base, toStringOrNull),
   fechaAnalisisCaso: parseDateFlexible(data.fechaAnalisisCaso, base.fechaAnalisisCaso ?? null),
@@ -420,8 +429,13 @@ const buildAllianzPayload = (data = {}, base = {}) => {
     data.fechaAutorizacionAnalista,
     base.fechaAutorizacionAnalista ?? null
   ),
+  fechaPresentacionCifras: parseDateFlexible(
+    data.fechaPresentacionCifras,
+    base.fechaPresentacionCifras ?? null
+  ),
   fechaCasoParaPago: parseDateFlexible(data.fechaCasoParaPago, base.fechaCasoParaPago ?? null),
   fechaCasoPagado: parseDateFlexible(data.fechaCasoPagado, base.fechaCasoPagado ?? null),
+  fechaDesistido: parseDateFlexible(data.fechaDesistido, base.fechaDesistido ?? null),
   fechaAnulado: parseDateFlexible(data.fechaAnulado, base.fechaAnulado ?? null),
   documentoFaltante: toStringOrNull(data.documentoFaltante, base.documentoFaltante ?? null),
   observacionPendienteDocumento: toStringOrNull(
@@ -627,15 +641,19 @@ const mergeImportacionAllianz = (incomingPayload = {}, existente = {}) => {
     'estado',
     'modalidadAtencion',
     'fechaCasoNuevo',
+    'fechaPrimerContacto',
     'fechaCoordinandoInspeccion',
+    'fechaInspeccionRealizada',
     'fechaAnalisisCaso',
     'fechaSolicitudDocumento',
     'fechaRecepcionDocumento',
     'fechaObjecion',
     'fechaObjetado',
     'fechaAutorizacionAnalista',
+    'fechaPresentacionCifras',
     'fechaCasoParaPago',
     'fechaCasoPagado',
+    'fechaDesistido',
     'fechaAnulado',
     'documentoFaltante',
     'observacionPendienteDocumento',
@@ -793,15 +811,19 @@ const PROYECCION_LISTA_ALLIANZ = {
   estado: 1,
   modalidadAtencion: 1,
   fechaCasoNuevo: 1,
+  fechaPrimerContacto: 1,
   fechaCoordinandoInspeccion: 1,
+  fechaInspeccionRealizada: 1,
   fechaAnalisisCaso: 1,
   fechaSolicitudDocumento: 1,
   fechaRecepcionDocumento: 1,
   fechaObjecion: 1,
   fechaObjetado: 1,
   fechaAutorizacionAnalista: 1,
+  fechaPresentacionCifras: 1,
   fechaCasoParaPago: 1,
   fechaCasoPagado: 1,
+  fechaDesistido: 1,
   fechaAnulado: 1,
   documentoFaltante: 1,
   observacionPendienteDocumento: 1,
@@ -845,9 +867,17 @@ export const listarCasosAllianz = async (req, res) => {
       addFields: BANDERAS_LISTA_CASO,
     });
 
+    const data = Array.isArray(resultado.data)
+      ? resultado.data.map((doc) => ({
+          ...doc,
+          estado: homologarEstadoAllianz(doc.estado),
+          tipoPoliza: homologarTipoPolizaAllianz(doc.tipoPoliza, doc.tipoPolizaOtro),
+        }))
+      : resultado.data;
     res.json({
       success: true,
       ...resultado,
+      data,
     });
   } catch (error) {
     console.error('❌ Error al listar casos Allianz:', error);

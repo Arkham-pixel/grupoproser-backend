@@ -25,7 +25,23 @@ export const GERENTES_FACTURACION = {
     nombre: 'Prueba (danalyst)',
     logins: [],
   },
+  /** Líder Zurich: recibe copia de control de horas. No entra al dropdown de Complex. */
+  ladys: {
+    clave: 'ladys',
+    nombre: 'Ladys Andrea Escalante',
+    email:
+      process.env.EMAIL_LIDER_ZURICH?.trim() ||
+      'ladys.escalante@proserpuertos.com.co',
+    logins: [],
+    soloZurich: true,
+  },
 };
+
+/** Login/cédula de Ladys Escalante (líder Zurich). */
+export const LOGIN_LIDER_ZURICH_FACTURACION = '1041899782';
+
+export const EMAIL_LIDER_ZURICH_FACTURACION =
+  process.env.EMAIL_LIDER_ZURICH?.trim() || 'ladys.escalante@proserpuertos.com.co';
 
 /** Supervisor: puede ver la bandeja de todos los jefes (no es jefe). */
 export const LOGIN_SUPERVISOR_BANDEJA = '1065012991';
@@ -50,8 +66,38 @@ export function normalizarClaveGerente(gerente) {
   if (g.includes('elkin')) return 'elkin';
   if (g.includes('iskharly')) return 'iskharly';
   if (g.includes('adriana') || g.includes('facturacion')) return 'adriana';
+  if (g.includes('ladys')) return 'ladys';
   if (g === 'test') return 'test';
   return null;
+}
+
+function haystackNombre(valor) {
+  return String(valor ?? '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/\s*\([^)]*\)/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+export function esNombreLiderZurichFacturacion(nombre) {
+  const hay = haystackNombre(nombre);
+  return hay.includes('LADYS') && hay.includes('ESCALANTE');
+}
+
+export function esLiderZurichFacturacion({ login, name, email } = {}) {
+  if (String(login || '').trim() === LOGIN_LIDER_ZURICH_FACTURACION) return true;
+  if (esNombreLiderZurichFacturacion(name)) return true;
+  const mail = String(email || '').trim().toLowerCase();
+  return Boolean(mail && mail === EMAIL_LIDER_ZURICH_FACTURACION.toLowerCase());
+}
+
+/** Bandeja Zurich: líder, jefes de facturación y supervisores. */
+export function usuarioPuedeVerBandejaFacturacionZurich({ login, name, email } = {}) {
+  if (esSupervisorBandejaFacturacion(login)) return true;
+  if (esLiderZurichFacturacion({ login, name, email })) return true;
+  const gerente = resolverGerenteDesdeLogin(login);
+  return Boolean(gerente && gerente !== 'ladys' && gerente !== 'test');
 }
 
 export function resolverGerenteDesdeLogin(login) {

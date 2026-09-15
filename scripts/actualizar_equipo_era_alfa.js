@@ -33,6 +33,8 @@ const ACTIVOS = [
   { nombre: 'Jorge Luis Perez Angulo', login: '0519072577601' },
   { nombre: 'Carlos Eduardo Luz Contreras', login: '5346081408584' },
   { nombre: 'Blanca Estela Rivera Diaz', login: '0186050007215' },
+  { nombre: 'Joel Sosa Miralles', login: '2570216393' },
+  { nombre: 'Josenrique Martinez Alba', login: '2973371677' },
 ];
 
 function escapeRx(valor) {

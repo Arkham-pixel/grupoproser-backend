@@ -3,6 +3,8 @@ import crypto from 'crypto';
 import Complex from '../models/Complex.js';
 import Siniestro from '../models/CasoComplex.js';
 import SegurosSuraCaso from '../models/SegurosSuraCaso.js';
+import ZurichCaso from '../models/ZurichCaso.js';
+import ZurichListadoCaso from '../models/ZurichListadoCaso.js';
 import {
   normalizarClaveGerente,
   nombreGerente,
@@ -17,6 +19,7 @@ import {
 const TIPOS_ENVIO = new Set(['control_horas', 'gerencia']);
 const MAX_CASOS_BANDEJA = 500;
 const QUERY_TIMEOUT_MS = 20000;
+const ASEGURADORA_ZURICH = 'ZURICH COLOMBIA SEGUROS S.A.';
 
 function crearRegistroEnvio({
   tipo,
@@ -79,6 +82,10 @@ export async function resolverCasoIdFacturacion({ casoId, numeroCaso }) {
     if (existeSin) return id;
     const existeSura = await SegurosSuraCaso.exists({ _id: id });
     if (existeSura) return id;
+    const existeZurich = await ZurichCaso.exists({ _id: id });
+    if (existeZurich) return id;
+    const existeZurichListado = await ZurichListadoCaso.exists({ _id: id });
+    if (existeZurichListado) return id;
   }
 
   const num = String(numeroCaso || '').trim();
@@ -97,6 +104,14 @@ export async function resolverCasoIdFacturacion({ casoId, numeroCaso }) {
     .lean();
   if (porNumeroSura?._id) return String(porNumeroSura._id);
 
+  const porNumeroZurich = await ZurichCaso.findOne({ consecutivo: num }).select('_id').lean();
+  if (porNumeroZurich?._id) return String(porNumeroZurich._id);
+
+  const porNumeroZurichListado = await ZurichListadoCaso.findOne({ consecutivo: num })
+    .select('_id')
+    .lean();
+  if (porNumeroZurichListado?._id) return String(porNumeroZurichListado._id);
+
   return null;
 }
 
@@ -111,7 +126,9 @@ export async function registrarEnvioFacturacion(casoId, datos) {
   const casoActual =
     (await Complex.findById(casoId).select('envios_facturacion').lean()) ||
     (await Siniestro.findById(casoId).select('envios_facturacion').lean()) ||
-    (await SegurosSuraCaso.findById(casoId).select('envios_facturacion').lean());
+    (await SegurosSuraCaso.findById(casoId).select('envios_facturacion').lean()) ||
+    (await ZurichCaso.findById(casoId).select('envios_facturacion').lean()) ||
+    (await ZurichListadoCaso.findById(casoId).select('envios_facturacion').lean());
   const envios = Array.isArray(casoActual?.envios_facturacion) ? casoActual.envios_facturacion : [];
   const ahora = Date.now();
   const ventanaMs = 2 * 60 * 1000;
@@ -155,6 +172,12 @@ export async function registrarEnvioFacturacion(casoId, datos) {
   }
   if (!actualizado) {
     actualizado = await SegurosSuraCaso.findByIdAndUpdate(casoId, update, { new: true });
+  }
+  if (!actualizado) {
+    actualizado = await ZurichCaso.findByIdAndUpdate(casoId, update, { new: true });
+  }
+  if (!actualizado) {
+    actualizado = await ZurichListadoCaso.findByIdAndUpdate(casoId, update, { new: true });
   }
 
   return { ok: Boolean(actualizado), registro, casoId: String(casoId) };
@@ -229,16 +252,21 @@ export async function persistirEnvioFacturacionTrasCorreo({
   return { ok, casoId: idResuelto, registros };
 }
 
-function filtrarEnvios(envios, { gerente, tipo, desde, hasta }) {
+function filtrarEnvios(envios, { gerente, tipo, desde, hasta, verTodos = false }) {
   const gerenteNorm = normalizarClaveGerente(gerente);
-  if (!gerenteNorm) return [];
+  if (!verTodos && !gerenteNorm) return [];
 
   const desdeMs = desde ? new Date(desde).getTime() : null;
   const hastaMs = hasta ? new Date(hasta).getTime() : null;
 
   return (Array.isArray(envios) ? envios : []).filter((e) => {
     if (!e || typeof e !== 'object') return false;
-    if (normalizarClaveGerente(e.gerente) !== gerenteNorm) return false;
+    if (verTodos) {
+      if ((e.rolEnvio || 'principal') === 'copia') return false;
+      if (gerenteNorm && normalizarClaveGerente(e.gerente) !== gerenteNorm) return false;
+    } else if (normalizarClaveGerente(e.gerente) !== gerenteNorm) {
+      return false;
+    }
     if (tipo && tipo !== 'todos' && e.tipo !== tipo) return false;
     const t = e.fecha ? new Date(e.fecha).getTime() : NaN;
     if (desdeMs && (!Number.isFinite(t) || t < desdeMs)) return false;
@@ -258,6 +286,7 @@ function textoCoincide(caso, q, mapaAseg = {}) {
     resolverNombreAseguradora(caso.codiAsgrdra, mapaAseg),
     caso.codiRespnsble,
     caso.descripcionEstado,
+    caso.estado,
   ];
   return campos.some((c) => String(c || '').toLowerCase().includes(term));
 }
@@ -404,11 +433,11 @@ function normalizarCasoLean(doc) {
 
   return {
     _id: doc._id,
-    nmroAjste: doc.nmroAjste,
-    nmroSinstro: doc.nmroSinstro,
+    nmroAjste: doc.nmroAjste || doc.consecutivo,
+    nmroSinstro: doc.nmroSinstro || doc.siniestro,
     codiAsgrdra: codigoAseguradoraCaso(doc),
-    asgrBenfcro: doc.asgrBenfcro,
-    codiRespnsble: doc.codiRespnsble,
+    asgrBenfcro: doc.asgrBenfcro || doc.asegurado,
+    codiRespnsble: doc.codiRespnsble || doc.ajustador,
     codiEstdo,
     codi_estado: doc.codi_estado,
     estado: doc.estado,
@@ -422,6 +451,37 @@ function normalizarCasoLean(doc) {
   };
 }
 
+function modelosBandejaPorColeccion(coleccion) {
+  if (coleccion === 'sura') return [{ Modelo: SegurosSuraCaso, origen: 'sura' }];
+  if (coleccion === 'zurich') {
+    return [
+      { Modelo: ZurichCaso, origen: 'cat' },
+      { Modelo: ZurichListadoCaso, origen: 'listado' },
+    ];
+  }
+  return [{ Modelo: Complex, origen: 'complex' }];
+}
+
+async function consultarDocsBandeja(Modelo, filtro, proyeccion) {
+  try {
+    return await Modelo.collection
+      .find(filtro)
+      .project(proyeccion)
+      .sort({ 'ultimo_envio_facturacion.fecha': -1 })
+      .limit(MAX_CASOS_BANDEJA)
+      .maxTimeMS(QUERY_TIMEOUT_MS)
+      .toArray();
+  } catch (error) {
+    console.error('❌ [bandeja] Error en consulta nativa, reintento con mongoose:', error.message);
+    return Modelo.find(filtro)
+      .select(Object.keys(proyeccion).join(' '))
+      .sort({ 'ultimo_envio_facturacion.fecha': -1 })
+      .limit(MAX_CASOS_BANDEJA)
+      .maxTimeMS(QUERY_TIMEOUT_MS)
+      .lean();
+  }
+}
+
 /** Lista filas de bandeja: un registro por cada envío que coincide con el gerente. */
 export async function listarBandejaFacturacion({
   gerente,
@@ -433,19 +493,27 @@ export async function listarBandejaFacturacion({
   estados = [],
   aseguradoras = [],
   coleccion = 'complex',
+  verTodos = false,
 }) {
   const gerenteNorm = normalizarClaveGerente(gerente);
-  if (!gerenteNorm) {
+  if (!verTodos && !gerenteNorm) {
     return { items: [], total: 0 };
   }
 
   const mapaResp = mapaResponsables(responsables);
   const mapaEst = mapaEstadosCatalogo(estados);
   const mapaAseg = mapaAseguradoras(aseguradoras);
-  const filtro = { 'envios_facturacion.gerente': gerenteNorm };
+  const esZurich = coleccion === 'zurich';
+  const filtro = verTodos
+    ? { 'envios_facturacion.0': { $exists: true } }
+    : { 'envios_facturacion.gerente': gerenteNorm };
   const proyeccion = {
     nmroAjste: 1,
     nmroSinstro: 1,
+    consecutivo: 1,
+    siniestro: 1,
+    asegurado: 1,
+    ajustador: 1,
     codiAsgrdra: 1,
     asgrBenfcro: 1,
     codiRespnsble: 1,
@@ -461,29 +529,16 @@ export async function listarBandejaFacturacion({
     control_horas: 1,
   };
 
-  const Modelo = coleccion === 'sura' ? SegurosSuraCaso : Complex;
-  let docs = [];
-  try {
-    docs = await Modelo.collection
-      .find(filtro)
-      .project(proyeccion)
-      .sort({ 'ultimo_envio_facturacion.fecha': -1 })
-      .limit(MAX_CASOS_BANDEJA)
-      .maxTimeMS(QUERY_TIMEOUT_MS)
-      .toArray();
-  } catch (error) {
-    console.error('❌ [bandeja] Error en consulta nativa, reintento con mongoose:', error.message);
-    docs = await Modelo.find(filtro)
-      .select(Object.keys(proyeccion).join(' '))
-      .sort({ 'ultimo_envio_facturacion.fecha': -1 })
-      .limit(MAX_CASOS_BANDEJA)
-      .maxTimeMS(QUERY_TIMEOUT_MS)
-      .lean();
+  const fuentes = modelosBandejaPorColeccion(coleccion);
+  const docsConOrigen = [];
+  for (const fuente of fuentes) {
+    const docs = await consultarDocsBandeja(fuente.Modelo, filtro, proyeccion);
+    docs.forEach((doc) => docsConOrigen.push({ raw: doc, origen: fuente.origen }));
   }
 
   const filas = [];
 
-  for (const raw of docs) {
+  for (const { raw, origen } of docsConOrigen) {
     const caso = normalizarCasoLean(raw);
     if (!caso) continue;
 
@@ -491,25 +546,26 @@ export async function listarBandejaFacturacion({
 
     enviosArr.forEach((envio, envioIndice) => {
       if (!envio || typeof envio !== 'object') return;
-      const coincideGerente =
-        normalizarClaveGerente(envio.gerente) === gerenteNorm;
-      if (!coincideGerente) return;
 
       const enviosFiltrados = filtrarEnvios([envio], {
         gerente: gerenteNorm,
         tipo,
         desde,
         hasta,
+        verTodos,
       });
       if (!enviosFiltrados.length) return;
       if (!textoCoincide(caso, q, mapaAseg)) return;
 
       const codResp = String(caso.codiRespnsble || '').trim().toUpperCase();
-      const nombreAseguradora = resolverNombreAseguradora(caso.codiAsgrdra, mapaAseg);
+      const nombreAseguradora =
+        resolverNombreAseguradora(caso.codiAsgrdra, mapaAseg) ||
+        (esZurich ? ASEGURADORA_ZURICH : '');
       filas.push({
         casoId: String(caso._id),
         envioId: envio.id || null,
         envioIndice,
+        origen,
         nmroAjste: caso.nmroAjste,
         nmroSinstro: caso.nmroSinstro,
         codiAsgrdra: caso.codiAsgrdra,
@@ -537,7 +593,7 @@ export async function listarBandejaFacturacion({
 
   filas.sort((a, b) => new Date(b.fechaEnvio) - new Date(a.fechaEnvio));
 
-  return { items: filas, total: filas.length, gerente: gerenteNorm };
+  return { items: filas, total: filas.length, gerente: gerenteNorm || 'todos', verTodos: Boolean(verTodos) };
 }
 
 function esObjectIdValido(id) {
@@ -551,6 +607,8 @@ async function cargarCasoConEnvios(casoId) {
   let doc = await Complex.findById(id).lean();
   if (!doc) doc = await Siniestro.findById(id).lean();
   if (!doc) doc = await SegurosSuraCaso.findById(id).lean();
+  if (!doc) doc = await ZurichCaso.findById(id).lean();
+  if (!doc) doc = await ZurichListadoCaso.findById(id).lean();
   return doc;
 }
 
@@ -565,6 +623,12 @@ async function guardarEnviosFacturacion(casoId, envios, resumenes) {
   }
   if (!actualizado) {
     actualizado = await SegurosSuraCaso.findByIdAndUpdate(casoId, { $set: payload }, { new: true });
+  }
+  if (!actualizado) {
+    actualizado = await ZurichCaso.findByIdAndUpdate(casoId, { $set: payload }, { new: true });
+  }
+  if (!actualizado) {
+    actualizado = await ZurichListadoCaso.findByIdAndUpdate(casoId, { $set: payload }, { new: true });
   }
   return Boolean(actualizado);
 }

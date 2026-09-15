@@ -1,53 +1,75 @@
-/** Estados operativos CAT Allianz (misma metodología que BBVA, con cierre). */
+/** Estados operativos Allianz (listado y CAT). */
 export const ESTADOS_ALLIANZ = [
   'CASO NUEVO',
-  'COORDINANDO INSPECCIÓN',
-  'ANÁLISIS DEL CASO',
-  'PENDIENTE DE DOCUMENTO',
+  'PRIMER CONTACTO',
+  'INSPECCIÓN COORDINADA',
+  'INSPECCIÓN REALIZADA',
+  'ANÁLISIS DE CASO',
+  'PENDIENTE DOCUMENTOS',
   'OBJECIÓN',
-  'OBJETADO',
-  'AUTORIZACIÓN ANALISTA',
+  'PENDIENTE APROBACIÓN ANALISTA',
+  'PRESENTACIÓN DE CIFRAS',
   'CASO PARA PAGO',
-  'PAGADO',
-  'ANULADO',
+  'DESISTIDO',
+  'ANULADO/CANCELADO',
 ];
 
 export const ESTADO_ALLIANZ_DEFAULT = 'CASO NUEVO';
 
-export const ESTADOS_CIERRE_ALLIANZ = ['OBJETADO', 'PAGADO', 'ANULADO'];
+export const ESTADOS_CIERRE_ALLIANZ = ['DESISTIDO', 'ANULADO/CANCELADO'];
 
 export const FECHA_ACCION_POR_ESTADO_ALLIANZ = {
   'CASO NUEVO': 'fechaCasoNuevo',
-  'COORDINANDO INSPECCIÓN': 'fechaCoordinandoInspeccion',
-  'ANÁLISIS DEL CASO': 'fechaAnalisisCaso',
-  'PENDIENTE DE DOCUMENTO': 'fechaSolicitudDocumento',
+  'PRIMER CONTACTO': 'fechaPrimerContacto',
+  'INSPECCIÓN COORDINADA': 'fechaCoordinandoInspeccion',
+  'INSPECCIÓN REALIZADA': 'fechaInspeccionRealizada',
+  'ANÁLISIS DE CASO': 'fechaAnalisisCaso',
+  'PENDIENTE DOCUMENTOS': 'fechaSolicitudDocumento',
   OBJECIÓN: 'fechaObjecion',
-  OBJETADO: 'fechaObjetado',
-  'AUTORIZACIÓN ANALISTA': 'fechaAutorizacionAnalista',
+  'PENDIENTE APROBACIÓN ANALISTA': 'fechaAutorizacionAnalista',
+  'PRESENTACIÓN DE CIFRAS': 'fechaPresentacionCifras',
   'CASO PARA PAGO': 'fechaCasoParaPago',
-  PAGADO: 'fechaCasoPagado',
-  ANULADO: 'fechaAnulado',
+  DESISTIDO: 'fechaDesistido',
+  'ANULADO/CANCELADO': 'fechaAnulado',
 };
 
 const LEGACY = {
   PENDIENTE: 'CASO NUEVO',
-  'EN INSPECCION': 'COORDINANDO INSPECCIÓN',
-  DOCUMENTACION: 'PENDIENTE DE DOCUMENTO',
+  'EN INSPECCION': 'INSPECCIÓN COORDINADA',
+  'COORDINANDO INSPECCION': 'INSPECCIÓN COORDINADA',
+  'INSPECCION COORDINADA': 'INSPECCIÓN COORDINADA',
+  'CASO INSPECCIONADO': 'INSPECCIÓN REALIZADA',
+  INSPECCIONADO: 'INSPECCIÓN REALIZADA',
+  'INSPECCION REALIZADA': 'INSPECCIÓN REALIZADA',
+  'ANALISIS DEL CASO': 'ANÁLISIS DE CASO',
+  'ANALISIS DE CASO': 'ANÁLISIS DE CASO',
+  DOCUMENTACION: 'PENDIENTE DOCUMENTOS',
+  'PENDIENTE DE DOCUMENTO': 'PENDIENTE DOCUMENTOS',
+  'PENDIENTE DE DOCUMENTOS': 'PENDIENTE DOCUMENTOS',
+  'PENDIENTE DOCUMENTO': 'PENDIENTE DOCUMENTOS',
+  'AUTORIZACION ANALISTA': 'PENDIENTE APROBACIÓN ANALISTA',
+  'PENDIENTE APROBACION ANALISTA': 'PENDIENTE APROBACIÓN ANALISTA',
+  'PRESENTACION DE CIFRAS': 'PRESENTACIÓN DE CIFRAS',
   LIQUIDADO: 'CASO PARA PAGO',
   'ENVIADO ASEGURADORA': 'CASO PARA PAGO',
-  OBJECTED: 'OBJETADO',
-  'CASO OBJETADO': 'OBJETADO',
-  'OBJECION CERRADA': 'OBJETADO',
-  'OBJECION FINAL': 'OBJETADO',
-  PAGO: 'PAGADO',
-  'CASO PAGADO': 'PAGADO',
-  INDEMNIZADO: 'PAGADO',
-  GIRADO: 'PAGADO',
-  'CASE PAID': 'PAGADO',
-  CERRADO: 'PAGADO',
-  'CERRADO MANUAL': 'PAGADO',
-  CANCELADO: 'ANULADO',
-  'SIN COBERTURA': 'ANULADO',
+  OBJECTED: 'OBJECIÓN',
+  OBJETADO: 'OBJECIÓN',
+  'CASO OBJETADO': 'OBJECIÓN',
+  'OBJECION CERRADA': 'OBJECIÓN',
+  'OBJECION FINAL': 'OBJECIÓN',
+  PAGO: 'CASO PARA PAGO',
+  PAGADO: 'CASO PARA PAGO',
+  'CASO PAGADO': 'CASO PARA PAGO',
+  INDEMNIZADO: 'CASO PARA PAGO',
+  GIRADO: 'CASO PARA PAGO',
+  'CASE PAID': 'CASO PARA PAGO',
+  CERRADO: 'CASO PARA PAGO',
+  'CERRADO MANUAL': 'CASO PARA PAGO',
+  DESISTIMIENTO: 'DESISTIDO',
+  ANULADO: 'ANULADO/CANCELADO',
+  CANCELADO: 'ANULADO/CANCELADO',
+  'ANULADO CANCELADO': 'ANULADO/CANCELADO',
+  'SIN COBERTURA': 'ANULADO/CANCELADO',
 };
 
 const sinAcentos = (valor) =>
@@ -80,6 +102,12 @@ export function aplicarFechaAccionEstadoAllianz(payload = {}, base = {}) {
   const anterior = homologarEstadoAllianz(base.estado);
   if (clave && !out[clave] && anterior !== estado) {
     out[clave] = new Date();
+  }
+  if (estado === 'INSPECCIÓN REALIZADA' && !out.fechaInspeccionRealizada) {
+    out.fechaInspeccionRealizada = out.fechaVisita || out.fechaInspeccion || out.fechaInspeccionRealizada;
+  }
+  if (estado === 'PRIMER CONTACTO' && !out.fechaPrimerContacto) {
+    out.fechaPrimerContacto = out.fechaLlamada || out.fechaPrimerContacto;
   }
   if (estado === ESTADO_ALLIANZ_DEFAULT && !out.fechaCasoNuevo) {
     out.fechaCasoNuevo = out.fechaCasoNuevo || base.fechaCasoNuevo || new Date();

@@ -8,6 +8,7 @@ import {
   resolverLiquidadorParaUpdate,
 } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoAllianz, homologarEstadoAllianz } from '../utils/estadosAllianz.js';
+import { homologarTipoPolizaAllianz } from '../utils/tiposPolizaAllianz.js';
 import { crearControladoresArchivosListado } from '../utils/archivosCasoListado.js';
 import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
 import { rechazarSiFranjaOcupada } from '../services/agendaCatastroficoService.js';
@@ -155,7 +156,10 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     identificacion: pick(data.identificacion, base.identificacion ?? null),
     tipoIdentificacion: pick(data.tipoIdentificacion, base.tipoIdentificacion ?? null),
     numeroPoliza: pick(data.numeroPoliza, base.numeroPoliza ?? null),
-    tipoPoliza: pick(data.tipoPoliza, base.tipoPoliza ?? null),
+    tipoPoliza: homologarTipoPolizaAllianz(
+      pick(data.tipoPoliza, base.tipoPoliza ?? null),
+      pick(data.tipoPolizaOtro, base.tipoPolizaOtro ?? null)
+    ),
     tipoPolizaOtro: pick(data.tipoPolizaOtro, base.tipoPolizaOtro ?? null),
     causa: pick(data.causa, base.causa ?? null),
     asegurado: pick(data.asegurado, base.asegurado ?? null),
@@ -200,9 +204,14 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     estado: homologarEstadoAllianz(pick(data.estado, base.estado ?? 'CASO NUEVO') || 'CASO NUEVO'),
     modalidadAtencion: pick(data.modalidadAtencion, base.modalidadAtencion ?? null),
     fechaCasoNuevo: pickFecha(data.fechaCasoNuevo, base.fechaCasoNuevo ?? null),
+    fechaPrimerContacto: pickFecha(data.fechaPrimerContacto, base.fechaPrimerContacto ?? null),
     fechaCoordinandoInspeccion: pickFecha(
       data.fechaCoordinandoInspeccion,
       base.fechaCoordinandoInspeccion ?? null
+    ),
+    fechaInspeccionRealizada: pickFecha(
+      data.fechaInspeccionRealizada,
+      base.fechaInspeccionRealizada ?? null
     ),
     ...mapearFranjaAgenda(data, base, pick),
     fechaAnalisisCaso: pickFecha(data.fechaAnalisisCaso, base.fechaAnalisisCaso ?? null),
@@ -220,8 +229,13 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       data.fechaAutorizacionAnalista,
       base.fechaAutorizacionAnalista ?? null
     ),
+    fechaPresentacionCifras: pickFecha(
+      data.fechaPresentacionCifras,
+      base.fechaPresentacionCifras ?? null
+    ),
     fechaCasoParaPago: pickFecha(data.fechaCasoParaPago, base.fechaCasoParaPago ?? null),
     fechaCasoPagado: pickFecha(data.fechaCasoPagado, base.fechaCasoPagado ?? null),
+    fechaDesistido: pickFecha(data.fechaDesistido, base.fechaDesistido ?? null),
     fechaAnulado: pickFecha(data.fechaAnulado, base.fechaAnulado ?? null),
     documentoFaltante: pick(data.documentoFaltante, base.documentoFaltante ?? null),
     observacionPendienteDocumento: pick(
@@ -333,15 +347,19 @@ const PROYECCION_LISTA_ALLIANZ_LISTADO = {
   estado: 1,
   modalidadAtencion: 1,
   fechaCasoNuevo: 1,
+  fechaPrimerContacto: 1,
   fechaCoordinandoInspeccion: 1,
+  fechaInspeccionRealizada: 1,
   fechaAnalisisCaso: 1,
   fechaSolicitudDocumento: 1,
   fechaRecepcionDocumento: 1,
   fechaObjecion: 1,
   fechaObjetado: 1,
   fechaAutorizacionAnalista: 1,
+  fechaPresentacionCifras: 1,
   fechaCasoParaPago: 1,
   fechaCasoPagado: 1,
+  fechaDesistido: 1,
   fechaAnulado: 1,
   documentoFaltante: 1,
   observacionPendienteDocumento: 1,
@@ -369,9 +387,17 @@ export const listarCasosListadoAllianz = async (req, res) => {
       proyeccion: PROYECCION_LISTA_ALLIANZ_LISTADO,
       addFields: BANDERAS_LISTA_CASO,
     });
+    const data = Array.isArray(resultado.data)
+      ? resultado.data.map((doc) => ({
+          ...doc,
+          estado: homologarEstadoAllianz(doc.estado),
+          tipoPoliza: homologarTipoPolizaAllianz(doc.tipoPoliza, doc.tipoPolizaOtro),
+        }))
+      : resultado.data;
     res.json({
       success: true,
       ...resultado,
+      data,
     });
   } catch (error) {
     console.error('❌ Error al listar listado Allianz:', error);

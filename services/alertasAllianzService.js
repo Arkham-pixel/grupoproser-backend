@@ -12,9 +12,12 @@ export const DIAS_RECORDATORIO_INACTIVIDAD_ALLIANZ = 30;
 
 /** Estados que cierran el caso para alertas (sin recordatorio). */
 const ESTADOS_CERRADOS_ALLIANZ = [
+  'DESISTIDO',
+  'ANULADO/CANCELADO',
+  'ANULADO',
+  'CANCELADO',
   'PAGADO',
   'OBJETADO',
-  'ANULADO',
   'CERRADO',
   'CERRADO MANUAL',
 ];
@@ -30,7 +33,7 @@ function normalizarEstadoAllianz(valor) {
 
 function esEstadoAllianzCerrado(valorEstado) {
   const estado = normalizarEstadoAllianz(valorEstado);
-  return ESTADOS_CERRADOS_ALLIANZ.includes(estado);
+  return ESTADOS_CERRADOS_ALLIANZ.some((est) => normalizarEstadoAllianz(est) === estado);
 }
 
 function parseFechaAllianz(valor) {

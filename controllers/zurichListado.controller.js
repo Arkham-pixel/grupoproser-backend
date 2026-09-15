@@ -20,6 +20,8 @@ import { TORRE_CONFIG_ZURICH } from '../config/zurichListadoTorre.js';
 import { notificarPersistenciaNativa } from '../services/notificacionesOperativasService.js';
 import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
 import { rechazarSiFranjaOcupada } from '../services/agendaCatastroficoService.js';
+import { aplicarCamposControlHorasZurich } from '../utils/controlHorasZurichPersist.js';
+import { camposControlHorasFacturacion } from '../utils/schemaControlHoras.js';
 
 if (ZurichListadoCaso?.schema) {
   ZurichListadoCaso.schema.add({
@@ -29,6 +31,7 @@ if (ZurichListadoCaso?.schema) {
     fechaFinPoliza: Date,
     cobertura: String,
     departamento: String,
+    ...camposControlHorasFacturacion(),
   });
   ZurichListadoCaso.schema.set('strict', false);
 }
@@ -279,6 +282,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
   if (!toStr(payload.departamento) && homologarCiudadZurich(payload.ciudad) === 'CALI') {
     payload.departamento = 'VALLE DEL CAUCA';
   }
+  aplicarCamposControlHorasZurich(payload, data, base);
   return aplicarReservaDesdePresupuestoZurich(
     aplicarFechaAccionEstadoZurich(
       aplicarEstadoDesdeTipoInformeZurich(

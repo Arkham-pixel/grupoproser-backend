@@ -21,6 +21,7 @@ import { homologarCiudadZurich } from '../utils/ciudadesBbvaCat.js';
 import { homologarCausaZurich } from '../utils/causasZurich.js';
 import { aplicarReservaDesdePresupuestoZurich, fusionarInformeUnicoZurich } from '../utils/reservaPresupuestoZurich.js';
 import { aplicarLiderZurich } from '../utils/filtrarCatalogoPorModulo.js';
+import { aplicarCamposControlHorasZurich } from '../utils/controlHorasZurichPersist.js';
 
 const esValorVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null' || valor === 'undefined';
@@ -555,6 +556,7 @@ const buildZurichPayload = (data = {}, base = {}) => {
   ),
   };
   payload.checklistCatCompleto = esChecklistCatLleno(payload);
+  aplicarCamposControlHorasZurich(payload, data, base);
   return aplicarReservaDesdePresupuestoZurich(
     aplicarFechaAccionEstadoZurich(aplicarEstadoDesdeTipoInformeZurich(payload, base), base)
   );

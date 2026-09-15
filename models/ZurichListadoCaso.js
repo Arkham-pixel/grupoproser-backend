@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { aplicarPluginNotificacionesOperativas } from '../services/notificacionesOperativasService.js';
 import { aplicarCamposAgendaCatastrofico } from '../utils/agendaCatastrofico.js';
+import { camposControlHorasFacturacion } from '../utils/schemaControlHoras.js';
 
 const ArchivoZurichListadoSchema = new mongoose.Schema(
   {
@@ -96,6 +97,7 @@ const ZurichListadoCasoSchema = new mongoose.Schema(
      */
     fechaEmailAperturaZurich: Date,
     emailAperturaZurichMessageId: String,
+    ...camposControlHorasFacturacion(),
   },
   {
     collection: 'gsk3cAppzurichListadoCasos',
@@ -136,6 +138,7 @@ if (ZurichListadoCaso?.schema) {
     valorAseguradoInmueble: Number,
     valorReclamado: Number,
     valorLiquidado: Number,
+    ...camposControlHorasFacturacion(),
   });
   ZurichListadoCaso.schema.set('strict', false);
 }

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { aplicarPluginNotificacionesOperativas } from '../services/notificacionesOperativasService.js';
 import { aplicarCamposAgendaCatastrofico } from '../utils/agendaCatastrofico.js';
+import { camposControlHorasFacturacion } from '../utils/schemaControlHoras.js';
 
 const ArchivoZurichSchema = new mongoose.Schema(
   {
@@ -186,6 +187,7 @@ const ZurichCasoSchema = new mongoose.Schema(
     /** Id del historial formType=catastrofico (informe Complex) */
     historialCatastroficoId: { type: String, default: null },
     archivos: { type: [ArchivoZurichSchema], default: [] },
+    ...camposControlHorasFacturacion(),
   },
   {
     collection: 'gsk3cAppzurichCasos',
