@@ -52,7 +52,6 @@ import { selectAlfaExcelFromSharePointFolder } from './alfaExcelSharePointImport
 import {
   estadoAlfaParaSharePoint,
   estadoGestionAlfaParaSharePoint,
-  isAlfaEstadoDefinido,
 } from '../config/alfaExcelStatuses.js';
 
 function homologarTipoPerdidaOutbound(value) {
@@ -1616,23 +1615,15 @@ export async function reconcileAlfaExcelEstadoGaps({ apply = true } = {}) {
   const rows = parsed.rows || [];
 
   const casos = await SegurosAlfaCaso.find({
-    $and: [
-      { $or: [{ excluidoBaseAlfa: { $exists: false } }, { excluidoBaseAlfa: false }] },
-      {
-        estado: {
-          $in: ['CERRADO', 'OBJETADO', 'DESISTIDO', 'LIQUIDADO', 'ENVIADO ASEGURADORA'],
-        },
-      },
-    ],
+    $or: [{ excluidoBaseAlfa: { $exists: false } }, { excluidoBaseAlfa: false }],
   })
     .select(
-      'consecutivo identificacion asegurado estado estadoGestion observacionesGestion'
+      'consecutivo identificacion asegurado estado estadoGestion observacionesGestion liquidador fechaAceptacionLiquidacion'
     )
     .lean();
 
   const gaps = [];
   for (const caso of casos) {
-    if (!isAlfaEstadoDefinido(caso.estado)) continue;
     let hit = null;
     try {
       hit = findExcelRowForCase(caso, rows);
@@ -1642,25 +1633,47 @@ export async function reconcileAlfaExcelEstadoGaps({ apply = true } = {}) {
         identificacion: caso.identificacion,
         asegurado: caso.asegurado,
         estadoArnald: caso.estado,
+        estadoGestionArnald: caso.estadoGestion,
         esperadoExcel: estadoAlfaParaSharePoint(caso.estado),
+        esperadoGestionExcel: estadoGestionAlfaParaSharePoint(caso.estadoGestion || caso.estado),
         issue: e.code || e.message || 'EXCEL_ROW_NOT_FOUND',
       });
       continue;
     }
+
     const excelEstado = String(hit.payload?.estado || '').trim();
+    const excelGestion = String(hit.payload?.estadoGestion || '').trim();
     const esperado = estadoAlfaParaSharePoint(caso.estado);
-    if (normEstadoExcelKey(excelEstado) !== normEstadoExcelKey(esperado)) {
+    const esperadoGestion = estadoGestionAlfaParaSharePoint(
+      caso.estadoGestion || caso.estado
+    );
+
+    const estadoDesfasado =
+      esperado && normEstadoExcelKey(excelEstado) !== normEstadoExcelKey(esperado);
+    const gestionDesfasado =
+      esperadoGestion &&
+      normEstadoExcelKey(excelGestion) !== normEstadoExcelKey(esperadoGestion);
+
+    if (estadoDesfasado || gestionDesfasado) {
       gaps.push({
         consecutivo: caso.consecutivo,
         identificacion: caso.identificacion,
         asegurado: caso.asegurado,
         estadoArnald: caso.estado,
+        estadoGestionArnald: caso.estadoGestion,
         esperadoExcel: esperado,
+        esperadoGestionExcel: esperadoGestion,
         excelEstado: excelEstado || null,
+        excelGestion: excelGestion || null,
         excelRow: hit.rowNumber,
-        issue: 'ESTADO_DESFASADO',
+        issue: estadoDesfasado && gestionDesfasado
+          ? 'ESTADOS_DESFASADOS'
+          : estadoDesfasado
+            ? 'ESTADO_DESFASADO'
+            : 'ESTADO_GESTION_DESFASADO',
         _id: caso._id,
         excelEstadoRaw: excelEstado,
+        excelGestionRaw: excelGestion,
         estadoGestion: caso.estadoGestion,
         observacionesGestion: caso.observacionesGestion,
       });
@@ -1670,7 +1683,7 @@ export async function reconcileAlfaExcelEstadoGaps({ apply = true } = {}) {
   logOut('ALFA_EXCEL_ESTADO_RECONCILE_SCAN', {
     fileName: resolved.fileName,
     excelRows: rows.length,
-    cerrados: casos.length,
+    casos: casos.length,
     gaps: gaps.length,
     byIssue: gaps.reduce((acc, g) => {
       acc[g.issue] = (acc[g.issue] || 0) + 1;
@@ -1683,24 +1696,27 @@ export async function reconcileAlfaExcelEstadoGaps({ apply = true } = {}) {
       fileName: resolved.fileName,
       gaps: gaps.length,
       enqueued: 0,
-      sample: gaps.slice(0, 20).map(({ _id, excelEstadoRaw, estadoGestion, observacionesGestion, ...rest }) => rest),
+      sample: gaps.slice(0, 20).map(({ _id, excelEstadoRaw, excelGestionRaw, ...rest }) => rest),
       items: gaps,
     };
   }
 
   let enqueued = 0;
   for (const g of gaps) {
-    if (g.issue !== 'ESTADO_DESFASADO' || !g._id) continue;
+    if (
+      !g._id ||
+      !['ESTADO_DESFASADO', 'ESTADO_GESTION_DESFASADO', 'ESTADOS_DESFASADOS'].includes(g.issue)
+    ) {
+      continue;
+    }
     const caso = await SegurosAlfaCaso.findById(g._id).lean();
     if (!caso) continue;
     const before = {
       ...caso,
-      estado: g.excelEstadoRaw || 'PENDIENTE',
+      estado: g.excelEstadoRaw || caso.estado || 'PENDIENTE',
+      estadoGestion: g.excelGestionRaw || caso.estadoGestion || 'EN GESTIÓN',
     };
-    // Forzar diff solo en estado siniestro (estadoGestion es independiente).
-    const after = {
-      ...caso,
-    };
+    const after = { ...caso };
     const doc = await enqueueAlfaExcelOutboundFromCaseUpdate({
       beforeDoc: before,
       afterDoc: after,
@@ -1712,14 +1728,18 @@ export async function reconcileAlfaExcelEstadoGaps({ apply = true } = {}) {
     fileName: resolved.fileName,
     gaps: gaps.length,
     enqueued,
-    missingRows: gaps.filter((g) => g.issue !== 'ESTADO_DESFASADO').length,
+    missingRows: gaps.filter((g) =>
+      !['ESTADO_DESFASADO', 'ESTADO_GESTION_DESFASADO', 'ESTADOS_DESFASADOS'].includes(g.issue)
+    ).length,
   });
 
   return {
     fileName: resolved.fileName,
     gaps: gaps.length,
     enqueued,
-    missingRows: gaps.filter((g) => g.issue !== 'ESTADO_DESFASADO').length,
-    sample: gaps.slice(0, 20).map(({ _id, excelEstadoRaw, estadoGestion, observacionesGestion, ...rest }) => rest),
+    missingRows: gaps.filter((g) =>
+      !['ESTADO_DESFASADO', 'ESTADO_GESTION_DESFASADO', 'ESTADOS_DESFASADOS'].includes(g.issue)
+    ).length,
+    sample: gaps.slice(0, 20).map(({ _id, excelEstadoRaw, excelGestionRaw, ...rest }) => rest),
   };
 }

@@ -602,8 +602,8 @@ export function planRow(row, allCases) {
       };
     }
 
-    const createPayload = buildAlfaCasoPayload({ ...rawPayload, estado: 'Sin contactar' });
-    createPayload.estado = 'Sin contactar';
+    const createPayload = buildAlfaCasoPayload({ ...rawPayload, estado: 'PENDIENTE' });
+    createPayload.estado = 'PENDIENTE';
     if (
       isMeaningfulExcelValue(rawPayload.estado) &&
       String(rawPayload.estado).trim().toUpperCase() !== 'PENDIENTE' &&
@@ -625,7 +625,7 @@ export function planRow(row, allCases) {
       warnings.push('IGNORED_PROTECTED:estadoGestion');
     }
     if (!createPayload.estadoGestion) {
-      createPayload.estadoGestion = 'Sin contactar';
+      createPayload.estadoGestion = 'EN GESTIÓN';
     }
 
     return {
@@ -653,7 +653,7 @@ export function planRow(row, allCases) {
         estadoAction: ignoredFields.estado?.action || 'DEFAULT_PENDIENTE',
         estadoGestionActual: null,
         estadoGestionExcel: rawPayload.estadoGestion || null,
-        estadoGestionAction: ignoredFields.estadoGestion?.action || 'DEFAULT_SIN_CONTACTAR',
+        estadoGestionAction: ignoredFields.estadoGestion?.action || 'DEFAULT_EN_GESTION',
       },
       claimNumberAssigned: false,
       claimNumberEventPending: false,

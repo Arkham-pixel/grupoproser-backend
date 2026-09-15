@@ -29,10 +29,18 @@ assert(
   homologarEstadoGestionAlfa('Contactado y programado') === 'CONTACTADO/PROGRAMADO',
   'legacy→CONTACTADO/PROGRAMADO'
 );
+assert(homologarEstadoGestionAlfa('Solicitud de documentos') === 'INSPECCIONADO', 'legacy docs→INSPECCIONADO');
+assert(homologarEstadoGestionAlfa('Sin respuesta') === 'SIN RESPUESTA EFECTIVA', 'legacy sin respuesta');
 assert(homologarEstadoSiniestroAlfa('ENVIADO ASEGURADORA') === 'PROCESO DE PAGO', 'enviado→pago');
 assert(homologarEstadoSiniestroAlfa('OBJETADO') === 'OBJETADO', 'objetado real');
 assert(homologarEstadoSiniestroAlfa('DESISTIDO') === 'DESISTIDO', 'desistido real');
 assert(homologarEstadoAlfa('CERRADO') === 'CERRADO', 'cerrado');
+assert(homologarEstadoSiniestroAlfa('Solicitud de documentos') === 'PENDIENTE', 'gestión-en-siniestro→PENDIENTE');
+assert(homologarEstadoSiniestroAlfa('Sin contactar') === 'PENDIENTE', 'sin contactar en siniestro→PENDIENTE');
+assert(
+  homologarEstadoSiniestroAlfa('Pendiente aceptación de cifra') === 'PENDIENTE ACEPTACION CIFRAS',
+  'cifra singular'
+);
 
 assert(estadoAlfaParaSharePoint('OBJETADO') === 'OBJETADO', 'SP objetado libre');
 assert(estadoAlfaParaSharePoint('DESISTIDO') === 'DESISTIDO', 'SP desistido libre');

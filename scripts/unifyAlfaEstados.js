@@ -1,39 +1,44 @@
 /**
- * Unifica estado Alfa al catálogo único (barra de estados).
- * node scripts/unifyAlfaEstados.js
- * node scripts/unifyAlfaEstados.js --apply
+ * Unifica estado + estadoGestion Alfa a catálogos oficiales (ejes independientes).
+ * NO deriva gestión desde siniestro.
+ *
+ *   node scripts/unifyAlfaEstados.js
+ *   node scripts/unifyAlfaEstados.js --apply
  */
 import '../config/loadEnv.js';
 import mongoose from 'mongoose';
 import SegurosAlfaCaso from '../models/SegurosAlfaCaso.js';
 import {
-  homologarEstadoAlfa,
-  estadoGestionDesdeEstadoAlfa,
+  homologarEstadoGestionAlfa,
+  homologarEstadoSiniestroAlfa,
 } from '../config/alfaExcelStatuses.js';
 
 const apply = process.argv.includes('--apply');
 
-await mongoose.connect(process.env.MONGO_URI);
+await mongoose.connect(process.env.MONGO_URI_DIRECT || process.env.MONGO_URI);
 const casos = await SegurosAlfaCaso.find(
   {},
-  { estado: 1, estadoGestion: 1, fechaInspeccion: 1, consecutivo: 1 }
+  { estado: 1, estadoGestion: 1, liquidador: 1, fechaAceptacionLiquidacion: 1, consecutivo: 1 }
 ).lean();
 
 let toUpdate = 0;
 const samples = [];
-const counts = {};
+const countsEstado = {};
+const countsGestion = {};
 
 for (const c of casos) {
-  const nextEstado = homologarEstadoAlfa(c.estado, {
-    fechaInspeccion: c.fechaInspeccion,
-    estadoGestion: c.estadoGestion,
+  const nextEstado = homologarEstadoSiniestroAlfa(c.estado, {
+    liquidador: c.liquidador,
+    fechaAceptacionLiquidacion: c.fechaAceptacionLiquidacion,
   });
-  const nextGestion = estadoGestionDesdeEstadoAlfa(nextEstado);
-  counts[nextEstado] = (counts[nextEstado] || 0) + 1;
+  const nextGestion = homologarEstadoGestionAlfa(c.estadoGestion || c.estado) || 'EN GESTIÓN';
+
+  countsEstado[nextEstado] = (countsEstado[nextEstado] || 0) + 1;
+  countsGestion[nextGestion] = (countsGestion[nextGestion] || 0) + 1;
 
   if (c.estado === nextEstado && (c.estadoGestion || '') === nextGestion) continue;
   toUpdate += 1;
-  if (samples.length < 10) {
+  if (samples.length < 15) {
     samples.push({
       consecutivo: c.consecutivo,
       beforeEstado: c.estado,
@@ -52,7 +57,15 @@ for (const c of casos) {
 
 console.log(
   JSON.stringify(
-    { dryRun: !apply, total: casos.length, toUpdate, counts, samples },
+    {
+      dryRun: !apply,
+      total: casos.length,
+      toUpdate,
+      countsEstado,
+      countsGestion,
+      samples,
+      hint: apply ? 'Mongo actualizado' : 'Use --apply para escribir en Mongo',
+    },
     null,
     2
   )

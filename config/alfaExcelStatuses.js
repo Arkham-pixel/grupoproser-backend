@@ -72,6 +72,8 @@ function canonicalDisplayStatus(normalized) {
     'PENDIENTE ACEPTACION DE CIFRAS': 'PENDIENTE ACEPTACION CIFRAS',
     'PENDIENTE ACEPTACION CIFRAS': 'PENDIENTE ACEPTACION CIFRAS',
     'PENDIENTES ACEPTACION CIFRAS': 'PENDIENTE ACEPTACION CIFRAS',
+    'PENDIENTE ACEPTACION DE CIFRA': 'PENDIENTE ACEPTACION CIFRAS',
+    'PENDIENTE ACEPTACION CIFRA': 'PENDIENTE ACEPTACION CIFRAS',
     CERRADO: 'CERRADO',
     'CERRADO TOTALMENTE': 'CERRADO',
     'CERRADOS TOTALMENTE': 'CERRADO',
@@ -82,6 +84,18 @@ function canonicalDisplayStatus(normalized) {
     DESISTIDO: 'DESISTIDO',
     DESISTIDOS: 'DESISTIDO',
     DESISTIMIENTO: 'DESISTIDO',
+    // Etiquetas de GESTIÓN mal puestas en columna ESTADO SINIESTRO → PENDIENTE
+    'SIN CONTACTAR': 'PENDIENTE',
+    'EN GESTION': 'PENDIENTE',
+    CONTACTADO: 'PENDIENTE',
+    'CONTACTADO Y PROGRAMADO': 'PENDIENTE',
+    'CONTACTADO - PROGRAMADO': 'PENDIENTE',
+    'CONTACTADO/PROGRAMADO': 'PENDIENTE',
+    'SOLICITUD DE DOCUMENTOS': 'PENDIENTE',
+    INSPECCIONADO: 'PENDIENTE',
+    'EN INSPECCION': 'PENDIENTE',
+    'SIN RESPUESTA': 'PENDIENTE',
+    'SIN RESPUESTA EFECTIVA': 'PENDIENTE',
   };
   return map[normalized] || null;
 }
@@ -133,6 +147,7 @@ export function homologarEstadoGestionAlfa(value) {
     PROGRAMADO: 'CONTACTADO/PROGRAMADO',
     'CONTACTADO Y PROGRAMADO': 'CONTACTADO/PROGRAMADO',
     'CONTACTADO - PROGRAMADO': 'CONTACTADO/PROGRAMADO',
+    'CONTACTADO/PROGRAMADO': 'CONTACTADO/PROGRAMADO',
     // Legacy operativo: ya hubo contacto / pedida de docs → no es «por llamar».
     'SOLICITUD DE DOCUMENTOS': 'INSPECCIONADO',
     'EN INSPECCION': 'INSPECCIONADO',
@@ -142,6 +157,18 @@ export function homologarEstadoGestionAlfa(value) {
     'SIN RESPUESTA EFECTIVA': 'SIN RESPUESTA EFECTIVA',
   };
   return aliases[n] || 'EN GESTIÓN';
+}
+
+/** True si el valor ya es una etiqueta oficial del catálogo de gestión. */
+export function esEstadoGestionCanonicoAlfa(value) {
+  const raw = String(value || '').trim();
+  return ALFA_ESTADOS_GESTION.includes(raw);
+}
+
+/** True si el valor ya es una etiqueta oficial del catálogo de siniestro. */
+export function esEstadoSiniestroCanonicoAlfa(value) {
+  const raw = String(value || '').trim();
+  return ALFA_ESTADOS_SINIESTRO.includes(raw);
 }
 
 /**
