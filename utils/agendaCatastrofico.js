@@ -1,5 +1,7 @@
 /** Campos y utilidades de la agenda CAT (franjas de coordinación / inspección). */
 
+import { needlesLiderModulo, nombreCoincideNeedleLider } from './lideresModuloCatastrofico.js';
+
 export const HORA_INICIO_AGENDA = 7;
 export const HORA_FIN_AGENDA = 19;
 
@@ -114,6 +116,37 @@ export function instanteBogota(ymd, hora) {
 
 export function fechaAgendaDeCaso(caso = {}) {
   return caso.fechaCoordinandoInspeccion || caso.fechaInspeccion || null;
+}
+
+/** Líder de área (Bernardo en Sura, Ladys en Zurich, etc.) coordinando ese módulo. */
+export function esAjustadorLiderDeAgenda(nombre, modulo = '') {
+  const needles = needlesLiderModulo(modulo);
+  if (!needles.length || !String(nombre || '').trim()) return false;
+  return needles.some((n) => nombreCoincideNeedleLider(nombre, n));
+}
+
+/**
+ * Quién ocupa de verdad la visita. El líder aparece como ajustador en todos los
+ * casos de su módulo y no debe bloquear a los inspectores de campo. Si el líder
+ * va como inspector, sí ocupa la franja.
+ */
+export function rolesQueOcupanFranja(evento = {}, nombresNorm = []) {
+  const nombres = (nombresNorm || []).filter(Boolean);
+  if (!nombres.length) return [];
+  const roles = [];
+  const inspectorNorm = normNombrePersona(evento.inspector);
+  const ajustadorNorm = normNombrePersona(evento.ajustador);
+  if (inspectorNorm && nombres.includes(inspectorNorm)) {
+    roles.push({ rol: 'inspector', nombre: evento.inspector });
+  }
+  if (
+    ajustadorNorm &&
+    nombres.includes(ajustadorNorm) &&
+    !esAjustadorLiderDeAgenda(evento.ajustador, evento.modulo)
+  ) {
+    roles.push({ rol: 'ajustador', nombre: evento.ajustador });
+  }
+  return roles;
 }
 
 export class ConflictoAgendaError extends Error {

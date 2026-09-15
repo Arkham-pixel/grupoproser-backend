@@ -11,7 +11,7 @@ import {
   usuarioCoincideNombre,
   valorAsignacionVacio,
 } from '../utils/notificacionesOperativasCore.js';
-import { instanteBogota } from '../utils/agendaCatastrofico.js';
+import { instanteBogota, rolesQueOcupanFranja } from '../utils/agendaCatastrofico.js';
 
 const assert = (c, m) => {
   if (!c) {
@@ -241,6 +241,41 @@ assert(msgVisita.ruta.includes('/agenda-catastrofico?fecha=2026-09-02'), 'visita
 const instante = instanteBogota('2026-09-02', '10:00');
 assert(instante && instante.toISOString() === '2026-09-02T15:00:00.000Z', 'instante bogota 10:00 = 15:00 UTC');
 assert(!instanteBogota('2026-09-02', ''), 'sin hora no hay instante');
+
+const nombresBernardoTito = ['BERNARDO SOJO GUZMAN', 'TITO GARCIA'];
+assert(
+  rolesQueOcupanFranja(
+    {
+      modulo: 'sura',
+      ajustador: 'Bernardo Sojo Guzmán',
+      inspector: 'NATALIA RESTREPO MEJIA',
+    },
+    nombresBernardoTito
+  ).length === 0,
+  'lider Sura como ajustador no bloquea a Tito'
+);
+assert(
+  rolesQueOcupanFranja(
+    {
+      modulo: 'sura',
+      ajustador: 'Bernardo Sojo Guzmán',
+      inspector: 'Tito Garcia',
+    },
+    nombresBernardoTito
+  ).some((r) => r.rol === 'inspector'),
+  'inspector de campo si bloquea'
+);
+assert(
+  rolesQueOcupanFranja(
+    {
+      modulo: 'sura',
+      ajustador: 'Bernardo Sojo Guzmán',
+      inspector: 'Bernardo Sojo Guzmán',
+    },
+    nombresBernardoTito
+  ).some((r) => r.rol === 'inspector'),
+  'si el lider va de inspector si ocupa'
+);
 
 if (process.exitCode) {
   console.error('testNotificacionesOperativas: hay fallos');

@@ -29,6 +29,7 @@ import {
   normalizarHora,
   normNombrePersona,
   rangosSeSolapan,
+  rolesQueOcupanFranja,
   ymdBogota,
 } from '../utils/agendaCatastrofico.js';
 
@@ -344,10 +345,8 @@ export async function disponibilidadAgenda({
     if (ev.todoElDia || !franjaValida(ev.horaInicio, ev.horaFin)) continue;
     const ini = horaAMinutos(ev.horaInicio);
     const fin = horaAMinutos(ev.horaFin);
-    const roles = [];
-    if (nombres.includes(normNombrePersona(ev.ajustador))) roles.push({ rol: 'ajustador', nombre: ev.ajustador });
-    if (nombres.includes(normNombrePersona(ev.inspector))) roles.push({ rol: 'inspector', nombre: ev.inspector });
     if (!nombres.length) continue;
+    const roles = rolesQueOcupanFranja(ev, nombres);
     if (!roles.length) continue;
     ocupados.push({
       ...ev,
