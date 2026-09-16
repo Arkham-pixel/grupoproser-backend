@@ -301,15 +301,17 @@ function totalesDesdeLiquidadorBbva(liquidador) {
     const montoUsd = redondear(parseMonto(dedFmt.dolares) * parseMonto(enc.trm));
     const montoPesos = redondear(parseMonto(dedFmt.pesos));
     const deduciblePoliza = Math.max(montoSmmlv, montoPct, montoUsd, montoPesos);
+    const baseIndemnizable =
+      valorGlobal > 0 ? redondear(Math.min(totalConAiu, valorGlobal)) : totalConAiu;
     const deducibleAplicable = redondear(
-      Math.min(deduciblePoliza, totalConAiu || deduciblePoliza)
+      Math.min(deduciblePoliza, baseIndemnizable || deduciblePoliza)
     );
-    const valorAIndemnizar = redondear(Math.max(0, totalConAiu - deducibleAplicable));
+    const valorAIndemnizar = redondear(Math.max(0, baseIndemnizable - deducibleAplicable));
     return {
       subTotal: montoPdf,
       aiu,
       totalConAiu,
-      baseIndemnizable: totalConAiu,
+      baseIndemnizable,
       valorAIndemnizar,
       otros,
     };
@@ -325,8 +327,9 @@ function totalesDesdeLiquidadorBbva(liquidador) {
     parseMonto(liquidador?.liquidacionCatastrofico?.valorAsegurado) ||
     parseMonto(liquidador?.valorAseguradoInmueble) ||
     0;
-  // Valor global solo alimenta el % del deducible; no topea la indemnización.
-  const baseIndemnizable = totalConAiu;
+  // Tope de responsabilidad: no indemnizar por encima del valor global asegurado.
+  const baseIndemnizable =
+    valorGlobal > 0 ? redondear(Math.min(totalConAiu, valorGlobal)) : totalConAiu;
   const dedFmt = resolverDeducibleFormato(liquidador);
   const anio = anioDesdeFecha(enc.fechaSiniestro);
   const montoSmmlv = redondear(parseCantidadSmmlv(dedFmt.smmlv) * smmlvPorAnio(anio));
