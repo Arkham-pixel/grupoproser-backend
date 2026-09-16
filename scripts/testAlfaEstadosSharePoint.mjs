@@ -21,6 +21,7 @@ function assert(cond, msg) {
 
 assert(ALFA_ESTADOS_GESTION.includes('EN GESTIÓN'), 'gestión EN GESTIÓN');
 assert(ALFA_ESTADOS_GESTION.includes('CONTACTADO/PROGRAMADO'), 'gestión CONTACTADO/PROGRAMADO');
+assert(ALFA_ESTADOS_GESTION.includes('CERRADO'), 'gestión CERRADO');
 assert(ALFA_ESTADOS_SINIESTRO.includes('PENDIENTE'), 'siniestro PENDIENTE');
 assert(ALFA_ESTADOS_SINIESTRO.includes('PENDIENTE ACEPTACION CIFRAS'), 'siniestro cifras');
 
@@ -31,6 +32,8 @@ assert(
 );
 assert(homologarEstadoGestionAlfa('Solicitud de documentos') === 'INSPECCIONADO', 'legacy docs→INSPECCIONADO');
 assert(homologarEstadoGestionAlfa('Sin respuesta') === 'SIN RESPUESTA EFECTIVA', 'legacy sin respuesta');
+assert(homologarEstadoGestionAlfa('CERRADO') === 'CERRADO', 'gestión CERRADO canónico');
+assert(homologarEstadoGestionAlfa('Cerrado totalmente') === 'CERRADO', 'gestión cerrado totalmente');
 assert(homologarEstadoSiniestroAlfa('ENVIADO ASEGURADORA') === 'PROCESO DE PAGO', 'enviado→pago');
 assert(homologarEstadoSiniestroAlfa('OBJETADO') === 'OBJETADO', 'objetado real');
 assert(homologarEstadoSiniestroAlfa('DESISTIDO') === 'DESISTIDO', 'desistido real');

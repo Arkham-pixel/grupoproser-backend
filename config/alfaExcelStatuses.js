@@ -10,6 +10,7 @@ export const ALFA_ESTADOS_GESTION = Object.freeze([
   'LIQUIDADO',
   'INSPECCIONADO',
   'SIN RESPUESTA EFECTIVA',
+  'CERRADO',
 ]);
 
 export const ALFA_ESTADOS_SINIESTRO = Object.freeze([
@@ -155,6 +156,9 @@ export function homologarEstadoGestionAlfa(value) {
     LIQUIDADO: 'LIQUIDADO',
     'SIN RESPUESTA': 'SIN RESPUESTA EFECTIVA',
     'SIN RESPUESTA EFECTIVA': 'SIN RESPUESTA EFECTIVA',
+    CERRADO: 'CERRADO',
+    'CERRADO TOTALMENTE': 'CERRADO',
+    'CERRADOS TOTALMENTE': 'CERRADO',
   };
   return aliases[n] || 'EN GESTIÓN';
 }
@@ -227,7 +231,7 @@ export function normalizeAlfaEstadoGestion(value) {
 }
 
 /**
- * Canoniza estadoGestion (los 5 del correo) o null.
+ * Canoniza estadoGestion (catálogo oficial de gestión) o null.
  */
 export function canonicalEstadoGestion(value) {
   const canon = homologarEstadoGestionAlfa(value);
