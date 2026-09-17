@@ -7,7 +7,7 @@
 import { esRolEra, normalizarRol } from '../config/roles.js';
 import SecurUser from '../models/SecurUser.js';
 import { identidadEsLiderDeFuente } from './lideresModuloCatastrofico.js';
-import { esIdentidadEra, esIdentidadLiderEra } from './jerarquiaEra.js';
+import { casoMarcadoFirmaEra, esIdentidadEra, esIdentidadLiderEra } from './jerarquiaEra.js';
 
 export const ROL_AJUSTADOR_LIDER = 'ajustador_lider';
 export const ROL_AJUSTADOR_CASO = 'ajustador';
@@ -247,16 +247,19 @@ export function clavesIdentidadVista(identidad = {}) {
 }
 
 /**
- * ERA: sin lista de la firma, fallback conservador (asignado a la sesión o sello ERA).
- * El listado Alfa usa `construirFiltroVistaCasos` (pool completo de la firma).
+ * ERA: líder edita todo; si está como ajustador/inspector, ese modo;
+ * si el caso lleva sello/pool ERA, cualquier usuario de la firma edita como ajustador
+ * (alineado a `casoVisibleParaIdentidadCasos`).
  */
 export function modoEdicionEraDelCaso(caso = {}, identidad = {}) {
   if (!esIdentidadEra(identidad) && !esRolEra(identidad.rol || identidad.role)) return null;
   if (esIdentidadLiderEra(identidad)) return 'lider';
   const claves = clavesIdentidadVista(identidad);
-  if (!claves.length) return null;
-  if (claves.some((k) => coincidenPersonas(caso?.ajustador, k))) return 'ajustador';
-  if (claves.some((k) => coincidenPersonas(caso?.inspector, k))) return 'inspector';
+  if (claves.length) {
+    if (claves.some((k) => coincidenPersonas(caso?.ajustador, k))) return 'ajustador';
+    if (claves.some((k) => coincidenPersonas(caso?.inspector, k))) return 'inspector';
+  }
+  if (casoMarcadoFirmaEra(caso)) return 'ajustador';
   return null;
 }
 

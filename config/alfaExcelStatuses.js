@@ -251,18 +251,22 @@ export function homologarEstadoAlfa(valor) {
 }
 
 /**
- * Si el siniestro es OBJETADO o DESISTIDO, la gestión queda CERRADO.
+ * Reglas operativas gestión ← siniestro:
+ * - OBJETADO / DESISTIDO → CERRADO
+ * - PENDIENTE ACEPTACION CIFRAS → LIQUIDADO
  */
 export function sincronizarGestionConCierreSiniestroAlfa(estadoSiniestro, estadoGestion) {
   const s = homologarEstadoSiniestroAlfa(estadoSiniestro);
   if (s === 'OBJETADO' || s === 'DESISTIDO') return 'CERRADO';
+  if (s === 'PENDIENTE ACEPTACION CIFRAS') return 'LIQUIDADO';
   const g = homologarEstadoGestionAlfa(estadoGestion);
   return g || 'EN GESTIÓN';
 }
 
 /**
  * @deprecated Solo para migración legacy.
- * No usar para sobrescribir `estadoGestion` en flujos normales (salvo OBJETADO/DESISTIDO → CERRADO).
+ * No usar para sobrescribir `estadoGestion` en flujos normales
+ * (salvo reglas OBJETADO/DESISTIDO→CERRADO y PEND. ACEPTACION CIFRAS→LIQUIDADO).
  */
 export function estadoGestionDesdeEstadoAlfa(estado) {
   return sincronizarGestionConCierreSiniestroAlfa(estado, estado);

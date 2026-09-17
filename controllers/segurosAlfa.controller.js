@@ -719,7 +719,7 @@ export const actualizarCasoAlfa = async (req, res) => {
     }
 
     const base = registroActual.toObject();
-    const { data: bodyFiltrado, soloEstado, denegado } = aplicarRestriccionRolCaso(
+    let { data: bodyFiltrado, soloEstado, denegado } = aplicarRestriccionRolCaso(
       req,
       req.body || {},
       base,
@@ -732,6 +732,27 @@ export const actualizarCasoAlfa = async (req, res) => {
         caso: base,
       }
     );
+    // Pool ERA ya validado en visibilidad: si no figura como asignado, editar como ajustador.
+    if (denegado && esIdentidadEra(identidad)) {
+      const proxyAsignado = {
+        ...base,
+        ajustador: identidad.name || identidad.login || base.ajustador,
+        firmaAjuste: base.firmaAjuste || 'ERA',
+      };
+      const retry = aplicarRestriccionRolCaso(req, req.body || {}, base, {
+        modulo: 'alfa',
+        name: identidad.name,
+        login: identidad.login,
+        cedula: identidad.cedula,
+        empresa: identidad.empresa,
+        caso: proxyAsignado,
+      });
+      if (!retry.denegado) {
+        bodyFiltrado = retry.data;
+        soloEstado = retry.soloEstado;
+        denegado = false;
+      }
+    }
     if (denegado) {
       return res.status(403).json({
         success: false,
