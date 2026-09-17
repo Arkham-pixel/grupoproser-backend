@@ -49,6 +49,7 @@ import {
   listAlfaCondicionesDocuments,
   openAlfaCondicionDownloadStream,
 } from '../services/alfaCondicionesService.js';
+import { esUsuarioAlfaSharePointSubir } from '../config/alfaExcelActualizarPermitido.js';
 import { aplicarRestriccionRolCaso, obtenerIdentidadUsuarioReq, collationVistaAsignacion, combinarFiltrosMongo, esIdentidadColaFechaLlamadaAlfa } from '../utils/permisosCasoPorRol.js';
 import { esIdentidadEra } from '../utils/jerarquiaEra.js';
 import {
@@ -1595,6 +1596,15 @@ export const reintentarSyncSharePointAlfa = async (req, res) => {
  */
 export const setSharePointEnabledAlfa = async (req, res) => {
   try {
+    const identidad = await obtenerIdentidadUsuarioReq(req);
+    if (!esUsuarioAlfaSharePointSubir(identidad || req.usuario || req.user || {})) {
+      return res.status(403).json({
+        success: false,
+        error: 'Solo el usuario autorizado puede marcar documentos para subir a SharePoint.',
+        code: 'ALFA_SHAREPOINT_SUBIR_FORBIDDEN',
+      });
+    }
+
     const caso = await buscarCasoPorId(req.params.id);
     if (!caso) {
       return res.status(404).json({ success: false, error: 'Caso Seguros Alfa no encontrado' });

@@ -1,5 +1,7 @@
 /**
- * Solo este login puede pulsar Actualizar / execute de Control y Seguimiento Alfa.
+ * Solo este login puede:
+ * - Actualizar / execute de Control y Seguimiento Alfa
+ * - Pulsar «Subir» / «No subir» documentos del archivero a SharePoint
  */
 export const LOGIN_ALFA_EXCEL_ACTUALIZAR = '1065012991';
 
@@ -7,6 +9,11 @@ export function esUsuarioAlfaExcelActualizar(user = {}) {
   const login = String(user.login || '').trim();
   const cedula = String(user.cedula || '').trim();
   return login === LOGIN_ALFA_EXCEL_ACTUALIZAR || cedula === LOGIN_ALFA_EXCEL_ACTUALIZAR;
+}
+
+/** Alias: mismo usuario autorizado para encolar sync SharePoint del archivero. */
+export function esUsuarioAlfaSharePointSubir(user = {}) {
+  return esUsuarioAlfaExcelActualizar(user);
 }
 
 export function verificarLoginAlfaExcelActualizar(req, res, next) {
