@@ -38,6 +38,7 @@ import { generarConsecutivoAlfa, buildAlfaListadoPipeline } from '../services/al
 import {
   homologarEstadoAlfa,
   homologarEstadoGestionAlfa,
+  sincronizarGestionConCierreSiniestroAlfa,
 } from '../config/alfaExcelStatuses.js';
 import {
   geocodeCasosAlfaPendientes,
@@ -386,7 +387,8 @@ const mergeImportacionAlfa = (incomingPayload = {}, existente = {}) => {
   }
   if (!out.estado) out.estado = 'PENDIENTE';
   out.estado = homologarEstadoAlfa(out.estado || existente.estado || 'PENDIENTE');
-  out.estadoGestion = homologarEstadoGestionAlfa(
+  out.estadoGestion = sincronizarGestionConCierreSiniestroAlfa(
+    out.estado,
     out.estadoGestion || existente.estadoGestion || 'EN GESTIÓN'
   );
   out.observacionesGestion = out.observacionesGestion || existente.observacionesGestion || '';
@@ -460,7 +462,10 @@ const validarCierreBajoDeducible = (payload = {}, base = {}) => {
 
 const asegurarEstadoUnificado = (payload) => {
   payload.estado = homologarEstadoAlfa(payload.estado || 'PENDIENTE');
-  payload.estadoGestion = homologarEstadoGestionAlfa(payload.estadoGestion || 'EN GESTIÓN');
+  payload.estadoGestion = sincronizarGestionConCierreSiniestroAlfa(
+    payload.estado,
+    payload.estadoGestion || 'EN GESTIÓN'
+  );
   // OBS queda solo en Mongo (no outbound a SharePoint/Excel).
   payload.observacionesGestion = String(payload.observacionesGestion || '').trim();
   return payload;

@@ -1,6 +1,6 @@
 /**
- * Unifica estado + estadoGestion Alfa a catálogos oficiales (ejes independientes).
- * NO deriva gestión desde siniestro.
+ * Unifica estado + estadoGestion Alfa a catálogos oficiales.
+ * Regla: OBJETADO / DESISTIDO → estadoGestion = CERRADO.
  *
  *   node scripts/unifyAlfaEstados.js
  *   node scripts/unifyAlfaEstados.js --apply
@@ -9,8 +9,8 @@ import '../config/loadEnv.js';
 import mongoose from 'mongoose';
 import SegurosAlfaCaso from '../models/SegurosAlfaCaso.js';
 import {
-  homologarEstadoGestionAlfa,
   homologarEstadoSiniestroAlfa,
+  sincronizarGestionConCierreSiniestroAlfa,
 } from '../config/alfaExcelStatuses.js';
 
 const apply = process.argv.includes('--apply');
@@ -31,7 +31,8 @@ for (const c of casos) {
     liquidador: c.liquidador,
     fechaAceptacionLiquidacion: c.fechaAceptacionLiquidacion,
   });
-  const nextGestion = homologarEstadoGestionAlfa(c.estadoGestion || c.estado) || 'EN GESTIÓN';
+  const nextGestion =
+    sincronizarGestionConCierreSiniestroAlfa(nextEstado, c.estadoGestion) || 'EN GESTIÓN';
 
   countsEstado[nextEstado] = (countsEstado[nextEstado] || 0) + 1;
   countsGestion[nextGestion] = (countsGestion[nextGestion] || 0) + 1;

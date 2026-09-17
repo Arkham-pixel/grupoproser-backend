@@ -12,6 +12,7 @@ import {
   homologarEstadoGestionAlfa,
   homologarEstadoSiniestroAlfa,
   isAlfaEstadoDefinido,
+  sincronizarGestionConCierreSiniestroAlfa,
 } from '../config/alfaExcelStatuses.js';
 
 const errors = [];
@@ -34,6 +35,18 @@ assert(homologarEstadoGestionAlfa('Solicitud de documentos') === 'INSPECCIONADO'
 assert(homologarEstadoGestionAlfa('Sin respuesta') === 'SIN RESPUESTA EFECTIVA', 'legacy sin respuesta');
 assert(homologarEstadoGestionAlfa('CERRADO') === 'CERRADO', 'gestión CERRADO canónico');
 assert(homologarEstadoGestionAlfa('Cerrado totalmente') === 'CERRADO', 'gestión cerrado totalmente');
+assert(
+  sincronizarGestionConCierreSiniestroAlfa('OBJETADO', 'INSPECCIONADO') === 'CERRADO',
+  'objetado→gestión CERRADO'
+);
+assert(
+  sincronizarGestionConCierreSiniestroAlfa('DESISTIDO', 'EN GESTIÓN') === 'CERRADO',
+  'desistido→gestión CERRADO'
+);
+assert(
+  sincronizarGestionConCierreSiniestroAlfa('PENDIENTE', 'INSPECCIONADO') === 'INSPECCIONADO',
+  'pendiente no fuerza CERRADO'
+);
 assert(homologarEstadoSiniestroAlfa('ENVIADO ASEGURADORA') === 'PROCESO DE PAGO', 'enviado→pago');
 assert(homologarEstadoSiniestroAlfa('OBJETADO') === 'OBJETADO', 'objetado real');
 assert(homologarEstadoSiniestroAlfa('DESISTIDO') === 'DESISTIDO', 'desistido real');

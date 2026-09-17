@@ -31,6 +31,7 @@ import {
   estadoAlfaParaSharePoint,
   homologarEstadoGestionAlfa,
   homologarEstadoSiniestroAlfa,
+  sincronizarGestionConCierreSiniestroAlfa,
 } from '../config/alfaExcelStatuses.js';
 
 const DRY = process.argv.includes('--dry-run');
@@ -142,8 +143,11 @@ for (let r = 2; r <= maxRow; r += 1) {
             ? match.cases[0]
             : null;
         if (caso) {
-          const gMongo = estadoGestionAlfaParaSharePoint(caso.estadoGestion || caso.estado);
           const sMongo = estadoAlfaParaSharePoint(caso.estado);
+          const gMongo = sincronizarGestionConCierreSiniestroAlfa(
+            caso.estado,
+            caso.estadoGestion || caso.estado
+          );
           if (gMongo) {
             if (nextG !== gMongo) stats.fromMongoGestion += 1;
             nextG = gMongo;
@@ -157,6 +161,11 @@ for (let r = 2; r <= maxRow; r += 1) {
         /* sin match */
       }
     }
+  }
+
+  // OBJETADO / DESISTIDO → gestión CERRADO (también si solo se lee del Excel)
+  if (nextS) {
+    nextG = sincronizarGestionConCierreSiniestroAlfa(nextS, nextG || gRaw || 'EN GESTIÓN');
   }
 
   if (gRaw || nextG) {

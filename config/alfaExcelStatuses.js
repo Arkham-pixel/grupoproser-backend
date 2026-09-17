@@ -251,18 +251,21 @@ export function homologarEstadoAlfa(valor) {
 }
 
 /**
+ * Si el siniestro es OBJETADO o DESISTIDO, la gestión queda CERRADO.
+ */
+export function sincronizarGestionConCierreSiniestroAlfa(estadoSiniestro, estadoGestion) {
+  const s = homologarEstadoSiniestroAlfa(estadoSiniestro);
+  if (s === 'OBJETADO' || s === 'DESISTIDO') return 'CERRADO';
+  const g = homologarEstadoGestionAlfa(estadoGestion);
+  return g || 'EN GESTIÓN';
+}
+
+/**
  * @deprecated Solo para migración legacy.
- * No usar para sobrescribir `estadoGestion` en flujos normales.
+ * No usar para sobrescribir `estadoGestion` en flujos normales (salvo OBJETADO/DESISTIDO → CERRADO).
  */
 export function estadoGestionDesdeEstadoAlfa(estado) {
-  const e = homologarEstadoSiniestroAlfa(estado);
-  if (e === 'PENDIENTE') return 'EN GESTIÓN';
-  if (e === 'PROCESO DE PAGO') return 'LIQUIDADO';
-  if (e === 'PENDIENTE ACEPTACION CIFRAS') return 'LIQUIDADO';
-  if (e === 'CERRADO') return 'LIQUIDADO';
-  if (e === 'OBJETADO') return 'SIN RESPUESTA EFECTIVA';
-  if (e === 'DESISTIDO') return 'SIN RESPUESTA EFECTIVA';
-  return 'EN GESTIÓN';
+  return sincronizarGestionConCierreSiniestroAlfa(estado, estado);
 }
 
 /**

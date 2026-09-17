@@ -16,6 +16,7 @@ import { isArnaldOwnedField } from '../config/alfaExcelOwnershipMap.js';
 import {
   homologarEstadoGestionAlfa,
   homologarEstadoAlfa,
+  sincronizarGestionConCierreSiniestroAlfa,
 } from '../config/alfaExcelStatuses.js';
 
 const COUNTER_ID = 'seguros_alfa_consecutivo';
@@ -189,9 +190,10 @@ export function buildAlfaCasoPayload(data = {}, base = {}) {
     ),
   };
 
-  // Ejes independientes: estado siniestro y estado gestión no se derivan entre sí.
+  // Ejes independientes, salvo OBJETADO/DESISTIDO → gestión CERRADO.
   out.estado = homologarEstadoAlfa(out.estado || base.estado || 'PENDIENTE');
-  out.estadoGestion = homologarEstadoGestionAlfa(
+  out.estadoGestion = sincronizarGestionConCierreSiniestroAlfa(
+    out.estado,
     out.estadoGestion || base.estadoGestion || 'EN GESTIÓN'
   );
   out.observacionesGestion = String(out.observacionesGestion || '').trim();
