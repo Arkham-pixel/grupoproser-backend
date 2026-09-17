@@ -32,9 +32,13 @@ const CEDULAS = [
   '1041900044', // Karla Andrea Parada Rocha
   '1140829990', // Marisol Gómez Carreño
   '1002500141', // Adriel Jose Escorcia Pulgar
+  '25347049', // Moisés Felipe Fernández Valencia (codigo legado N25347049)
 ];
 
 const CEDULAS_INSPECTORES = [...CEDULAS];
+/** Códigos legacy que no siguen AJU-/INS-{cedula}. */
+const CODIGOS_AJU_EXTRA = ['N25347049'];
+const CODIGOS_INS_EXTRA = ['N25347049'];
 
 async function main() {
   await mongoose.connect(process.env.MONGO_URI_DIRECT || process.env.MONGO_URI, {
@@ -48,8 +52,8 @@ async function main() {
     $addToSet: { modulos: 'bbvaCat' },
   };
 
-  const codigosAju = CEDULAS.map((c) => `AJU-${c}`);
-  const codigosIns = CEDULAS_INSPECTORES.map((c) => `INS-${c}`);
+  const codigosAju = [...CEDULAS.map((c) => `AJU-${c}`), ...CODIGOS_AJU_EXTRA];
+  const codigosIns = [...CEDULAS_INSPECTORES.map((c) => `INS-${c}`), ...CODIGOS_INS_EXTRA];
   const ins = await db.collection('gsk3cAppinspectorcatastrofico').updateMany(
     { codigo: { $in: codigosIns } },
     patch

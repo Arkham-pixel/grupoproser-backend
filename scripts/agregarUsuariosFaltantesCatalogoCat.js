@@ -27,6 +27,7 @@ const GENERAL = [
   { login: '19358017', nombre: 'Javier Bernardo Jaramillo Villegas' },
   { login: '1083433781', nombre: 'Yury Carolina Morantes' },
   { login: '79592767', nombre: 'Ricardo Javier Guzman Gil' },
+  { login: '1111202701', nombre: 'Linda Marcela Gaona Hurtado' },
 ];
 
 /** Equipo ERA: solo módulo Alfa. */

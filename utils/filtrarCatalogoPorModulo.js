@@ -12,6 +12,14 @@ function modsDe(doc = {}) {
     .filter(Boolean);
 }
 
+function esTagBbva(m) {
+  return m === 'bbvacat' || m === 'bbva';
+}
+
+function esTagAlfa(m) {
+  return m === 'alfa' || m === 'segurosalfa';
+}
+
 export function esModuloBbvaCat(modulo = '') {
   const c = claveModuloCatalogo(modulo);
   return c === 'bbvacat' || c === 'bbva' || c === 'bbvacatlistado';
@@ -39,28 +47,27 @@ export function esExcluidoCatalogoZurich(nombre) {
 
 /**
  * Equipos cerrados: BBVA y Alfa solo listan a quienes tienen ese módulo.
- * El resto (Zurich, Sura, Previsora, Allianz, Equidad CAT) usa el catálogo general
- * (sin `modulos`) o el tag explícito del módulo.
+ * BBVA es extra: tener bbvaCat no saca a la persona de Zurich/Sura/Previsora/Allianz/Equidad.
+ * Alfa sí es exclusivo si no tiene tags generales.
+ * Vacío o solo bbvaCat = catálogo general.
  */
 export function catalogoPerteneceAModulo(doc, modulo = '') {
   const mods = modsDe(doc);
   if (esModuloBbvaCat(modulo)) {
-    return mods.some((m) => m === 'bbvacat' || m === 'bbva');
+    return mods.some(esTagBbva);
   }
   if (esModuloAlfa(modulo)) {
-    return mods.some((m) => m === 'alfa' || m === 'segurosalfa');
+    return mods.some(esTagAlfa);
   }
   if (esModuloZurich(modulo) && esExcluidoCatalogoZurich(doc.nombre || doc.label || doc.nmbrRespnsble)) {
     return false;
   }
-  if (!mods.length) return true;
+  const modsGenerales = mods.filter((m) => !esTagBbva(m) && !esTagAlfa(m));
+  const tieneAlfa = mods.some(esTagAlfa);
+  if (!mods.length || (!modsGenerales.length && !tieneAlfa)) return true;
   const clave = claveModuloCatalogo(modulo);
-  if (!clave) {
-    return mods.some(
-      (m) => m !== 'bbvacat' && m !== 'bbva' && m !== 'alfa' && m !== 'segurosalfa'
-    );
-  }
-  return mods.includes(clave);
+  if (!clave) return modsGenerales.length > 0 || !tieneAlfa;
+  return modsGenerales.includes(clave);
 }
 
 /** Ajustadora líder de Zurich (quien asigna). Independiente del rol de ajustadora de campo. */

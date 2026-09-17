@@ -123,6 +123,14 @@ const EQUIPO_CAMPO = [
     telefono: '3005555870',
     ciudad: 'Cartagena',
   },
+  {
+    nombre: 'Moisés Felipe Fernández Valencia',
+    profesion: 'AJUSTADOR',
+    cedula: '25347049',
+    email: 'm.f.fernandezvalencia@gmail.com',
+    telefono: '3114064294',
+    ciudad: 'Todas',
+  },
 ];
 
 const LIDER = {
