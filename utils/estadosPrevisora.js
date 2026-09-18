@@ -1,6 +1,7 @@
 /** Estados operativos Previsora (flujo vigente). */
 export const ESTADOS_PREVISORA = [
   'CASO NUEVO',
+  'PROGRAMANDO INSPECCIÓN',
   'CASO INSPECCIONADO',
   'PENDIENTE DE DOCUMENTOS',
   'AUTORIZACIÓN ANALISTA',
@@ -14,6 +15,7 @@ export const ESTADO_PREVISORA_DEFAULT = 'CASO NUEVO';
 
 export const FECHA_ACCION_POR_ESTADO_PREVISORA = {
   'CASO NUEVO': 'fechaCasoNuevo',
+  'PROGRAMANDO INSPECCIÓN': 'fechaCoordinandoInspeccion',
   'CASO INSPECCIONADO': 'fechaCasoInspeccionado',
   'PENDIENTE DE DOCUMENTOS': 'fechaSolicitudDocumento',
   'AUTORIZACIÓN ANALISTA': 'fechaAutorizacionAnalista',
@@ -25,7 +27,6 @@ export const FECHA_ACCION_POR_ESTADO_PREVISORA = {
 
 /** Fechas legado que se espejan para agenda, boletines e importaciones. */
 const ESPEJO_FECHA_LEGADO = {
-  fechaCasoInspeccionado: 'fechaCoordinandoInspeccion',
   fechaPresentacionCifras: 'fechaAnalisisCaso',
   fechaCasoCerrado: 'fechaCasoParaPago',
 };
@@ -34,7 +35,9 @@ const LEGACY = {
   PENDIENTE: 'CASO NUEVO',
   AVISADO: 'CASO NUEVO',
   'EN INSPECCION': 'CASO INSPECCIONADO',
-  'COORDINANDO INSPECCION': 'CASO INSPECCIONADO',
+  'COORDINANDO INSPECCION': 'PROGRAMANDO INSPECCIÓN',
+  'INSPECCION COORDINADA': 'PROGRAMANDO INSPECCIÓN',
+  'PROGRAMANDO INSPECCION': 'PROGRAMANDO INSPECCIÓN',
   INSPECCIONADO: 'CASO INSPECCIONADO',
   'EN AJUSTE': 'PRESENTACIÓN DE CIFRAS',
   'ANALISIS DEL CASO': 'PRESENTACIÓN DE CIFRAS',

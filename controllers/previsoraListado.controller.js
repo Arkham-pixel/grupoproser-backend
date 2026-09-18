@@ -250,11 +250,11 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     fechaCasoNuevo: pickFecha(data.fechaCasoNuevo, base.fechaCasoNuevo ?? null),
     fechaCasoInspeccionado: pickFecha(
       data.fechaCasoInspeccionado,
-      base.fechaCasoInspeccionado ?? base.fechaCoordinandoInspeccion ?? null
+      base.fechaCasoInspeccionado ?? null
     ),
     fechaCoordinandoInspeccion: pickFecha(
-      data.fechaCoordinandoInspeccion ?? data.fechaCasoInspeccionado,
-      base.fechaCoordinandoInspeccion ?? base.fechaCasoInspeccionado ?? null
+      data.fechaCoordinandoInspeccion,
+      base.fechaCoordinandoInspeccion ?? null
     ),
     ...mapearFranjaAgenda(data, base, pick),
     fechaPresentacionCifras: pickFecha(

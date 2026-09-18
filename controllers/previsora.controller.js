@@ -389,11 +389,11 @@ const buildPrevisoraPayload = (data = {}, base = {}) => {
   fechaCasoNuevo: parseDateFlexible(data.fechaCasoNuevo, base.fechaCasoNuevo ?? null),
   fechaCasoInspeccionado: parseDateFlexible(
     data.fechaCasoInspeccionado,
-    base.fechaCasoInspeccionado ?? base.fechaCoordinandoInspeccion ?? null
+    base.fechaCasoInspeccionado ?? null
   ),
   fechaCoordinandoInspeccion: parseDateFlexible(
-    data.fechaCoordinandoInspeccion ?? data.fechaCasoInspeccionado,
-    base.fechaCoordinandoInspeccion ?? base.fechaCasoInspeccionado ?? null
+    data.fechaCoordinandoInspeccion,
+    base.fechaCoordinandoInspeccion ?? null
   ),
   ...mapearFranjaAgenda(data, base, toStringOrNull),
   fechaPresentacionCifras: parseDateFlexible(
