@@ -33,12 +33,23 @@ const CEDULAS = [
   '1140829990', // Marisol Gómez Carreño
   '1002500141', // Adriel Jose Escorcia Pulgar
   '25347049', // Moisés Felipe Fernández Valencia (codigo legado N25347049)
+  '6162405', // Eder Fernando Salazar Pérez
 ];
 
 const CEDULAS_INSPECTORES = [...CEDULAS];
-/** Códigos legacy que no siguen AJU-/INS-{cedula}. */
-const CODIGOS_AJU_EXTRA = ['N25347049'];
-const CODIGOS_INS_EXTRA = ['N25347049'];
+/** Códigos legacy / ERA que no siguen AJU-/INS-{cedula}. */
+const CODIGOS_AJU_EXTRA = [
+  'N25347049', // Moisés Felipe Fernández Valencia
+  '2570216393', // Joel Sosa Miralles
+  'N25174084', // Carlos Baruch Castro Lara
+  '1087986216', // Natalia Restrepo Mejia
+];
+const CODIGOS_INS_EXTRA = [
+  'N25347049',
+  '2570216393',
+  'N25174084',
+  '1087986216',
+];
 
 async function main() {
   await mongoose.connect(process.env.MONGO_URI_DIRECT || process.env.MONGO_URI, {

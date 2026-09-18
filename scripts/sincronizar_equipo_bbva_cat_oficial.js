@@ -131,6 +131,44 @@ const EQUIPO_CAMPO = [
     telefono: '3114064294',
     ciudad: 'Todas',
   },
+  {
+    nombre: 'Eder Fernando Salazar Pérez',
+    profesion: 'ARQUITECTO',
+    cedula: '6162405',
+    email: 'CREARQ.4@gmail.com',
+    telefono: '',
+    ciudad: 'Buenaventura',
+  },
+  {
+    nombre: 'Joel Sosa Miralles',
+    profesion: 'AJUSTADOR',
+    cedula: '2570216393',
+    email: 'joelsosa8@gmail.com',
+    telefono: '5520880539',
+    ciudad: 'Todas',
+    codigoAju: '2570216393',
+    codigoIns: '2570216393',
+  },
+  {
+    nombre: 'Carlos Baruch Castro Lara',
+    profesion: 'AJUSTADOR',
+    cedula: '25174084',
+    email: 'cbaruch.castro@gmail.com',
+    telefono: '525591924268',
+    ciudad: 'Todas',
+    codigoAju: 'N25174084',
+    codigoIns: 'N25174084',
+  },
+  {
+    nombre: 'Natalia Restrepo Mejia',
+    profesion: 'INGENIERO CIVIL',
+    cedula: '1087986216',
+    email: 'ingnaresme@gmail.com',
+    telefono: '3005299343',
+    ciudad: 'Todas',
+    codigoAju: '1087986216',
+    codigoIns: '1087986216',
+  },
 ];
 
 const LIDER = {
@@ -151,19 +189,26 @@ function norm(valor) {
 }
 
 async function upsertCatalogo(col, persona, prefijo) {
-  const codigo = `${prefijo}-${persona.cedula}`;
+  const codigoPreferido =
+    prefijo === 'AJU'
+      ? persona.codigoAju || `${prefijo}-${persona.cedula}`
+      : persona.codigoIns || `${prefijo}-${persona.cedula}`;
   const nombreNorm = norm(persona.nombre);
   const candidatos = await col
     .find({})
     .project({ codigo: 1, nombre: 1 })
     .toArray();
   const hit = candidatos.find(
-    (e) => String(e.codigo || '').trim() === codigo || norm(e.nombre) === nombreNorm
+    (e) =>
+      String(e.codigo || '').trim() === codigoPreferido ||
+      String(e.codigo || '').trim() === `${prefijo}-${persona.cedula}` ||
+      String(e.codigo || '').trim() === `N${persona.cedula}` ||
+      norm(e.nombre) === nombreNorm
   );
   const doc = hit ? await col.findOne({ _id: hit._id }) : null;
 
   const payload = {
-    codigo: doc?.codigo || codigo,
+    codigo: doc?.codigo || codigoPreferido,
     nombre: persona.nombre,
     email: persona.email || '',
     telefono: String(persona.telefono || '').replace(/\D/g, ''),
