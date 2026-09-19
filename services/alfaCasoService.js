@@ -14,9 +14,9 @@ import {
 } from '../utils/alfaExcelNormalize.js';
 import { isArnaldOwnedField } from '../config/alfaExcelOwnershipMap.js';
 import {
-  homologarEstadoGestionAlfa,
   homologarEstadoAlfa,
   sincronizarGestionConCierreSiniestroAlfa,
+  asegurarSiniestroCompatibleConGestionAlfa,
 } from '../config/alfaExcelStatuses.js';
 
 const COUNTER_ID = 'seguros_alfa_consecutivo';
@@ -190,11 +190,16 @@ export function buildAlfaCasoPayload(data = {}, base = {}) {
     ),
   };
 
-  // Ejes independientes, salvo OBJETADO/DESISTIDO → gestión CERRADO.
+  // Ejes independientes con relación oficial gestión ↔ siniestro.
   out.estado = homologarEstadoAlfa(out.estado || base.estado || 'PENDIENTE');
   out.estadoGestion = sincronizarGestionConCierreSiniestroAlfa(
     out.estado,
-    out.estadoGestion || base.estadoGestion || 'EN GESTIÓN'
+    out.estadoGestion || base.estadoGestion || 'PTE CONTACTO'
+  );
+  out.estado = asegurarSiniestroCompatibleConGestionAlfa(
+    out.estadoGestion,
+    out.estado,
+    out
   );
   out.observacionesGestion = String(out.observacionesGestion || '').trim();
   return out;
@@ -269,7 +274,15 @@ export async function createAlfaCasoFromImport(data = {}) {
   }
   if (!payload.estado) payload.estado = 'PENDIENTE';
   payload.estado = homologarEstadoAlfa(payload.estado || 'PENDIENTE');
-  payload.estadoGestion = homologarEstadoGestionAlfa(payload.estadoGestion || 'EN GESTIÓN');
+  payload.estadoGestion = sincronizarGestionConCierreSiniestroAlfa(
+    payload.estado,
+    payload.estadoGestion || 'PTE CONTACTO'
+  );
+  payload.estado = asegurarSiniestroCompatibleConGestionAlfa(
+    payload.estadoGestion,
+    payload.estado,
+    payload
+  );
   payload.observacionesGestion = String(payload.observacionesGestion || '').trim();
   payload.consecutivo = await generarConsecutivoAlfa();
   delete payload.archivos;

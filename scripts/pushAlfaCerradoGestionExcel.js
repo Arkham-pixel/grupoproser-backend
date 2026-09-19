@@ -1,6 +1,7 @@
 /**
- * Actualiza ESTADO GESTION → CERRADO vía Graph workbook (sin reemplazar el .xlsx).
- * Útil cuando SharePoint tiene el archivo bloqueado (Excel abierto).
+ * Alinea ESTADO GESTION (AI) con reglas siniestro→gestión vía Graph workbook.
+ * - OBJETADO / DESISTIDO → CERRADO
+ * - PENDIENTE ACEPTACION CIFRAS → LIQUIDADO
  *
  *   node scripts/pushAlfaCerradoGestionExcel.js
  *   node scripts/pushAlfaCerradoGestionExcel.js --dry-run
@@ -111,7 +112,13 @@ for (let r = 2; r <= maxRow; r += 1) {
   const sRaw = cellText(row.getCell(siniestroCol).value).trim();
   if (!sRaw && !gRaw) continue;
   const nextS = sRaw ? homologarEstadoSiniestroAlfa(sRaw) : '';
-  if (nextS !== 'OBJETADO' && nextS !== 'DESISTIDO') continue;
+  if (
+    nextS !== 'OBJETADO' &&
+    nextS !== 'DESISTIDO' &&
+    nextS !== 'PENDIENTE ACEPTACION CIFRAS'
+  ) {
+    continue;
+  }
   const nextG = sincronizarGestionConCierreSiniestroAlfa(nextS, gRaw);
   const actual = gRaw ? homologarEstadoGestionAlfa(gRaw) : '';
   if (actual === nextG) continue;

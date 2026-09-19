@@ -37,8 +37,8 @@ import { enqueueAlfaExcelOutboundFromCaseUpdate } from '../services/alfaExcelOut
 import { generarConsecutivoAlfa, buildAlfaListadoPipeline } from '../services/alfaCasoService.js';
 import {
   homologarEstadoAlfa,
-  homologarEstadoGestionAlfa,
   sincronizarGestionConCierreSiniestroAlfa,
+  asegurarSiniestroCompatibleConGestionAlfa,
 } from '../config/alfaExcelStatuses.js';
 import {
   geocodeCasosAlfaPendientes,
@@ -60,6 +60,7 @@ import {
 import {
   resolverLiquidadorParaUpdate,
   resolverInformeUnicoParaUpdate,
+  scoreContenidoLiquidadorNsr,
 } from '../utils/protegerPresupuestoNsr10.js';
 import { normalizeMoney, pesosOficialesAlfa, pareceIdentificacionComoMontoAlfa } from '../utils/alfaExcelNormalize.js';
 import { aplicarMontosOficialesDesdeLiquidadorAlfa } from '../utils/valoresLiquidadorAlfa.js';
@@ -301,6 +302,9 @@ const buildAlfaPayload = (data = {}, base = {}) =>
       .replace(/\p{M}/gu, '')
       .toUpperCase()
       .trim();
+    if (n === 'INHABITABLE' || n.includes('INHABITABLE') || n.includes('INHABITABIL')) {
+      return 'INHABITABLE';
+    }
     if (n === 'PARCIAL' || n === 'TOTAL') return n;
     return '';
   })(),
@@ -390,7 +394,12 @@ const mergeImportacionAlfa = (incomingPayload = {}, existente = {}) => {
   out.estado = homologarEstadoAlfa(out.estado || existente.estado || 'PENDIENTE');
   out.estadoGestion = sincronizarGestionConCierreSiniestroAlfa(
     out.estado,
-    out.estadoGestion || existente.estadoGestion || 'EN GESTIÓN'
+    out.estadoGestion || existente.estadoGestion || 'PTE CONTACTO'
+  );
+  out.estado = asegurarSiniestroCompatibleConGestionAlfa(
+    out.estadoGestion,
+    out.estado,
+    out
   );
   out.observacionesGestion = out.observacionesGestion || existente.observacionesGestion || '';
   return out;
@@ -465,7 +474,12 @@ const asegurarEstadoUnificado = (payload) => {
   payload.estado = homologarEstadoAlfa(payload.estado || 'PENDIENTE');
   payload.estadoGestion = sincronizarGestionConCierreSiniestroAlfa(
     payload.estado,
-    payload.estadoGestion || 'EN GESTIÓN'
+    payload.estadoGestion || 'PTE CONTACTO'
+  );
+  payload.estado = asegurarSiniestroCompatibleConGestionAlfa(
+    payload.estadoGestion,
+    payload.estado,
+    payload
   );
   // OBS queda solo en Mongo (no outbound a SharePoint/Excel).
   payload.observacionesGestion = String(payload.observacionesGestion || '').trim();
@@ -778,6 +792,21 @@ export const actualizarCasoAlfa = async (req, res) => {
     }
     if (base.firmaAjuste) payload.firmaAjuste = base.firmaAjuste;
     await aplicarFirmaAjusteSiCorresponde(payload);
+
+    // Fecha liquidado = día en que se guardó el liquidador (solo la primera vez).
+    if (
+      !base.fechaLiquidado &&
+      scoreContenidoLiquidadorNsr(payload.liquidador) > 0
+    ) {
+      const ahora = new Date();
+      payload.fechaLiquidado = new Date(
+        ahora.getFullYear(),
+        ahora.getMonth(),
+        ahora.getDate()
+      );
+    } else if (base.fechaLiquidado && !payload.fechaLiquidado) {
+      payload.fechaLiquidado = base.fechaLiquidado;
+    }
 
     const faltantes = validarRequeridos(payload);
     const obsErr = validarObservacionesGestion(payload);
@@ -1923,7 +1952,7 @@ export const crearPredioVinculadoAlfa = async (req, res) => {
               ? body.valorAseguradoContenidos
               : base.valorAseguradoContenidos,
           estado: 'PENDIENTE',
-          estadoGestion: 'EN GESTIÓN',
+          estadoGestion: 'PTE CONTACTO',
           observacionesGestion: body.observacionesGestion || '',
           liquidador: null,
           informeUnico: null,

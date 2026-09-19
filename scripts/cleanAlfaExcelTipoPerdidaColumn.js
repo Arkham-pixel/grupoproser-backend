@@ -63,6 +63,9 @@ function homologarTipo(value) {
     .replace(/\p{M}/gu, '')
     .toUpperCase()
     .trim();
+  if (n === 'INHABITABLE' || n.includes('INHABITABLE') || n.includes('INHABITABIL')) {
+    return 'INHABITABLE';
+  }
   if (n === 'PARCIAL' || n === 'P') return 'PARCIAL';
   if (n === 'TOTAL' || n === 'T') return 'TOTAL';
   if (n.includes('PARCIAL') && n.length < 40) return 'PARCIAL';

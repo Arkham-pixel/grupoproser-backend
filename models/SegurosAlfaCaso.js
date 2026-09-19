@@ -91,7 +91,7 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
      */
     estadoGestion: {
       type: String,
-      default: 'EN GESTIÓN',
+      default: 'PTE CONTACTO',
     },
     /** Observaciones de gestión (obligatorias en ciertos estados). */
     observacionesGestion: { type: String, default: '' },
@@ -101,11 +101,11 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
     zonaAsignada: { type: String, default: '' },
     /**
      * Clasificación de pérdida solicitada por la compañía.
-     * PARCIAL | TOTAL | '' (sin clasificar).
+     * PARCIAL | TOTAL | INHABITABLE | '' (sin clasificar).
      */
     tipoPerdida: {
       type: String,
-      enum: ['', 'PARCIAL', 'TOTAL'],
+      enum: ['', 'PARCIAL', 'TOTAL', 'INHABITABLE'],
       default: '',
     },
     /** Caso fuera de la zona asignada (requiere aviso / reasignación). */

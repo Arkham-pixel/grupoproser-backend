@@ -625,7 +625,7 @@ export function planRow(row, allCases) {
       warnings.push('IGNORED_PROTECTED:estadoGestion');
     }
     if (!createPayload.estadoGestion) {
-      createPayload.estadoGestion = 'EN GESTIÓN';
+      createPayload.estadoGestion = 'PTE CONTACTO';
     }
 
     return {

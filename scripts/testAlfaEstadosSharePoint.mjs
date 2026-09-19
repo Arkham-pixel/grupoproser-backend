@@ -44,6 +44,11 @@ assert(
   'desistido→gestión CERRADO'
 );
 assert(
+  sincronizarGestionConCierreSiniestroAlfa('PENDIENTE ACEPTACION CIFRAS', 'INSPECCIONADO') ===
+    'LIQUIDADO',
+  'pend. aceptación cifras→LIQUIDADO'
+);
+assert(
   sincronizarGestionConCierreSiniestroAlfa('PENDIENTE', 'INSPECCIONADO') === 'INSPECCIONADO',
   'pendiente no fuerza CERRADO'
 );

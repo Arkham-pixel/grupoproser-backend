@@ -60,6 +60,10 @@ function homologarTipoPerdidaOutbound(value) {
     .replace(/\p{M}/gu, '')
     .toUpperCase()
     .trim();
+  if (!n) return null;
+  if (n === 'INHABITABLE' || n.includes('INHABITABLE') || n.includes('INHABITABIL')) {
+    return 'INHABITABLE';
+  }
   if (n === 'PARCIAL' || n.includes('PARCIAL')) return 'PARCIAL';
   if (n === 'TOTAL' || n.includes('TOTAL')) return 'TOTAL';
   return null;
@@ -1714,7 +1718,7 @@ export async function reconcileAlfaExcelEstadoGaps({ apply = true } = {}) {
     const before = {
       ...caso,
       estado: g.excelEstadoRaw || caso.estado || 'PENDIENTE',
-      estadoGestion: g.excelGestionRaw || caso.estadoGestion || 'EN GESTIÓN',
+      estadoGestion: g.excelGestionRaw || caso.estadoGestion || 'PTE CONTACTO',
     };
     const after = { ...caso };
     const doc = await enqueueAlfaExcelOutboundFromCaseUpdate({
