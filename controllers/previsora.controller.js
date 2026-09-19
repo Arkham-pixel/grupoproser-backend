@@ -9,7 +9,12 @@ import {
   enviarAlertasPrevisoraAjustador,
 } from '../services/alertasPrevisoraService.js';
 import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
-import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
+import {
+  recortarNsrDelDocumento,
+  resolverInformeUnicoParaUpdate,
+  resolverLiquidadorParaUpdate,
+  quiereIncluirNsr,
+} from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoPrevisora, homologarEstadoPrevisora } from '../utils/estadosPrevisora.js';
 import {
   BANDERAS_LISTA_CASO,
@@ -512,12 +517,7 @@ const buildPrevisoraPayload = (data = {}, base = {}) => {
     return normalizeEvidenciaCat(prev);
   })(),
   liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
-  informeUnico:
-    data.informeUnico !== undefined
-      ? data.informeUnico && typeof data.informeUnico === 'object'
-        ? data.informeUnico
-        : null
-      : base.informeUnico ?? null,
+  informeUnico: resolverInformeUnicoParaUpdate(data.informeUnico, base.informeUnico),
   historialCatastroficoId: toStringOrNull(
     data.historialCatastroficoId,
     base.historialCatastroficoId ?? null
@@ -853,7 +853,10 @@ export const obtenerCasoPrevisora = async (req, res) => {
     if (!documento) {
       return res.status(404).json({ success: false, error: 'Caso Previsora no encontrado' });
     }
-    res.json({ success: true, data: documento });
+    res.json({
+      success: true,
+      data: recortarNsrDelDocumento(documento, { incluirNsr: quiereIncluirNsr(req.query) }),
+    });
   } catch (error) {
     console.error('❌ Error al obtener caso Previsora:', error);
     res.status(500).json({
@@ -892,8 +895,13 @@ export const actualizarCasoPrevisora = async (req, res) => {
       { $set: payload },
       { new: true, runValidators: false }
     );
+    const data = recortarNsrDelDocumento(actualizado?.toObject?.() || actualizado, {
+      incluirNsr:
+        quiereIncluirNsr(req.query) ||
+        Boolean(bodyFiltrado?.liquidador?.evaluacionSismicaNSR10),
+    });
 
-    res.json({ success: true, data: actualizado });
+    res.json({ success: true, data });
   } catch (error) {
     console.error('❌ Error al actualizar caso Previsora:', error);
     res.status(500).json({

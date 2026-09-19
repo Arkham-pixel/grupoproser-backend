@@ -101,6 +101,7 @@ const EquidadCatCasoSchema = new mongoose.Schema(
     fechaObjecion: Date,
     fechaAutorizacionAnalista: Date,
     fechaCasoParaPago: Date,
+    fechaFinalizado: Date,
     documentoFaltante: String,
     observacionPendienteDocumento: String,
     motivoObjecion: String,

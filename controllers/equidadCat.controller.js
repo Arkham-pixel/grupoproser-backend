@@ -248,6 +248,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       base.fechaAutorizacionAnalista ?? null
     ),
     fechaCasoParaPago: pickFecha(data.fechaCasoParaPago, base.fechaCasoParaPago ?? null),
+    fechaFinalizado: pickFecha(data.fechaFinalizado, base.fechaFinalizado ?? null),
     documentoFaltante: pick(data.documentoFaltante, base.documentoFaltante ?? null),
     observacionPendienteDocumento: pick(
       data.observacionPendienteDocumento,

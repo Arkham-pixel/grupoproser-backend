@@ -6,26 +6,36 @@ export const PROVEEDOR_FACILITADORES_SURA = 'PROSER AJUSTES S.A.S';
 export const COLUMNAS_FACILITADORES_SURA = [
   'RECLAMACION',
   'PROVEEDOR_ASSIGNADO_A_SERVICIO',
-  'INFORMACIÓN',
   'FECHA_ASIGNACION',
   'FECHA_PRIMER_CONTACTO',
   'VISITA_REALIZADA',
   'FECHA_VISITA',
   'CRITERIO_DETALLE',
   'ULTIMO_COMENTARIO',
-  'INFORME_ENVIADO',
-  'FECHA_INFORME',
+  'INFORME_PRELIMINAR_ENVIADO',
+  'FECHA_INFORME_PRELIMINAR',
+  'INFORME_FINAL_ENVIADO',
+  'FECHA_INFORME_FINAL',
   'DOCUMENTACION_COMPLETA',
   'FECHA_DOCUMENTACION_COMPLETA',
   'CASO_CERRADO',
   'FECHA_CIERRE',
   'ESTADO_SINIESTRO',
+  'TIPO_VIVIENDA',
 ];
 
 export const SINO_NA = ['SI', 'NO', 'N/A'];
 export const SINO = ['SI', 'NO'];
 export const CRITERIOS_FACILITADOR = ['Critico', 'Medio', 'Bajo'];
-export const ESTADOS_FACILITADOR = ['Abierto', 'Tramitado', 'Anulado', 'Desistido', 'Objetado'];
+export const ESTADOS_FACILITADOR = [
+  'Abierto',
+  'Tramitado',
+  'Anulado',
+  'Desistido',
+  'Objetado',
+  'Cancelado Sura',
+];
+export const TIPOS_VIVIENDA_FACILITADOR = ['URBANA', 'RURAL'];
 
 export function digitsReclamacion(valor) {
   return String(valor ?? '').replace(/\D/g, '');
@@ -53,12 +63,22 @@ export function normalizarSinoNa(valor, { permitirNA = true } = {}) {
   return '';
 }
 
+/** SI/NO/N/A; vacío → NO. */
+export function sinoConDefault(valor, { permitirNA = true, defecto = 'NO' } = {}) {
+  return normalizarSinoNa(valor, { permitirNA }) || defecto;
+}
+
 export function normalizarCriterioFacilitador(valor) {
   const k = clave(valor);
   if (k.startsWith('CRIT')) return 'Critico';
   if (k.startsWith('MED')) return 'Medio';
   if (k.startsWith('BAJ')) return 'Bajo';
   return '';
+}
+
+/** Criterio vacío → Medio (regla operativa Facilitadores). */
+export function criterioConDefault(valor, defecto = 'Medio') {
+  return normalizarCriterioFacilitador(valor) || defecto;
 }
 
 export function normalizarEstadoFacilitador(valor) {
@@ -68,7 +88,20 @@ export function normalizarEstadoFacilitador(valor) {
   if (k.startsWith('ANUL')) return 'Anulado';
   if (k.startsWith('DESIST')) return 'Desistido';
   if (k.startsWith('OBJET')) return 'Objetado';
+  if (k.includes('CANCELADO')) return 'Cancelado Sura';
   return '';
+}
+
+/** Tipo vivienda plantilla SURA: URBANA | RURAL. */
+export function normalizarTipoViviendaFacilitador(valor) {
+  const k = clave(valor);
+  if (k.startsWith('RUR')) return 'RURAL';
+  if (k.startsWith('URB')) return 'URBANA';
+  return '';
+}
+
+export function tipoViviendaConDefault(valor, defecto = 'URBANA') {
+  return normalizarTipoViviendaFacilitador(valor) || defecto;
 }
 
 function parseFecha(valor) {
@@ -98,10 +131,23 @@ function fechaSiMarca(marca, fecha) {
 
 export function filaDesdePlantillaSura(raw = {}) {
   const reclamacion = reclamacionTexto13(raw.RECLAMACION ?? raw.reclamacion);
-  const visita = normalizarSinoNa(raw.VISITA_REALIZADA ?? raw.visitaRealizada);
-  const informe = normalizarSinoNa(raw.INFORME_ENVIADO ?? raw.informeEnviado);
-  const docs = normalizarSinoNa(raw.DOCUMENTACION_COMPLETA ?? raw.documentacionCompleta);
-  const cerrado = normalizarSinoNa(raw.CASO_CERRADO ?? raw.casoCerrado, { permitirNA: false }) || 'NO';
+  const visita = sinoConDefault(raw.VISITA_REALIZADA ?? raw.visitaRealizada, { permitirNA: false });
+  const informePrelim = sinoConDefault(
+    raw.INFORME_PRELIMINAR ?? raw.informePreliminarEnviado ?? raw.INFORME_PRELIMINAR_ENVIADO,
+    { permitirNA: false }
+  );
+  const informe = sinoConDefault(
+    raw.INFORME_FINAL_ENVIADO ??
+      raw.INFORME_ENVIADO ??
+      raw.informeEnviado ??
+      raw.INFORME_FINAL ??
+      raw.informeFinalEnviado,
+    { permitirNA: false }
+  );
+  const docs = sinoConDefault(raw.DOCUMENTACION_COMPLETA ?? raw.documentacionCompleta, {
+    permitirNA: false,
+  });
+  const cerrado = sinoConDefault(raw.CASO_CERRADO ?? raw.casoCerrado, { permitirNA: false });
   return {
     reclamacion,
     proveedor: String(raw.PROVEEDOR_ASSIGNADO_A_SERVICIO ?? raw.proveedor ?? PROVEEDOR_FACILITADORES_SURA).trim()
@@ -111,10 +157,15 @@ export function filaDesdePlantillaSura(raw = {}) {
     fechaPrimerContacto: parseFecha(raw.FECHA_PRIMER_CONTACTO ?? raw.fechaPrimerContacto),
     visitaRealizada: visita,
     fechaVisita: fechaSiMarca(visita, raw.FECHA_VISITA ?? raw.fechaVisita),
-    criterioDetalle: normalizarCriterioFacilitador(raw.CRITERIO_DETALLE ?? raw.criterioDetalle),
+    criterioDetalle: criterioConDefault(raw.CRITERIO_DETALLE ?? raw.criterioDetalle),
     ultimoComentario: String(raw.ULTIMO_COMENTARIO ?? raw.ultimoComentario ?? '').trim(),
+    informePreliminarEnviado: informePrelim,
+    fechaInformePreliminar: fechaSiMarca(
+      informePrelim,
+      raw.FECHA_INFORME_PRELIMINAR ?? raw.fechaInformePreliminar
+    ),
     informeEnviado: informe,
-    fechaInforme: fechaSiMarca(informe, raw.FECHA_INFORME ?? raw.fechaInforme),
+    fechaInforme: fechaSiMarca(informe, raw.FECHA_INFORME ?? raw.fechaInforme ?? raw.FECHA_INFORME_FINAL),
     documentacionCompleta: docs,
     fechaDocumentacionCompleta: fechaSiMarca(
       docs,
@@ -122,31 +173,48 @@ export function filaDesdePlantillaSura(raw = {}) {
     ),
     casoCerrado: cerrado,
     fechaCierre: fechaSiMarca(cerrado, raw.FECHA_CIERRE ?? raw.fechaCierre),
-    estadoSiniestro: normalizarEstadoFacilitador(raw.ESTADO_SINIESTRO ?? raw.estadoSiniestro),
+    estadoSiniestro:
+      normalizarEstadoFacilitador(raw.ESTADO_SINIESTRO ?? raw.estadoSiniestro) || 'Abierto',
+    tipoVivienda: tipoViviendaConDefault(raw.TIPO_VIVIENDA ?? raw.tipoVivienda),
   };
 }
 
 export function aplicarPatchFacilitador(base = {}, patch = {}) {
   const next = { ...base, ...patch };
-  const visita = normalizarSinoNa(next.visitaRealizada);
-  const informe = normalizarSinoNa(next.informeEnviado);
-  const docs = normalizarSinoNa(next.documentacionCompleta);
-  const cerrado = normalizarSinoNa(next.casoCerrado, { permitirNA: false }) || 'NO';
+  const visita = sinoConDefault(next.visitaRealizada, { permitirNA: false });
+  const informePrelim = sinoConDefault(next.informePreliminarEnviado, { permitirNA: false });
+  const informe = sinoConDefault(next.informeEnviado, { permitirNA: false });
+  const docs = sinoConDefault(next.documentacionCompleta, { permitirNA: false });
+  const cerrado = sinoConDefault(next.casoCerrado, { permitirNA: false });
   next.visitaRealizada = visita;
+  next.informePreliminarEnviado = informePrelim;
   next.informeEnviado = informe;
   next.documentacionCompleta = docs;
   next.casoCerrado = cerrado;
-  next.criterioDetalle = normalizarCriterioFacilitador(next.criterioDetalle) || String(next.criterioDetalle || '').trim();
-  next.estadoSiniestro = normalizarEstadoFacilitador(next.estadoSiniestro) || String(next.estadoSiniestro || '').trim();
+  next.criterioDetalle = criterioConDefault(next.criterioDetalle);
+  next.estadoSiniestro =
+    normalizarEstadoFacilitador(next.estadoSiniestro) ||
+    String(next.estadoSiniestro || '').trim() ||
+    'Abierto';
+  next.tipoVivienda = tipoViviendaConDefault(next.tipoVivienda);
   next.fechaVisita = visita === 'SI' ? parseFecha(next.fechaVisita) : null;
+  next.fechaInformePreliminar =
+    informePrelim === 'SI' ? parseFecha(next.fechaInformePreliminar) : null;
   next.fechaInforme = informe === 'SI' ? parseFecha(next.fechaInforme) : null;
   next.fechaDocumentacionCompleta = docs === 'SI' ? parseFecha(next.fechaDocumentacionCompleta) : null;
   next.fechaCierre = cerrado === 'SI' ? parseFecha(next.fechaCierre) : null;
   next.fechaAsignacion = parseFecha(next.fechaAsignacion);
   next.fechaPrimerContacto = parseFecha(next.fechaPrimerContacto);
   if (next.reclamacion) next.reclamacion = reclamacionTexto13(next.reclamacion);
-  const tieneGestion =
-    Boolean(visita || informe || docs || next.criterioDetalle || next.estadoSiniestro || next.ultimoComentario);
+  const tieneGestion = Boolean(
+    visita ||
+      informePrelim ||
+      informe ||
+      docs ||
+      next.criterioDetalle ||
+      next.estadoSiniestro ||
+      next.ultimoComentario
+  );
   if (tieneGestion && String(next.informacion || '') === '0') next.informacion = '1';
   return next;
 }
@@ -180,8 +248,17 @@ export function estadoFacilitadorDesdeCasoSura(caso = {}) {
     .trim()
     .toUpperCase();
 
-  if (estado === 'ANULADO' || bruto.startsWith('DESIST') || bruto.includes('DESISTIDO')) {
+  if (estado === 'ANULADO' || bruto.startsWith('ANUL')) {
     return 'Anulado';
+  }
+  if (bruto.startsWith('DESIST') || bruto.includes('DESISTIDO')) {
+    return 'Desistido';
+  }
+  if (bruto.startsWith('OBJET') || bruto.includes('OBJETADO')) {
+    return 'Objetado';
+  }
+  if (bruto.includes('CANCELADO')) {
+    return 'Cancelado Sura';
   }
 
   const tipo = tipoInformeCasoSura(caso);
@@ -196,12 +273,15 @@ export function estadoFacilitadorDesdeCasoSura(caso = {}) {
 
 /** Tipo del bloque informeUnico: preliminar | final | unico | ''. */
 function tipoInformeCasoSura(caso = {}) {
-  const t = String(caso?.informeUnico?.tipoInforme || '')
+  const t = String(caso?.informeUnico?.tipoInforme || caso?.tipoInforme || '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
     .trim();
-  if (t === 'preliminar' || t === 'final' || t === 'unico') return t;
+  if (!t) return '';
+  if (t.includes('prelim')) return 'preliminar';
+  if (t.includes('unic')) return 'unico';
+  if (t.includes('final')) return 'final';
   return '';
 }
 
@@ -233,29 +313,133 @@ export function docsCompletaDesdeCasoSura(caso = {}) {
   };
 }
 
+/**
+ * Informes preliminar y final desde el caso SURA.
+ * Fuentes preliminar (en orden):
+ * 1) fchaInfoPrelm (trazabilidad)
+ * 2) informeUnico.fechaInformePreliminar (conservada al pasar a final)
+ * 3) informeUnico.fechaInforme si el tipo actual es preliminar
+ * 4) estado INFORME PRELIMINAR → fecha informe / último documento
+ * 5) archivo archivero INFORME_PRELIMINAR
+ * 6) si ya hay final/único o informe guardado → SI (flujo terremoto)
+ */
+export function informesDesdeCasoSura(caso = {}) {
+  const estado = normalizarEstadoSura(caso.estado);
+  const tipo = tipoInformeCasoSura(caso);
+  const tieneInformeObj =
+    Boolean(caso.tieneInforme) ||
+    (caso.informeUnico != null && typeof caso.informeUnico === 'object');
+  const fechaInformeUnico = parseFecha(caso.informeUnico?.fechaInforme);
+  const fechaArchivoPrelim =
+    fechaArchivoEtiquetaSura(caso, 'INFORME_PRELIMINAR') ||
+    fechaArchivoEtiquetaSura(caso, 'INFORME PRELIMINAR');
+
+  const fechaPrelim =
+    parseFecha(caso.fchaInfoPrelm) ||
+    parseFecha(caso.informeUnico?.fechaInformePreliminar) ||
+    (tipo === 'preliminar' ? fechaInformeUnico : null) ||
+    (estado === 'INFORME PRELIMINAR Y/O ACTUALIZACIÓN'
+      ? fechaInformeUnico || parseFecha(caso.fechaUltimoDocumento)
+      : null) ||
+    fechaArchivoPrelim ||
+    null;
+
+  const yaFinalOUnico =
+    tipo === 'final' ||
+    tipo === 'unico' ||
+    estado === 'INFORME ÚNICO O FINAL' ||
+    Boolean(parseFecha(caso.fchaInfoFnal));
+
+  const prelimSi =
+    Boolean(fechaPrelim) ||
+    tipo === 'preliminar' ||
+    estado === 'INFORME PRELIMINAR Y/O ACTUALIZACIÓN' ||
+    Boolean(fechaArchivoPrelim) ||
+    yaFinalOUnico ||
+    (tieneInformeObj && (Boolean(fechaInformeUnico) || Boolean(tipo)));
+
+  const fechaFinal =
+    parseFecha(caso.fchaInfoFnal) ||
+    parseFecha(caso.fechaEnvioAseguradora) ||
+    ((tipo === 'final' || tipo === 'unico') ? fechaInformeUnico : null) ||
+    (estado === 'INFORME ÚNICO O FINAL' ? fechaRadicacionInformeSura(caso) : null) ||
+    fechaArchivoEtiquetaSura(caso, 'INFORME_UNICO') ||
+    fechaArchivoEtiquetaSura(caso, 'INFORME_FINAL') ||
+    null;
+  const finalSi =
+    Boolean(fechaFinal) ||
+    tipo === 'final' ||
+    tipo === 'unico' ||
+    estado === 'INFORME ÚNICO O FINAL';
+
+  let fechaPrelimOut = fechaPrelim;
+  if (prelimSi && !fechaPrelimOut) {
+    fechaPrelimOut =
+      (tipo === 'preliminar' ? fechaInformeUnico : null) ||
+      parseFecha(caso.informeUnico?.fechaInformePreliminar) ||
+      parseFecha(caso.fchaInfoPrelm) ||
+      fechaArchivoPrelim ||
+      parseFecha(caso.fechaUltimoDocumento) ||
+      // Si solo hay final, usar fecha del informe como aproximación de preliminar
+      (yaFinalOUnico ? fechaInformeUnico || parseFecha(caso.fechaEnvioAseguradora) : null) ||
+      null;
+  }
+
+  return {
+    informePreliminarEnviado: prelimSi ? 'SI' : 'NO',
+    fechaInformePreliminar: prelimSi ? fechaPrelimOut : null,
+    informeEnviado: finalSi ? 'SI' : 'NO',
+    fechaInforme: finalSi
+      ? fechaFinal ||
+        parseFecha(caso.fechaEnvioAseguradora) ||
+        fechaInformeUnico ||
+        null
+      : null,
+  };
+}
+
+function fechaArchivoEtiquetaSura(caso = {}, etiqueta = '') {
+  const want = String(etiqueta || '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toUpperCase();
+  if (!want) return null;
+  const archivos = Array.isArray(caso.archivos) ? caso.archivos : [];
+  let best = null;
+  for (const a of archivos) {
+    const et = String(a?.etiqueta || '')
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '')
+      .trim()
+      .toUpperCase();
+    if (et !== want && !et.includes(want)) continue;
+    const f = parseFecha(a.fechaSubida || a.createdAt || a.updatedAt);
+    if (f && (!best || f > best)) best = f;
+  }
+  return best;
+}
+
 export function sugerenciaDesdeCasoSura(caso = {}) {
   const estado = normalizarEstadoSura(caso.estado);
   const estadoFac = estadoFacilitadorDesdeCasoSura(caso);
   const cerradoFac = estadoFac === 'Anulado' || estadoFac === 'Tramitado';
   const fechaInspeccion = parseFecha(caso.fechaInspeccion || caso.fchaInspccion || null);
   const visitaSi = Boolean(fechaInspeccion);
-  const informeSi = Boolean(caso.fechaEnvioAseguradora) || Boolean(caso.informeUnico);
-  const criterio = normalizarCriterioFacilitador(caso.estadoPagoPrimas);
+  const criterio = criterioConDefault(caso.estadoPagoPrimas);
   // 1.er contacto: SOLO Contacto inicial; si el caso no lo tiene, fecha de inspección.
   const fechaContactoInicial = parseFecha(caso.fchaContIni);
   const fechaPrimerContacto = fechaContactoInicial || fechaInspeccion || null;
   const docs = docsCompletaDesdeCasoSura(caso);
   const fechaRadicacion = fechaRadicacionInformeSura(caso);
+  const informes = informesDesdeCasoSura(caso);
   return {
     casoSuraId: caso._id || null,
     fechaAsignacion: caso.fchaAsgncion || caso.createdAt || null,
     fechaPrimerContacto,
     visitaRealizada: visitaSi ? 'SI' : 'NO',
     fechaVisita: visitaSi ? fechaInspeccion : null,
-    informeEnviado: informeSi ? 'SI' : 'NO',
-    fechaInforme: informeSi
-      ? caso.fechaEnvioAseguradora || caso.informeUnico?.fechaInforme || null
-      : null,
+    ...informes,
     documentacionCompleta: docs.documentacionCompleta,
     fechaDocumentacionCompleta: docs.fechaDocumentacionCompleta,
     casoCerrado: cerradoFac ? 'SI' : 'NO',
@@ -288,7 +472,7 @@ export async function alimentarFacilitadorDesdeCasoSura(caso, quien = '') {
     reclamacion,
     proveedor: base.proveedor || PROVEEDOR_FACILITADORES_SURA,
     informacion: '1',
-    criterioDetalle: sugerido.criterioDetalle || base.criterioDetalle || '',
+    criterioDetalle: criterioConDefault(sugerido.criterioDetalle || base.criterioDetalle),
     ultimoComentario:
       String(sugerido.ultimoComentario || '').trim() || base.ultimoComentario || '',
   });
@@ -341,6 +525,12 @@ export function fusionarDesdeCasoSura(destino = {}, caso = {}) {
   mezclado.documentacionCompleta = sugerido.documentacionCompleta || 'NO';
   mezclado.fechaDocumentacionCompleta = sugerido.fechaDocumentacionCompleta || null;
 
+  // Informes: preliminar y final desde el caso.
+  mezclado.informePreliminarEnviado = sugerido.informePreliminarEnviado || 'NO';
+  mezclado.fechaInformePreliminar = sugerido.fechaInformePreliminar || null;
+  mezclado.informeEnviado = sugerido.informeEnviado || 'NO';
+  mezclado.fechaInforme = sugerido.fechaInforme || null;
+
   // Estado del siniestro siempre desde gestión SURA.
   mezclado.estadoSiniestro = sugerido.estadoSiniestro || 'Abierto';
   mezclado.casoCerrado = sugerido.casoCerrado || 'NO';
@@ -350,9 +540,9 @@ export function fusionarDesdeCasoSura(destino = {}, caso = {}) {
     mezclado.ultimoComentario = sugerido.ultimoComentario;
   }
 
-  if (sugerido.criterioDetalle && !String(destino.criterioDetalle || '').trim()) {
-    mezclado.criterioDetalle = sugerido.criterioDetalle;
-  }
+  mezclado.criterioDetalle = criterioConDefault(
+    destino.criterioDetalle || sugerido.criterioDetalle
+  );
 
   mezclado.casoSuraId = sugerido.casoSuraId || destino.casoSuraId || null;
   if (sugerido.fechaAsignacion && !destino.fechaAsignacion) {
@@ -366,25 +556,22 @@ export function erroresValidacionPortal(fila = {}) {
   const errores = [];
   const rec = digitsReclamacion(fila.reclamacion);
   if (rec.length !== 13) errores.push('Reclamación debe tener 13 dígitos');
-  const visita = normalizarSinoNa(fila.visitaRealizada, { permitirNA: false });
-  const informe = normalizarSinoNa(fila.informeEnviado, { permitirNA: false });
-  const docs = normalizarSinoNa(fila.documentacionCompleta, { permitirNA: false });
-  const cerrado = normalizarSinoNa(fila.casoCerrado, { permitirNA: false });
-  if (!visita) errores.push('Visita realizada (SI / NO)');
+  const visita = sinoConDefault(fila.visitaRealizada, { permitirNA: false });
+  const informePrelim = sinoConDefault(fila.informePreliminarEnviado, { permitirNA: false });
+  const informe = sinoConDefault(fila.informeEnviado, { permitirNA: false });
+  const docs = sinoConDefault(fila.documentacionCompleta, { permitirNA: false });
+  const cerrado = sinoConDefault(fila.casoCerrado, { permitirNA: false });
   if (visita === 'SI' && !parseFecha(fila.fechaVisita)) errores.push('Fecha de visita');
-  if (!informe) errores.push('Informe enviado (SI / NO)');
-  if (informe === 'SI' && !parseFecha(fila.fechaInforme)) errores.push('Fecha de informe');
-  if (!docs) errores.push('Documentación completa (SI / NO)');
+  if (informePrelim === 'SI' && !parseFecha(fila.fechaInformePreliminar)) {
+    errores.push('Fecha de informe preliminar');
+  }
+  if (informe === 'SI' && !parseFecha(fila.fechaInforme)) errores.push('Fecha de informe final');
   if (docs === 'SI' && !parseFecha(fila.fechaDocumentacionCompleta)) {
     errores.push('Fecha de documentación completa');
   }
-  if (!cerrado) errores.push('Caso cerrado (SI / NO)');
   if (cerrado === 'SI' && !parseFecha(fila.fechaCierre)) errores.push('Fecha de cierre');
-  if (!normalizarCriterioFacilitador(fila.criterioDetalle)) {
-    errores.push('Criterio (Critico / Medio / Bajo)');
-  }
   if (!normalizarEstadoFacilitador(fila.estadoSiniestro)) {
-    errores.push('Estado (Abierto / Tramitado / Anulado / Desistido / Objetado)');
+    errores.push('Estado (Abierto / Tramitado / Anulado / Desistido / Objetado / Cancelado Sura)');
   }
   return errores;
 }

@@ -57,13 +57,18 @@ function tipoInformeSura(valor) {
   return '';
 }
 
-/** Único/final pasan el caso a INFORME ÚNICO O FINAL (equivalente a liquidado). */
+/** Único/final pasan el caso a INFORME ÚNICO O FINAL (equivalente a liquidado).
+ *  Preliminar pasa a INFORME PRELIMINAR Y/O ACTUALIZACIÓN (sin bajar de único/final). */
 export function estadoSuraPorTipoInforme(tipoInforme, estadoActual) {
   const tipo = tipoInformeSura(tipoInforme);
   const actual = normalizarEstadoSura(estadoActual);
   if (actual === 'ANULADO') return actual;
-  if (tipo !== 'unico' && tipo !== 'final') return actual;
-  return ESTADO_SURA_INFORME_UNICO;
+  if (tipo === 'unico' || tipo === 'final') return ESTADO_SURA_INFORME_UNICO;
+  if (tipo === 'preliminar') {
+    if (actual === ESTADO_SURA_INFORME_UNICO) return actual;
+    return 'INFORME PRELIMINAR Y/O ACTUALIZACIÓN';
+  }
+  return actual;
 }
 
 export function aplicarEstadoDesdeTipoInformeSura(payload = {}, base = {}) {

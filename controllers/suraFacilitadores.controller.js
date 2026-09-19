@@ -29,7 +29,7 @@ async function cargarCasosSuraParaFacilitadores() {
     siniestro: { $exists: true, $nin: [null, ''] },
   })
     .select(
-      'siniestro estado descripcionEstado estadoPagoPrimas fechaLlamada observacionLlamada fechaInspeccion fchaInspccion fchaContIni fchaInfoFnal fchaInfoPrelm fchaRepoActi fechaUltimoDocumento fechaEnvioAseguradora fechaLiquidado informeUnico fchaAsgncion createdAt updatedAt'
+      'siniestro estado descripcionEstado estadoPagoPrimas fechaLlamada observacionLlamada fechaInspeccion fchaInspccion fchaContIni fchaInfoFnal fchaInfoPrelm fchaRepoActi fechaUltimoDocumento fechaEnvioAseguradora fechaLiquidado informeUnico archivos.etiqueta archivos.fechaSubida archivos.createdAt fchaAsgncion createdAt updatedAt'
     )
     .lean();
 }
@@ -122,8 +122,9 @@ export async function listarFacilitadoresSura(req, res) {
       filas = await SuraFacilitadorCaso.find({}).sort({ reclamacion: 1 }).lean();
     }
 
-    // Auto: alinear visita y DOCS si el caso SURA ya avanzó y Facilitadores quedó atrás.
-    const [inspSura, visitasFac, docsEsperados, docsFac] = await Promise.all([
+    // Auto: alinear visita, informes y DOCS si el caso SURA ya avanzó y Facilitadores quedó atrás.
+    const [inspSura, visitasFac, docsEsperados, docsFac, prelimEsperados, prelimFacOk] =
+      await Promise.all([
       SegurosSuraCaso.countDocuments({
         $or: [
           { fechaInspeccion: { $nin: [null, ''] } },
@@ -139,11 +140,32 @@ export async function listarFacilitadoresSura(req, res) {
         ],
       }),
       SuraFacilitadorCaso.countDocuments({ documentacionCompleta: { $in: ['SI', 'si', 'Si'] } }),
+      SegurosSuraCaso.countDocuments({
+        $or: [
+          { fchaInfoPrelm: { $nin: [null, ''] } },
+          { estado: 'INFORME PRELIMINAR Y/O ACTUALIZACIÓN' },
+          { estado: 'INFORME ÚNICO O FINAL' },
+          { tieneInforme: true },
+          { informeUnico: { $type: 'object' } },
+          {
+            'informeUnico.tipoInforme': {
+              $exists: true,
+              $nin: [null, ''],
+            },
+          },
+          { 'informeUnico.fechaInformePreliminar': { $nin: [null, ''] } },
+        ],
+      }),
+      SuraFacilitadorCaso.countDocuments({
+        informePreliminarEnviado: { $in: ['SI', 'si', 'Si'] },
+        fechaInformePreliminar: { $nin: [null, ''] },
+      }),
     ]);
     const necesitaFill =
       forzarSync ||
       inspSura > visitasFac ||
       docsEsperados > docsFac ||
+      prelimEsperados > prelimFacOk ||
       String(req.query.fill || '') === '1';
     if (necesitaFill) {
       const syncFill = await sincronizarDesdeArnald({ quien, fillVacios: true });

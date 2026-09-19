@@ -248,3 +248,27 @@ export function resolverInformeUnicoParaUpdate(incoming, actual) {
   if (scoreOld > 0 && scoreNew === 0) return actual;
   return incoming;
 }
+
+export function quiereIncluirNsr(query = {}) {
+  const v = String(query?.nsr ?? '').toLowerCase();
+  return v === '1' || v === 'true';
+}
+
+/**
+ * El checklist NSR-10 infla el GET/PUT y congela el informe preliminar.
+ * Se omite salvo que el cliente pida nsr=1 o el PUT traiga el blob.
+ */
+export function recortarNsrDelDocumento(doc, { incluirNsr = false } = {}) {
+  if (!doc || incluirNsr) return doc;
+  const liq = doc.liquidador;
+  if (!liq || typeof liq !== 'object' || Array.isArray(liq)) return doc;
+  if (!liq.evaluacionSismicaNSR10) return doc;
+  const { evaluacionSismicaNSR10: _omitido, ...resto } = liq;
+  return {
+    ...doc,
+    liquidador: {
+      ...resto,
+      nsrOmitido: true,
+    },
+  };
+}

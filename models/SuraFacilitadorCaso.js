@@ -15,13 +15,19 @@ const SuraFacilitadorCasoSchema = new mongoose.Schema(
     fechaVisita: { type: Date, default: null },
     criterioDetalle: { type: String, default: '', trim: true },
     ultimoComentario: { type: String, default: '', trim: true },
-    informeEnviado: { type: String, default: '', trim: true },
+    /** Informe preliminar (SI/NO) + fecha */
+    informePreliminarEnviado: { type: String, default: 'NO', trim: true },
+    fechaInformePreliminar: { type: Date, default: null },
+    /** Informe final / único (columna portal INFORME_ENVIADO) */
+    informeEnviado: { type: String, default: 'NO', trim: true },
     fechaInforme: { type: Date, default: null },
     documentacionCompleta: { type: String, default: '', trim: true },
     fechaDocumentacionCompleta: { type: Date, default: null },
     casoCerrado: { type: String, default: 'NO', trim: true },
     fechaCierre: { type: Date, default: null },
     estadoSiniestro: { type: String, default: '', trim: true },
+    /** URBANA | RURAL — columna plantilla SURA */
+    tipoVivienda: { type: String, default: 'URBANA', trim: true },
     casoSuraId: { type: mongoose.Schema.Types.ObjectId, default: null },
     actualizadoPor: { type: String, default: '', trim: true },
   },

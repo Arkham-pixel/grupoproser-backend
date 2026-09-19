@@ -7,6 +7,7 @@ export const ESTADOS_EQUIDAD_CAT = [
   'OBJECIÓN',
   'AUTORIZACIÓN ANALISTA',
   'CASO PARA PAGO',
+  'FINALIZADO',
 ];
 
 export const ESTADO_EQUIDAD_CAT_DEFAULT = 'CASO NUEVO';
@@ -19,6 +20,7 @@ export const FECHA_ACCION_POR_ESTADO_EQUIDAD_CAT = {
   OBJECIÓN: 'fechaObjecion',
   'AUTORIZACIÓN ANALISTA': 'fechaAutorizacionAnalista',
   'CASO PARA PAGO': 'fechaCasoParaPago',
+  FINALIZADO: 'fechaFinalizado',
 };
 
 const LEGACY = {

@@ -3,7 +3,12 @@ import InspectorCatastrofico from '../models/InspectorCatastrofico.js';
 import AjustadorCatastrofico from '../models/AjustadorCatastrofico.js';
 import { resolverAsignacionCatastrofico } from '../utils/resolverAsignacionCatastrofico.js';
 import { catalogoPerteneceAModulo } from '../utils/filtrarCatalogoPorModulo.js';
-import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
+import {
+  recortarNsrDelDocumento,
+  resolverInformeUnicoParaUpdate,
+  resolverLiquidadorParaUpdate,
+  quiereIncluirNsr,
+} from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoPrevisora, homologarEstadoPrevisora } from '../utils/estadosPrevisora.js';
 import { crearControladoresArchivosListado } from '../utils/archivosCasoListado.js';
 import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
@@ -195,12 +200,6 @@ const completarIdentificacion = (payload = {}) => {
   return payload;
 };
 
-const pickObjeto = (incoming, existing) => {
-  if (incoming === undefined) return existing ?? null;
-  if (incoming && typeof incoming === 'object' && !Array.isArray(incoming)) return incoming;
-  return existing ?? null;
-};
-
 const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
   const pick = pisar ? toStr : completarCampo;
   const pickFecha = pisar ? parseFecha : completarFecha;
@@ -300,7 +299,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       { pisar }
     ),
     liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
-    informeUnico: pickObjeto(data.informeUnico, base.informeUnico ?? null),
+    informeUnico: resolverInformeUnicoParaUpdate(data.informeUnico, base.informeUnico),
   });
   return aplicarFechaAccionEstadoPrevisora(
     armarContactoAsegurado(armarContactoIntermediario(payload)),
@@ -454,7 +453,10 @@ export const obtenerCasoListadoPrevisora = async (req, res) => {
     if (!documento) {
       return res.status(404).json({ success: false, error: 'Caso del listado no encontrado' });
     }
-    res.json({ success: true, data: documento });
+    res.json({
+      success: true,
+      data: recortarNsrDelDocumento(documento, { incluirNsr: quiereIncluirNsr(req.query) }),
+    });
   } catch (error) {
     console.error('❌ Error al obtener listado Previsora:', error);
     res.status(500).json({
@@ -490,7 +492,12 @@ export const actualizarCasoListadoPrevisora = async (req, res) => {
       { $set: payload },
       { new: true, runValidators: false }
     );
-    res.json({ success: true, data: actualizado });
+    const data = recortarNsrDelDocumento(actualizado?.toObject?.() || actualizado, {
+      incluirNsr:
+        quiereIncluirNsr(req.query) ||
+        Boolean(req.body?.liquidador?.evaluacionSismicaNSR10),
+    });
+    res.json({ success: true, data });
   } catch (error) {
     console.error('❌ Error al actualizar listado Previsora:', error);
     res.status(500).json({
