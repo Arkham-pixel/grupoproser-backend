@@ -112,6 +112,19 @@ const SegurosSuraCasoSchema = new mongoose.Schema(
     fotosAgil: { type: mongoose.Schema.Types.Mixed, default: null },
     archivos: { type: [ArchivoSuraSchema], default: [] },
 
+    /** Hitos de fechas (trazabilidad SURA / Facilitadores) */
+    fchaContIni: Date,
+    fchaCoordInspeccion: Date,
+    fchaProgInspeccion: Date,
+    fchaSoliDocu: Date,
+    fchaInfoPrelm: Date,
+    fchaRepoActi: Date,
+    fchaInfoFnal: Date,
+    fchaPresentacionCifras: Date,
+    fchaAceptacionCifrasAseguradora: Date,
+    fchaReconsideracion: Date,
+    fchaEnvioFiniquito: Date,
+
     /** Campos tipo Complex (formulario agregar datos) */
     nmroAjste: String,
     codWorkflow: String,

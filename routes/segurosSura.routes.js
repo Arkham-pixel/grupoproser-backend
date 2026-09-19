@@ -46,6 +46,7 @@ import { STORAGE_CATEGORIES, getPublicPathForSingle } from '../services/fileStor
 import { verificarToken } from '../middleware/auth.js';
 import { poblarUsuarioOpcional } from '../middleware/usuarioOpcional.js';
 import { verificarAdminSoporteOLiderSura } from '../middleware/verificarAdminSoporte.js';
+import { verificarAccesoFacilitadoresSura } from '../config/suraFacilitadoresPermitido.js';
 
 const router = express.Router();
 
@@ -68,11 +69,36 @@ const excelUpload = multer({
 
 router.get('/', poblarUsuarioOpcional, listarCasosSura);
 
-router.get('/facilitadores', poblarUsuarioOpcional, listarFacilitadoresSura);
-router.get('/facilitadores/validar', poblarUsuarioOpcional, validarFacilitadoresSura);
-router.post('/facilitadores/importar', verificarToken, importarFacilitadoresSura);
-router.post('/facilitadores/sugerir-arnald', verificarToken, sugerirFacilitadoresDesdeArnald);
-router.patch('/facilitadores/:id', verificarToken, actualizarFacilitadorSura);
+router.get(
+  '/facilitadores',
+  verificarToken,
+  verificarAccesoFacilitadoresSura,
+  listarFacilitadoresSura
+);
+router.get(
+  '/facilitadores/validar',
+  verificarToken,
+  verificarAccesoFacilitadoresSura,
+  validarFacilitadoresSura
+);
+router.post(
+  '/facilitadores/importar',
+  verificarToken,
+  verificarAccesoFacilitadoresSura,
+  importarFacilitadoresSura
+);
+router.post(
+  '/facilitadores/sugerir-arnald',
+  verificarToken,
+  verificarAccesoFacilitadoresSura,
+  sugerirFacilitadoresDesdeArnald
+);
+router.patch(
+  '/facilitadores/:id',
+  verificarToken,
+  verificarAccesoFacilitadoresSura,
+  actualizarFacilitadorSura
+);
 
 const persistSuraUpload = attachPersistedFileMiddleware({
   category: STORAGE_CATEGORIES.SEGUROS_SURA,

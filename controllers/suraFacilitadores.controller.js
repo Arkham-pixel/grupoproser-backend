@@ -88,9 +88,23 @@ async function sincronizarDesdeArnald({ quien = '', fillVacios = false } = {}) {
   if (fillVacios) {
     const filas = await SuraFacilitadorCaso.find({}).lean();
     const updates = [];
+    const casoBackfills = [];
     for (const fila of filas) {
       const caso = porCaso.get(digitsReclamacion(fila.reclamacion));
       if (!caso) continue;
+
+      // Rellenar fchaInfoPrelm en el caso si el informe ya existe pero la trazabilidad quedó vacía.
+      const patchCaso = backfillFechasHitoCasoSura(caso);
+      if (patchCaso) {
+        casoBackfills.push({
+          updateOne: {
+            filter: { _id: caso._id },
+            update: { $set: patchCaso },
+          },
+        });
+        Object.assign(caso, patchCaso);
+      }
+
       const mezclado = fusionarDesdeCasoSura(fila, caso);
       updates.push({
         updateOne: {
@@ -100,12 +114,64 @@ async function sincronizarDesdeArnald({ quien = '', fillVacios = false } = {}) {
       });
       filled += 1;
     }
+    if (casoBackfills.length) {
+      await SegurosSuraCaso.bulkWrite(casoBackfills, { ordered: false });
+    }
     if (updates.length) {
       await SuraFacilitadorCaso.bulkWrite(updates, { ordered: false });
     }
   }
 
   return { created, filled, casos: porCaso.size };
+}
+
+/** Si hay informe guardado pero fchaInfoPrelm/fchaInfoFnal vacías, las completa. */
+function backfillFechasHitoCasoSura(caso = {}) {
+  const informe = caso.informeUnico;
+  if (!informe || typeof informe !== 'object') return null;
+  const tipo = String(informe.tipoInforme || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim();
+  const patch = {};
+  const fechaInforme = informe.fechaInforme || null;
+  const fechaPrelim = informe.fechaInformePreliminar || null;
+
+  if (!caso.fchaInfoPrelm) {
+    if (tipo.includes('prelim') && fechaInforme) patch.fchaInfoPrelm = new Date(fechaInforme);
+    else if (fechaPrelim) patch.fchaInfoPrelm = new Date(fechaPrelim);
+    else if ((tipo.includes('final') || tipo.includes('unic')) && fechaInforme) {
+      // Aproximación: ya hubo informe; si no hay fecha prelim, usar la del informe.
+      patch.fchaInfoPrelm = new Date(fechaInforme);
+    }
+  }
+  if (
+    !caso.fchaInfoFnal &&
+    (tipo.includes('final') || tipo.includes('unic')) &&
+    fechaInforme
+  ) {
+    patch.fchaInfoFnal = new Date(fechaInforme);
+  }
+
+  // También desde archivero
+  if (!patch.fchaInfoPrelm && !caso.fchaInfoPrelm && Array.isArray(caso.archivos)) {
+    for (const a of caso.archivos) {
+      const et = String(a?.etiqueta || '')
+        .normalize('NFD')
+        .replace(/\p{M}/gu, '')
+        .trim()
+        .toUpperCase();
+      if (!et.includes('PRELIMINAR')) continue;
+      const f = a.fechaSubida || a.createdAt;
+      if (f) {
+        patch.fchaInfoPrelm = new Date(f);
+        break;
+      }
+    }
+  }
+
+  return Object.keys(patch).length ? patch : null;
 }
 
 export async function listarFacilitadoresSura(req, res) {

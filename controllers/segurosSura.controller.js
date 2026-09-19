@@ -55,6 +55,15 @@ const SURA_RAZON_SOCIAL = 'SEGUROS GENERALES SURAMERICANA S.A.';
 /** Ligia García y Bernardo Sojo: pueden editar a mano el Último comentario. */
 const SURA_LOGINS_ULTIMO_COMENTARIO = new Set(['66901947', '72134505']);
 
+/** Oscar, Bernardo y Ligia: pueden poner Anulado / Desistido / Objetado. */
+const SURA_LOGINS_BARRA_ESTADOS = new Set(['1065012991', '72134505', '66901947']);
+const ESTADOS_SURA_RESTRINGIDOS = new Set([
+  'ANULADO',
+  'DESISTIDO',
+  'OBJETADO',
+  'CANCELADO SURA',
+]);
+
 function digitosLogin(valor) {
   return String(valor ?? '').replace(/\D/g, '');
 }
@@ -64,6 +73,24 @@ function puedeEditarUltimoComentarioSura(identidad = {}) {
     .map(digitosLogin)
     .filter((k) => k.length >= 5);
   return claves.some((k) => SURA_LOGINS_ULTIMO_COMENTARIO.has(k));
+}
+
+function puedeUsarEstadosRestringidosSura(identidad = {}) {
+  const claves = [identidad.login, identidad.cedula, identidad.documento]
+    .map(digitosLogin)
+    .filter((k) => k.length >= 5);
+  return claves.some((k) => SURA_LOGINS_BARRA_ESTADOS.has(k));
+}
+
+function aplicarRestriccionEstadosSura(payload, base = {}, identidad = {}) {
+  if (puedeUsarEstadosRestringidosSura(identidad)) return payload;
+  const estadoNuevo = normalizarEstadoSura(payload.estado || payload.descripcionEstado);
+  const estadoAntes = normalizarEstadoSura(base.estado || base.descripcionEstado);
+  if (ESTADOS_SURA_RESTRINGIDOS.has(estadoNuevo) && estadoNuevo !== estadoAntes) {
+    payload.estado = estadoAntes || base.estado;
+    payload.descripcionEstado = base.descripcionEstado || estadoAntes || '';
+  }
+  return payload;
 }
 
 function aplicarRestriccionUltimoComentario(payload, base = {}, identidad = {}) {
@@ -520,6 +547,7 @@ export const crearCasoSura = async (req, res) => {
     payload.consecutivo = await generarConsecutivoSuraLocal();
     const identidadAltaPre = await obtenerIdentidadUsuarioReq(req).catch(() => ({}));
     aplicarRestriccionUltimoComentario(payload, {}, identidadAltaPre);
+    aplicarRestriccionEstadosSura(payload, {}, identidadAltaPre);
 
     const faltantes = validarRequeridos(payload);
     if (faltantes.length > 0) {
@@ -734,6 +762,7 @@ export const actualizarCasoSura = async (req, res) => {
     });
     const payload = buildSuraPayload(bodyFiltrado, base);
     aplicarRestriccionUltimoComentario(payload, base, identidad);
+    aplicarRestriccionEstadosSura(payload, base, identidad);
     if (!payload.consecutivo) {
       payload.consecutivo = base.consecutivo || (await generarConsecutivoSura());
     }
@@ -1011,6 +1040,25 @@ export const subirArchivoSura = async (req, res) => {
     caso.archivos = caso.archivos || [];
     caso.archivos.push(archivo);
     caso.fechaUltimoDocumento = new Date();
+
+    const etNorm = String(etiqueta)
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '')
+      .trim()
+      .toUpperCase();
+    if (etNorm.includes('PRELIMINAR') && !caso.fchaInfoPrelm) {
+      caso.fchaInfoPrelm = archivo.fechaSubida || new Date();
+    }
+    if (
+      (etNorm.includes('INFORME_FINAL') ||
+        etNorm.includes('INFORME FINAL') ||
+        etNorm.includes('INFORME_UNICO') ||
+        etNorm.includes('INFORME UNICO')) &&
+      !caso.fchaInfoFnal
+    ) {
+      caso.fchaInfoFnal = archivo.fechaSubida || new Date();
+    }
+
     await caso.save();
 
     const creado = caso.archivos[caso.archivos.length - 1];
