@@ -61,6 +61,15 @@ export function isLocalOrigin(url) {
   return /localhost|127\.0\.0\.1/i.test(url || '');
 }
 
+export function isPrivateHostname(hostname) {
+  const h = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === 'localhost' || h === '127.0.0.1' || h === '::1') return true;
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  return false;
+}
+
 /** IPv4 de esta PC en la LAN, para que el celular abra el portal sin publicar Arnald. */
 export function localLanIPv4() {
   const ranked = [];
@@ -101,11 +110,13 @@ export function resolveVideoperitajePublicUrl() {
  */
 export function resolveLivekitClientUrl(wsUrl) {
   const forced = envUrl('LIVEKIT_PUBLIC_URL');
-  if (forced) return forced;
-  const raw = String(wsUrl || envUrl('LIVEKIT_URL') || '').trim();
-  if (!raw) return raw;
+  const raw = String(forced || wsUrl || envUrl('LIVEKIT_URL') || '').trim();
+  if (!raw) return '';
   try {
     const u = new URL(raw);
+    if (isProduction() && isPrivateHostname(u.hostname)) {
+      return '';
+    }
     if (!isProduction() && (u.hostname === 'localhost' || u.hostname === '127.0.0.1')) {
       const lan = localLanIPv4();
       if (lan) u.hostname = lan;

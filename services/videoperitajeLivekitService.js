@@ -79,7 +79,15 @@ export async function crearTokenLivekit({
     canPublishData: true,
   });
   const jwt = await at.toJwt();
-  return { token: jwt, url: resolveLivekitClientUrl(cfg.url), room };
+  const url = resolveLivekitClientUrl(cfg.url);
+  if (!url) {
+    const error = new Error(
+      'LiveKit no tiene URL pública. En Coolify use LIVEKIT_PUBLIC_URL=wss://… (no localhost).'
+    );
+    error.code = 'LIVEKIT_NOT_CONFIGURED';
+    throw error;
+  }
+  return { token: jwt, url, room };
 }
 
 /** Cierra la sala para que el cliente también salga de la llamada. */

@@ -471,7 +471,11 @@
           showAlert(camErr.message || 'Permita cámara y micrófono para continuar.');
         }
         const lk = joined && joined.livekit;
-        if (!lk || !lk.token || !lk.url) {
+        let lkHost = '';
+        try { lkHost = lk && lk.url ? new URL(lk.url).hostname : ''; } catch (e) { lkHost = ''; }
+        const pagePublica = /\.grupoproser\.com\.co$/i.test(location.hostname);
+        const lkPrivado = /^(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.)/i.test(lkHost);
+        if (!lk || !lk.token || !lk.url || (pagePublica && lkPrivado)) {
           if (status) status.textContent = 'Cámara encendida. Esperando videollamada…';
           return;
         }
