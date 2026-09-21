@@ -232,6 +232,17 @@ export async function getSignedDownloadUrl(key, expiresIn) {
   });
 }
 
+/** PUT firmado para que el navegador suba el binario directo a S3. */
+export async function getSignedUploadUrl(key, contentType, expiresIn = 900) {
+  const client = getS3Client();
+  const command = new PutObjectCommand({
+    Bucket: getBucketName(),
+    Key: key,
+    ContentType: contentType || 'application/octet-stream',
+  });
+  return getSignedUrl(client, command, { expiresIn });
+}
+
 export function getPublicObjectUrl(key) {
   const base = storageConfig.publicBaseUrl();
   if (!base) return null;

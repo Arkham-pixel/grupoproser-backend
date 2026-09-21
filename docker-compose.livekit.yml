@@ -1,0 +1,19 @@
+# LiveKit local para el módulo de videoperitaje de Grupo Proser.
+# Uso: docker compose -f docker-compose.livekit.yml up
+# Luego en .env:
+#   LIVEKIT_URL=ws://localhost:7880
+#   LIVEKIT_API_KEY=devkey
+#   LIVEKIT_API_SECRET=secret
+#
+# Coturn (TURN) se deja comentado: en localhost el modo --dev alcanza.
+# En producción, publique livekit-server detrás de TLS y un TURN con IP pública.
+
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --dev --bind 0.0.0.0
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    restart: unless-stopped

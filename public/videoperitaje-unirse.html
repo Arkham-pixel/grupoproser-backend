@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#c8102e" />
+    <title>Videoperitaje Grupo Proser</title>
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.15.7/dist/livekit-client.umd.js"></script>
+    <style>
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        font-family: Arial, Helvetica, sans-serif;
+        background: #f4f4f5;
+        color: #111827;
+      }
+      body.in-call { background: #000; }
+      .wrap { max-width: 420px; margin: 0 auto; padding: 20px 16px 40px; }
+      body.in-call .wrap {
+        position: relative; max-width: none; margin: 0; padding: 0; width: 100%; height: 100dvh; min-height: 100vh;
+      }
+      .brand { text-align: center; }
+      .brand p { margin: 0; font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: #c8102e; font-weight: 700; }
+      h1 { margin: 4px 0 12px; font-size: 18px; text-align: center; }
+      body.in-call .brand { display: none; }
+      body.in-call .card { background: transparent; border-radius: 0; padding: 0; box-shadow: none; height: 100%; }
+      .card { background: #fff; border-radius: 16px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+      .btn {
+        display: flex; width: 100%; align-items: center; justify-content: center;
+        min-height: 48px; border: 0; border-radius: 12px; background: #c8102e; color: #fff;
+        font-size: 16px; font-weight: 700; margin-top: 12px;
+      }
+      .btn:disabled { opacity: .5; }
+      .btn.ghost { background: #fff; color: #111; border: 1px solid #d1d5db; }
+      video.main { width: 100%; aspect-ratio: 3/4; object-fit: cover; background: #000; display: block; border-radius: 0; }
+      body.in-call video.main {
+        width: 100%; height: 100%; min-height: 100dvh; aspect-ratio: auto;
+        object-fit: cover; position: absolute; left: 0; top: 0; z-index: 0;
+      }
+      .stage { position: relative; overflow: hidden; border-radius: 16px; background: #000; }
+      body.in-call .stage {
+        position: relative; overflow: visible; border-radius: 0;
+        width: 100%; height: 100dvh; min-height: 100vh;
+      }
+      .pip {
+        position: absolute; top: 12px; right: 12px; width: 32%; aspect-ratio: 3/4;
+        object-fit: cover; border-radius: 12px; border: 2px solid #fff; background: #000;
+        box-shadow: 0 4px 16px rgba(0,0,0,.35); z-index: 2;
+      }
+      body.in-call .pip {
+        top: 36px; right: 12px; width: 26%; max-width: 128px; z-index: 4;
+        border-width: 1px;
+      }
+      .tiny-brand {
+        display: none;
+      }
+      body.in-call .tiny-brand {
+        display: block; position: absolute; left: 12px; top: 10px; z-index: 5;
+        margin: 0; font-size: 9px; letter-spacing: .16em; text-transform: uppercase;
+        color: rgba(255,255,255,.85); font-weight: 700; text-shadow: 0 1px 2px rgba(0,0,0,.5);
+      }
+      .flip { display: none; }
+      body.in-call .flip {
+        display: flex; position: absolute; left: 12px; top: 28px; transform: none;
+        z-index: 6; width: 44px; height: 44px; border: 0; border-radius: 50%;
+        background: rgba(255,255,255,.92); color: #111; align-items: center; justify-content: center;
+        box-shadow: 0 6px 18px rgba(0,0,0,.35);
+      }
+      .cam-label { display: none; }
+      body.in-call .cam-label {
+        display: block; position: absolute; left: 64px; top: 40px; right: auto; bottom: auto; z-index: 6;
+        margin: 0; text-align: left; font-size: 10px; color: rgba(255,255,255,.8);
+        text-shadow: 0 1px 2px rgba(0,0,0,.6);
+      }
+      .msg { padding: 10px 12px; border-radius: 12px; font-size: 14px; margin-bottom: 12px; }
+      body.in-call .msg { position: fixed; left: 12px; right: 12px; top: 32px; z-index: 7; margin: 0; }
+      .err { background: #fef2f2; color: #b91c1c; }
+      .ok { background: #ecfdf5; color: #047857; }
+      .hint { color: #6b7280; font-size: 13px; line-height: 1.45; }
+      body.in-call p.hint { display: none; }
+      body.thanks { background: #0b1220; }
+      body.thanks .wrap { max-width: none; margin: 0; padding: 0; height: 100%; }
+      body.thanks .brand, body.thanks .tiny-brand { display: none; }
+      .thanks-screen {
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 32px 24px 48px;
+        text-align: center;
+        background: radial-gradient(ellipse at 50% 28%, #1a2744 0%, #0b1220 68%);
+        color: #fff;
+      }
+      .thanks-rings {
+        position: relative;
+        width: 132px;
+        height: 132px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .thanks-rings::before,
+      .thanks-rings::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border: 2px solid rgba(200, 16, 46, 0.45);
+        border-radius: 50%;
+        animation: thanks-ring 2.2s ease-out infinite;
+      }
+      .thanks-rings::after { animation-delay: 0.75s; }
+      .thanks-icon {
+        width: 86px;
+        height: 86px;
+        object-fit: contain;
+        animation: thanks-pop 0.75s cubic-bezier(.2, 1.35, .35, 1) both, thanks-glow 2.4s ease-in-out 0.8s infinite;
+      }
+      .thanks-logo {
+        width: min(250px, 74vw);
+        margin: 18px 0 4px;
+        animation: thanks-fadeup 0.7s ease 0.22s both;
+      }
+      .thanks-title {
+        font-size: 34px;
+        margin: 10px 0 8px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        animation: thanks-fadeup 0.7s ease 0.38s both;
+      }
+      .thanks-text {
+        max-width: 320px;
+        margin: 0;
+        color: #cbd5e1;
+        font-size: 15px;
+        line-height: 1.5;
+        animation: thanks-fadeup 0.7s ease 0.52s both;
+      }
+      @keyframes thanks-pop {
+        0% { transform: scale(0.35); opacity: 0; }
+        65% { transform: scale(1.1); opacity: 1; }
+        100% { transform: scale(1); opacity: 1; }
+      }
+      @keyframes thanks-ring {
+        0% { transform: scale(0.55); opacity: 0.5; }
+        100% { transform: scale(1.85); opacity: 0; }
+      }
+      @keyframes thanks-fadeup {
+        from { opacity: 0; transform: translateY(18px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes thanks-glow {
+        0%, 100% { filter: drop-shadow(0 0 8px rgba(200,16,46,.3)); }
+        50% { filter: drop-shadow(0 0 22px rgba(200,16,46,.75)); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="brand">
+        <p>Grupo Proser</p>
+        <h1>Videoperitaje</h1>
+      </header>
+      <p class="tiny-brand">Grupo Proser · Videoperitaje</p>
+      <div id="alert" class="hidden"></div>
+      <div id="panel" class="card">Cargando…</div>
+    </div>
+    <script>
+      const token = decodeURIComponent((location.pathname.split('/videoperitaje/unirse/')[1] || '').split('/')[0] || '');
+      function apiOrigin() {
+        const host = location.hostname;
+        if (host === 'arnald.grupoproser.com.co' || host === 'aplicacion.grupoproser.com.co') {
+          return 'https://arnaldbackend.grupoproser.com.co';
+        }
+        return '';
+      }
+      const api = `${apiOrigin()}/api/videoperitaje/public/${encodeURIComponent(token)}`;
+      const panel = document.getElementById('panel');
+      const alertBox = document.getElementById('alert');
+      let sesion = null;
+      let stream = null;
+      let liveRoom = null;
+      let watchTimer = null;
+      let facingMode = 'user';
+      let callEnded = false;
+
+      function sesionCerrada(s) {
+        return s && (s.estado === 'finalizada' || s.estado === 'cancelada');
+      }
+      function stopWatch() {
+        if (watchTimer) {
+          clearInterval(watchTimer);
+          watchTimer = null;
+        }
+      }
+      function soltarCamara(room) {
+        try {
+          const p = room && room.localParticipant;
+          if (!p) return;
+          const stopPub = (pub) => {
+            try { if (pub.track) pub.track.stop(); } catch (_) {}
+            try {
+              if (pub.track && pub.track.mediaStreamTrack) pub.track.mediaStreamTrack.stop();
+            } catch (_) {}
+          };
+          if (p.videoTrackPublications) p.videoTrackPublications.forEach(stopPub);
+          if (p.audioTrackPublications) p.audioTrackPublications.forEach(stopPub);
+          try { p.setCameraEnabled(false); } catch (_) {}
+          try { p.setMicrophoneEnabled(false); } catch (_) {}
+        } catch (_) {}
+      }
+      function hangupLive() {
+        document.body.classList.remove('in-call');
+        stopWatch();
+        if (liveRoom) {
+          const room = liveRoom;
+          liveRoom = null;
+          soltarCamara(room);
+          try { room.disconnect(); } catch (_) {}
+        }
+        if (stream) {
+          stream.getTracks().forEach((t) => t.stop());
+          stream = null;
+        }
+        ['local', 'remote'].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el && el.srcObject) {
+            try { el.srcObject.getTracks().forEach((t) => t.stop()); } catch (_) {}
+            el.srcObject = null;
+          }
+        });
+      }
+      function showEnded() {
+        if (callEnded) return;
+        callEnded = true;
+        hangupLive();
+        document.body.classList.remove('in-call');
+        document.body.classList.add('thanks');
+        const cancelada = sesion && sesion.estado === 'cancelada';
+        const wrap = document.querySelector('.wrap');
+        wrap.innerHTML = `
+          <div class="thanks-screen">
+            <div class="thanks-rings">
+              <img class="thanks-icon" src="/arnald-icon.png" alt="Arnald" />
+            </div>
+            <img class="thanks-logo" src="/ArnaldDataFlow.png" alt="Arnald DataFlow" />
+            <h2 class="thanks-title">${cancelada ? 'Sesión cerrada' : '¡Gracias!'}</h2>
+            <p class="thanks-text">${
+              cancelada
+                ? 'El ajustador cerró esta videollamada. Ya puede salir.'
+                : 'Gracias por atender el videoperitaje con Arnald DataFlow. Las evidencias quedaron en el expediente. Ya puede cerrar esta ventana.'
+            }</p>
+          </div>
+        `;
+      }
+      function startWatch() {
+        stopWatch();
+        watchTimer = setInterval(async () => {
+          try {
+            await load();
+            if (sesionCerrada(sesion)) showEnded();
+          } catch (_) {}
+        }, 2500);
+      }
+
+      function showAlert(text, ok) {
+        alertBox.className = 'msg ' + (ok ? 'ok' : 'err');
+        alertBox.textContent = text;
+      }
+      function html(s) {
+        return String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+      }
+      async function load() {
+        const r = await fetch(api);
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Enlace inválido');
+        sesion = j.data;
+        return sesion;
+      }
+      async function geo() {
+        return new Promise((resolve) => {
+          if (!navigator.geolocation) return resolve(null);
+          navigator.geolocation.getCurrentPosition(
+            (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
+            () => resolve(null),
+            { enableHighAccuracy: true, timeout: 8000 }
+          );
+        });
+      }
+      async function join() {
+        const r = await fetch(`${api}/join`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ geo: await geo() }),
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'No se pudo entrar');
+        sesion = j.data;
+        return j;
+      }
+      async function uploadBlob(blob, extra = {}) {
+        const esVideo = extra.tipo === 'video' || String(blob.type || '').startsWith('video/');
+        const name = extra.filename || (esVideo ? `grabacion-${Date.now()}.webm` : `foto-${Date.now()}.jpg`);
+        const contentType = blob.type || (esVideo ? 'video/webm' : 'image/jpeg');
+        try {
+          const pre = await fetch(`${api}/uploads/presign`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              filename: name,
+              contentType,
+              tipo: esVideo ? 'video' : 'foto',
+              pasoId: extra.pasoId,
+              descripcion: extra.descripcion,
+              tamaño: blob.size,
+            }),
+          });
+          const pj = await pre.json();
+          if (pre.ok && pj.modo === 's3' && pj.uploadUrl) {
+            const put = await fetch(pj.uploadUrl, {
+              method: 'PUT',
+              headers: pj.headers || { 'Content-Type': contentType },
+              body: blob,
+            });
+            if (put.ok) {
+              const done = await fetch(`${api}/uploads/completar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  key: pj.key,
+                  filename: name,
+                  contentType,
+                  tamaño: blob.size,
+                  tipo: esVideo ? 'video' : 'foto',
+                  pasoId: extra.pasoId,
+                  descripcion: extra.descripcion,
+                }),
+              });
+              const dj = await done.json();
+              if (!done.ok) throw new Error(dj.error || 'No se pudo registrar');
+              return dj;
+            }
+          }
+        } catch (_) { /* fallback proxy */ }
+        const fd = new FormData();
+        fd.append('archivo', blob, name);
+        Object.entries(extra).forEach(([k, v]) => { if (v) fd.append(k, v); });
+        if (esVideo) fd.append('tipo', 'video');
+        const r = await fetch(`${api}/fotos`, { method: 'POST', body: fd });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'No se pudo subir la foto');
+        sesion = j.data || sesion;
+        return j;
+      }
+      function captureFrom(video) {
+        if (!video || !video.videoWidth) return null;
+        const c = document.createElement('canvas');
+        c.width = video.videoWidth;
+        c.height = video.videoHeight;
+        const ctx = c.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(video, 0, 0);
+        return new Promise((resolve) => c.toBlob(resolve, 'image/jpeg', 0.95));
+      }
+      function pistaVideoLocal(room) {
+        if (!room || !room.localParticipant) return null;
+        const pubs = room.localParticipant.videoTrackPublications;
+        if (!pubs) return null;
+        const list = pubs.values ? Array.from(pubs.values()) : [];
+        for (const pub of list) {
+          const t = pub && pub.track && pub.track.mediaStreamTrack;
+          if (t && t.kind === 'video' && t.readyState === 'live') return t;
+        }
+        return null;
+      }
+      async function captureFotoHd(video, track) {
+        if (track && typeof ImageCapture === 'function') {
+          try {
+            const ic = new ImageCapture(track);
+            if (ic.takePhoto) {
+              const still = await ic.takePhoto();
+              if (still && still.size > 8000) return still;
+            }
+            if (ic.grabFrame) {
+              const frame = await ic.grabFrame();
+              const c = document.createElement('canvas');
+              c.width = frame.width;
+              c.height = frame.height;
+              c.getContext('2d').drawImage(frame, 0, 0);
+              return await new Promise((resolve) => c.toBlob(resolve, 'image/jpeg', 0.95));
+            }
+          } catch (_) {}
+        }
+        return captureFrom(video);
+      }
+      function flashWhite() {
+        let el = document.getElementById('flash');
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'flash';
+          el.style.cssText = 'position:fixed;inset:0;background:rgba(255,255,255,.75);z-index:80;pointer-events:none;display:none';
+          document.body.appendChild(el);
+        }
+        el.style.display = 'block';
+        setTimeout(() => { el.style.display = 'none'; }, 350);
+      }
+      async function tomarFotoHd() {
+        const localEl = document.getElementById('local');
+        const blob = await captureFotoHd(localEl, pistaVideoLocal(liveRoom));
+        if (!blob) return;
+        flashWhite();
+        await uploadBlob(blob, { descripcion: 'Captura HD del asegurado' });
+      }
+      function renderWelcome() {
+        panel.innerHTML = `
+          <p>Hola${sesion.aseguradoNombre ? ' ' + html(sesion.aseguradoNombre) : ''}. Un ajustador de Grupo Proser lo espera${sesion.expediente ? ' para el expediente <strong>' + html(sesion.expediente) + '</strong>' : ''}.</p>
+          <p class="hint">Es una videollamada. Permita cámara y micrófono. El ajustador tomará las fotos.</p>
+          <button class="btn" id="entrar">Entrar a la videollamada</button>
+        `;
+        document.getElementById('entrar').onclick = async () => {
+          try {
+            const joined = await join();
+            if (sesion.tipo === 'guided') renderGuided();
+            else renderLive(joined);
+          } catch (e) {
+            showAlert(e.message);
+          }
+        };
+      }
+      async function renderLive(joined) {
+        document.body.classList.add('in-call');
+        facingMode = 'user';
+        panel.className = 'card';
+        panel.innerHTML = `
+          <div class="stage">
+            <video id="local" class="main" autoplay muted playsinline webkit-playsinline></video>
+            <video id="remote" class="pip" autoplay playsinline webkit-playsinline></video>
+            <p id="status" style="position:absolute;left:12px;top:80px;margin:0;background:rgba(0,0,0,.55);color:#fff;font-size:11px;padding:5px 9px;border-radius:999px;z-index:5;">Esperando al ajustador…</p>
+            <button type="button" class="flip" id="flip" aria-label="Cambiar cámara">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M16 4h2a2 2 0 0 1 2 2v2M8 20H6a2 2 0 0 1-2-2v-2M20 16v2a2 2 0 0 1-2 2h-2M4 8V6a2 2 0 0 1 2-2h2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="2"/>
+              </svg>
+            </button>
+            <p class="cam-label" id="cam-label">Cámara frontal · toque para cambiar</p>
+          </div>
+        `;
+        startWatch();
+        const lk = joined && joined.livekit;
+        if (!lk || !lk.token || !lk.url) {
+          document.getElementById('status').textContent = 'El ajustador aún no está en la llamada.';
+          return;
+        }
+        try {
+          const LivekitClient = window.LivekitClient;
+          if (!LivekitClient) throw new Error('No se pudo cargar la videollamada');
+          const portraitHd = { width: 1080, height: 1920, frameRate: 30, aspectRatio: 9 / 16 };
+          const room = new LivekitClient.Room({
+            adaptiveStream: false,
+            dynacast: true,
+            stopLocalTrackOnUnpublish: true,
+            disconnectOnPageLeave: true,
+            reconnectPolicy: { nextRetryDelayInMs: function () { return null; } },
+            videoCaptureDefaults: {
+              facingMode: 'user',
+              resolution: portraitHd,
+            },
+            videoPublishDefaults: {
+              videoEncoding: { maxBitrate: 6000000, maxFramerate: 30 },
+            },
+          });
+          liveRoom = room;
+          const remoteEl = document.getElementById('remote');
+          const localEl = document.getElementById('local');
+          const status = document.getElementById('status');
+          const attachLocal = () => {
+            room.localParticipant.videoTrackPublications.forEach((pub) => {
+              if (!pub.track || !localEl) return;
+              pub.track.attach(localEl);
+              localEl.muted = true;
+              localEl.setAttribute('playsinline', '');
+              localEl.setAttribute('webkit-playsinline', '');
+              const play = () => localEl.play().catch(() => {});
+              if (localEl.readyState >= 2) play();
+              else localEl.onloadedmetadata = play;
+            });
+          };
+          room.on(LivekitClient.RoomEvent.LocalTrackPublished, attachLocal);
+          room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, _pub, participant) => {
+            if (participant.isLocal) return;
+            if (track.kind === 'audio' || track.kind === LivekitClient.Track.Kind.Audio) {
+              track.attach();
+            }
+            if (track.kind === 'video' || track.kind === LivekitClient.Track.Kind.Video) {
+              track.attach(remoteEl);
+              remoteEl.setAttribute('playsinline', '');
+              remoteEl.setAttribute('webkit-playsinline', '');
+              remoteEl.play().catch(() => {});
+              if (status) status.style.display = 'none';
+            }
+          });
+          room.on(LivekitClient.RoomEvent.Disconnected, () => {
+            soltarCamara(room);
+            showEnded();
+          });
+          const cortar = () => { soltarCamara(room); try { room.disconnect(); } catch (_) {} };
+          if (LivekitClient.RoomEvent.Reconnecting) room.on(LivekitClient.RoomEvent.Reconnecting, cortar);
+          if (LivekitClient.RoomEvent.SignalReconnecting) room.on(LivekitClient.RoomEvent.SignalReconnecting, cortar);
+          room.on(LivekitClient.RoomEvent.DataReceived, async (payload, participant) => {
+            if (participant && participant.isLocal) return;
+            try {
+              const msg = JSON.parse(new TextDecoder().decode(payload));
+              if (msg && msg.type === 'CAPTURE') await tomarFotoHd();
+            } catch (_) {}
+          });
+          await room.connect(lk.url, lk.token);
+          const mediaOk = navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function';
+          if (!mediaOk) {
+            showAlert(
+              'El iPhone bloquea la cámara en este navegador (Gmail) y en http://. Toque ··· y «Abrir en Safari». Si ya está en Safari, pida el enlace HTTPS de prueba.'
+            );
+          } else {
+            try { await room.localParticipant.setMicrophoneEnabled(true); } catch (_) {}
+            try {
+              await room.localParticipant.setCameraEnabled(true, {
+                facingMode,
+                resolution: portraitHd,
+              });
+            } catch (e) {
+              showAlert(e.message || 'No se pudo encender la cámara');
+            }
+            attachLocal();
+            const flip = document.getElementById('flip');
+            const camLabel = document.getElementById('cam-label');
+            if (flip) {
+              flip.onclick = async () => {
+                facingMode = facingMode === 'environment' ? 'user' : 'environment';
+                try {
+                  const pubs = Array.from(room.localParticipant.videoTrackPublications.values());
+                  const current = pubs.find((p) => p.track);
+                  if (current && current.track && current.track.restartTrack) {
+                    await current.track.restartTrack({
+                      facingMode,
+                      resolution: portraitHd,
+                    });
+                  } else {
+                    await room.localParticipant.setCameraEnabled(false);
+                    await room.localParticipant.setCameraEnabled(true, { facingMode });
+                  }
+                  if (localEl) localEl.classList.remove('front');
+                  if (camLabel) {
+                    camLabel.textContent = facingMode === 'environment'
+                      ? 'Cámara trasera · toque para cambiar'
+                      : 'Cámara frontal · toque para cambiar';
+                  }
+                  attachLocal();
+                } catch (err) {
+                  showAlert(err.message || 'No se pudo cambiar de cámara');
+                }
+              };
+            }
+          }
+        } catch (e) {
+          showAlert(e.message || 'No se pudo conectar a la videollamada');
+        }
+      }
+      function renderGuided() {
+        const pasos = sesion.pasos || [];
+        const done = new Set(sesion.pasosCumplidos || []);
+        const actual = pasos.find((p) => !done.has(p.id)) || pasos[pasos.length - 1];
+        if (!actual) {
+          panel.innerHTML = '<h2>Inspección completa</h2><p class="hint">Ya enviamos las fotos. Puede cerrar esta ventana.</p>';
+          return;
+        }
+        const fotos = (sesion.medias || []).filter((m) => m.pasoId === actual.id).length;
+        const idx = pasos.indexOf(actual) + 1;
+        panel.innerHTML = `
+          <p class="brand"><span style="color:#c8102e;font-size:12px;font-weight:700;">PASO ${idx} DE ${pasos.length}</span></p>
+          <h2 style="margin:8px 0;">${html(actual.titulo)}</h2>
+          <p class="hint">${html(actual.instruccion || '')}</p>
+          <p class="hint">Fotos ${fotos}/${actual.maxFotos || 3} (mínimo ${actual.minFotos || 0})</p>
+          <input id="file" type="file" accept="image/*" capture="environment" class="hidden" />
+          <button class="btn" id="tomar">Tomar o subir foto</button>
+          ${fotos >= (actual.minFotos || 0) ? '<button class="btn ghost" id="seguir">Continuar</button>' : ''}
+        `;
+        document.getElementById('tomar').onclick = () => document.getElementById('file').click();
+        document.getElementById('file').onchange = async (ev) => {
+          const file = ev.target.files && ev.target.files[0];
+          if (!file) return;
+          try {
+            await uploadBlob(file, { pasoId: actual.id, descripcion: actual.titulo });
+            await load();
+            renderGuided();
+            showAlert('Foto enviada', true);
+          } catch (e) {
+            showAlert(e.message);
+          }
+        };
+        const seguir = document.getElementById('seguir');
+        if (seguir) {
+          seguir.onclick = async () => {
+            try {
+              const r = await fetch(`${api}/pasos/completar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pasoId: actual.id }),
+              });
+              const j = await r.json();
+              if (!r.ok) throw new Error(j.error || 'No se pudo continuar');
+              await load();
+              renderGuided();
+            } catch (e) {
+              showAlert(e.message);
+            }
+          };
+        }
+      }
+
+      (async () => {
+        if (!token) {
+          showAlert('Enlace incompleto');
+          panel.textContent = '';
+          return;
+        }
+        try {
+          await load();
+          if (sesionCerrada(sesion)) {
+            showEnded();
+            return;
+          }
+          renderWelcome();
+        } catch (e) {
+          showAlert(e.message);
+          panel.textContent = '';
+        }
+      })();
+    </script>
+  </body>
+</html>

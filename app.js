@@ -13,7 +13,7 @@ import { restringirContractorZurich } from "./middleware/restringirContractorZur
 import { poblarUsuarioOpcional } from "./middleware/usuarioOpcional.js";
 import { contextoUsuarioMiddleware } from "./middleware/contextoUsuario.js";
 import { registrarAuditoriaPlataforma } from "./middleware/registrarAuditoriaPlataforma.js";
-import { resolveFrontendUrl } from "./config/platformUrls.js";
+import { resolveFrontendUrl, resolveVideoperitajePublicUrl } from "./config/platformUrls.js";
 import { localeMiddleware } from './middleware/locale.js';
 import { requireMongo } from './middleware/requireMongo.js';
 
@@ -70,6 +70,7 @@ import healthRoutes from './routes/health.routes.js';
 import sharepointRoutes from './routes/sharepoint.routes.js';
 import arnaldPlataformaRoutes from './routes/arnaldPlataforma.routes.js';
 import ticketsRoutes from './routes/tickets.routes.js';
+import videoperitajeRoutes from './routes/videoperitaje.routes.js';
 import multer from 'multer';
 import { mapS3ErrorMessage, isS3AccessDeniedError } from './services/s3StorageService.js';
 import { UPLOADS_ROOT } from './config/uploadsRoot.js';
@@ -230,6 +231,11 @@ if (process.env.NODE_ENV === 'production') {
 
 // 4️ Monta aquí tus rutas
 // Redirige enlaces de recuperación que apunten al dominio del API hacia el frontend
+app.get('/videoperitaje/unirse/:token', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'videoperitaje-unirse.html'));
+});
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+
 app.get('/reset-password/:token', (req, res) => {
   const requestHost = req.get('host') || req.headers.host || req.headers['x-forwarded-host'];
   const frontendUrl = resolveFrontendUrl({ requestHost });
@@ -318,6 +324,9 @@ console.log('✅ Ruta /api/documentos registrada exitosamente');
 app.use('/api/sg-sst', sgSstRoutes);
 console.log('✅ Ruta /api/sg-sst registrada exitosamente');
 app.use('/api/storage', storageRoutes);
+app.use('/api/videoperitaje', videoperitajeRoutes);
+console.log('✅ Ruta /api/videoperitaje registrada');
+console.log('📱 Portal asegurado:', `${resolveVideoperitajePublicUrl()}/videoperitaje/unirse/<token>`);
 console.log('EMAIL_USER:', process.env.EMAIL_USER);
 console.log('EMAIL_PASS:', process.env.EMAIL_PASS ? '***' : 'NO DEFINIDO');
 console.log('OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? '✅ Configurada' : '❌ No configurada');

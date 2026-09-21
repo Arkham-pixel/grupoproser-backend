@@ -4,6 +4,8 @@
  * no dependen de la IP del servidor (52.20.220.24 / 18.119.83.81).
  */
 
+import os from 'os';
+
 export const PRODUCTION_FRONTEND_URL = 'https://arnald.grupoproser.com.co';
 export const PRODUCTION_BACKEND_URL = 'https://arnaldbackend.grupoproser.com.co';
 
@@ -43,8 +45,64 @@ function hostnameFromUrl(url) {
   }
 }
 
-function isLocalOrigin(url) {
+export function isLocalOrigin(url) {
   return /localhost|127\.0\.0\.1/i.test(url || '');
+}
+
+/** IPv4 de esta PC en la LAN, para que el celular abra el portal sin publicar Arnald. */
+export function localLanIPv4() {
+  const ranked = [];
+  for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
+    for (const a of addrs || []) {
+      const v4 = a.family === 'IPv4' || a.family === 4;
+      if (!v4 || a.internal) continue;
+      if (String(a.address).startsWith('169.254.')) continue;
+      const n = String(name || '').toLowerCase();
+      let score = 0;
+      if (n.includes('wi-fi') || n.includes('wifi') || n.includes('wlan')) score += 20;
+      if (String(a.address).startsWith('192.168.')) score += 10;
+      if (String(a.address).startsWith('10.')) score += 5;
+      if (n.includes('ethernet') || n.includes('eth')) score += 3;
+      ranked.push({ ip: a.address, score });
+    }
+  }
+  ranked.sort((a, b) => b.score - a.score);
+  return ranked[0]?.ip || '';
+}
+
+function isGrupoProserOrigin(url) {
+  const host = hostnameFromUrl(url);
+  return Boolean(host && host.endsWith('grupoproser.com.co'));
+}
+
+/**
+ * Enlace del asegurado (correo / WhatsApp / copiar).
+ * Siempre el dominio de Arnald. Túneles LAN/Cloudflare no se envían.
+ */
+export function resolveVideoperitajePublicUrl() {
+  const forced = trimOrigin(process.env.VIDEOPERITAJE_PUBLIC_URL);
+  if (forced && isGrupoProserOrigin(forced) && !isLocalOrigin(forced)) {
+    return forced;
+  }
+  return PRODUCTION_FRONTEND_URL;
+}
+
+/** ws/http de LiveKit que sí puede usar el celular en la misma red. */
+export function resolveLivekitClientUrl(wsUrl) {
+  const forced = trimOrigin(process.env.LIVEKIT_PUBLIC_URL);
+  if (forced) return forced;
+  const raw = String(wsUrl || '').trim();
+  if (!raw) return raw;
+  try {
+    const u = new URL(raw);
+    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+      const lan = localLanIPv4();
+      if (lan) u.hostname = lan;
+    }
+    return u.toString().replace(/\/$/, '');
+  } catch {
+    return raw;
+  }
 }
 
 /**

@@ -135,6 +135,7 @@ export const STORAGE_CATEGORIES = Object.freeze({
   EQUIDAD_CAT: 'equidad-cat',
   EQUIDAD_FDM: 'equidad-fdm',
   TICKETS: 'tickets',
+  VIDEOPERITAJE: 'videoperitaje',
   GENERAL: 'general',
 });
 
@@ -259,7 +260,15 @@ export async function persistUploadedFile({
     throw new Error('Archivo sin buffer ni path');
   }
 
-  const optimized = await optimizeImageBufferForS3(file, body);
+  const conservarOriginal = category === STORAGE_CATEGORIES.VIDEOPERITAJE;
+  const optimized = conservarOriginal
+    ? {
+        body,
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size || body.length,
+      }
+    : await optimizeImageBufferForS3(file, body);
   body = optimized.body;
   const uploadName = optimized.originalname || file.originalname;
   const uploadMime = optimized.mimetype || file.mimetype;
@@ -548,6 +557,7 @@ export function getLocalMulterDestination(category, subfolder) {
     [STORAGE_CATEGORIES.EQUIDAD_CAT]: path.join(UPLOADS_ROOT, 'equidad-cat'),
     [STORAGE_CATEGORIES.EQUIDAD_FDM]: path.join(UPLOADS_ROOT, 'equidad-fdm'),
     [STORAGE_CATEGORIES.TICKETS]: path.join(UPLOADS_ROOT, 'tickets'),
+    [STORAGE_CATEGORIES.VIDEOPERITAJE]: path.join(UPLOADS_ROOT, 'videoperitaje'),
   };
   return map[category] || UPLOADS_ROOT;
 }

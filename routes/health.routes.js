@@ -1,4 +1,5 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import { getMailConfigStatus, verifyMailOnStartup } from '../services/mailTransport.js';
 import { getEmailOutboxStats } from '../services/emailOutboxService.js';
 
@@ -6,10 +7,12 @@ const router = express.Router();
 
 /** Probe liviano para Offline First / connectivityService */
 router.get('/', (req, res) => {
+  const mongoOk = mongoose.connection.readyState === 1;
   res.status(200).json({
     success: true,
     ok: true,
     service: 'grupoproser-backend',
+    mongo: mongoOk ? 'connected' : 'down',
     ts: new Date().toISOString(),
   });
 });

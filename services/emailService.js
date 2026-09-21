@@ -3073,3 +3073,67 @@ async function enviarMailTicketRobusto(mailOptions, tipo, destinoLog = '') {
     }
   }
 }
+
+/** Invita al asegurado a unirse a una sesión de videoperitaje propia (Grupo Proser). */
+export const enviarInvitacionVideoperitaje = async (datos = {}) => {
+  const email = String(datos.emailDestino || '').trim();
+  const urlPublica = String(datos.urlPublica || '').trim();
+  if (!email || !urlPublica) {
+    return { success: false, message: 'Email o enlace faltante' };
+  }
+
+  const nombre = escapeHtmlEmail(datos.nombreDestino || 'asegurado(a)');
+  const expediente = escapeHtmlEmail(datos.expediente || '');
+  const tipo =
+    datos.tipo === 'guided' ? 'una autoinspección guiada' : 'un videoperitaje';
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+    to: email,
+    subject: 'Grupo Proser — Enlace para su videoperitaje',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background:#f8f9fa; padding:20px;">
+        <div style="background:#fff; padding:28px; border-radius:10px;">
+          <h1 style="color:#1f2937; font-size:22px; margin:0 0 8px;">Videoperitaje Grupo Proser</h1>
+          <p style="color:#6b7280; margin:0 0 16px;">
+            Hola <strong>${nombre}</strong>, un profesional de Grupo Proser le invita a realizar ${tipo}
+            ${expediente ? `del expediente <strong>${expediente}</strong>` : ''}.
+          </p>
+          <p style="color:#374151; line-height:1.6;">
+            No necesita instalar ninguna aplicación. Abra el enlace desde el navegador de su celular
+            (Chrome o Safari), permita cámara, micrófono y ubicación, y siga las indicaciones.
+          </p>
+          <table role="presentation" cellspacing="0" cellpadding="0" style="margin:28px auto;">
+            <tr>
+              <td align="center" bgcolor="#c8102e" style="border-radius:8px;">
+                <a href="${urlPublica}" target="_blank" rel="noopener"
+                   style="display:inline-block; background:#c8102e; color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:8px; font-weight:bold; font-size:16px;">
+                  Entrar a la inspección
+                </a>
+              </td>
+            </tr>
+          </table>
+          <p style="color:#374151; font-size:14px; text-align:center; margin:0 0 8px;">
+            Si el botón no abre, pulse este enlace:
+          </p>
+          <p style="text-align:center; margin:0;">
+            <a href="${urlPublica}" target="_blank" rel="noopener" style="color:#c8102e; word-break:break-all;">
+              ${urlPublica}
+            </a>
+          </p>
+          <p style="color:#9ca3af; font-size:12px; margin-top:24px; text-align:center;">
+            Grupo Proser · Este enlace vence en 7 días.
+          </p>
+        </div>
+      </div>
+    `,
+  };
+
+  try {
+    const info = await deliverMail(mailOptions, { tipo: 'videoperitajeInvitacion' });
+    return { success: true, messageId: info.messageId, urlPublica };
+  } catch (err) {
+    console.error('Error enviando invitación videoperitaje:', err.message);
+    return { success: false, message: err.message, urlPublica };
+  }
+};

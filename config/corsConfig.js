@@ -29,11 +29,28 @@ function isLocalDevOrigin(origin) {
   if (!origin || process.env.NODE_ENV === 'production') return false;
   try {
     const { hostname, protocol } = new URL(origin);
-    const local =
-      hostname === 'localhost' ||
-      hostname === '127.0.0.1' ||
-      hostname === '[::1]';
-    return local && (protocol === 'http:' || protocol === 'https:');
+    if (protocol !== 'http:' && protocol !== 'https:') return false;
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') {
+      return true;
+    }
+    if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+    if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+    if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function isTunnelOrigin(origin) {
+  try {
+    const { hostname } = new URL(origin);
+    return (
+      hostname.endsWith('.trycloudflare.com') ||
+      hostname.endsWith('.loca.lt') ||
+      hostname.endsWith('.ngrok-free.app') ||
+      hostname.endsWith('.ngrok.io')
+    );
   } catch {
     return false;
   }
@@ -77,7 +94,7 @@ export function createCorsOptions() {
         return callback(null, true);
       }
       const norm = normalizeOrigin(origin);
-      if (allowed.has(norm) || isLocalDevOrigin(origin)) {
+      if (allowed.has(norm) || isLocalDevOrigin(origin) || isTunnelOrigin(origin)) {
         return callback(null, true);
       }
       console.warn(

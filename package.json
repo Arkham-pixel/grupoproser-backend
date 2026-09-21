@@ -45,6 +45,7 @@
     "heic-convert": "^2.1.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
+    "livekit-server-sdk": "^2.19.1",
     "mongodb": "^6.17.0",
     "mongoose": "^8.16.1",
     "multer": "^2.0.1",
