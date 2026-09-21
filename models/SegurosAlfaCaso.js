@@ -180,6 +180,8 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
 
 aplicarCamposAgendaCatastrofico(SegurosAlfaCasoSchema);
 aplicarPluginNotificacionesOperativas(SegurosAlfaCasoSchema, { modulo: 'alfa' });
+SegurosAlfaCasoSchema.index({ createdAt: -1 });
+SegurosAlfaCasoSchema.index({ excluidoBaseAlfa: 1, createdAt: -1 });
 
 const SegurosAlfaCaso = mongoose.model(
   'SegurosAlfaCaso',

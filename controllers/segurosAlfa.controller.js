@@ -642,22 +642,24 @@ export const listarCasosAlfa = async (req, res) => {
     const incluirExcluidos = ['1', 'true', 'yes'].includes(
       String(req.query.incluirExcluidos || '').toLowerCase()
     );
-    const filtroExcluidos = incluirExcluidos
-      ? {}
-      : {
-          $or: [{ excluidoBaseAlfa: { $exists: false } }, { excluidoBaseAlfa: false }],
-        };
+    const filtroExcluidos = incluirExcluidos ? {} : { excluidoBaseAlfa: { $ne: true } };
     const filtro = combinarFiltrosMongo(filtroAsignacion, filtroExcluidos);
     const collation = filtroAsignacion ? collationVistaAsignacion() : undefined;
-    const countQuery = SegurosAlfaCaso.countDocuments(filtro);
     const listQuery = SegurosAlfaCaso.aggregate(
       buildAlfaListadoPipeline({ filtro, skip, limit: limitNum })
-    );
+    ).option({ allowDiskUse: true, maxTimeMS: 20000 });
     if (collation) {
-      countQuery.collation(collation);
       listQuery.collation(collation);
     }
-    const [total, documentos] = await Promise.all([countQuery, listQuery]);
+    const countPromise = filtroAsignacion
+      ? SegurosAlfaCaso.countDocuments(filtro).maxTimeMS(20000).collation(collation)
+      : incluirExcluidos
+        ? SegurosAlfaCaso.estimatedDocumentCount()
+        : Promise.all([
+            SegurosAlfaCaso.estimatedDocumentCount(),
+            SegurosAlfaCaso.countDocuments({ excluidoBaseAlfa: true }).maxTimeMS(15000),
+          ]).then(([all, excluidos]) => Math.max(0, all - excluidos));
+    const [total, documentos] = await Promise.all([countPromise, listQuery]);
 
     res.json({
       success: true,
@@ -666,7 +668,6 @@ export const listarCasosAlfa = async (req, res) => {
       limit: limitNum,
       data: documentos.map((d) => sanitizarCasoAlfaParaListado(d)),
     });
-    void persistAlfaMontosInflados(documentos);
   } catch (error) {
     console.error('❌ Error al listar casos Seguros Alfa:', error);
     res.status(500).json({
