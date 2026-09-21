@@ -16,8 +16,15 @@ import {
   postEnviarAlertasAllianzAjustador,
 } from '../controllers/allianz.controller.js';
 import { createMulterUpload, attachPersistedFileMiddleware } from '../storage/multerStorageFactory.js';
-import { STORAGE_CATEGORIES } from '../services/fileStorageService.js';
+import { STORAGE_CATEGORIES, getPublicPathForSingle } from '../services/fileStorageService.js';
 import { verificarToken } from '../middleware/auth.js';
+import {
+  notificarControlHorasCat,
+  notificarGerenciaCat,
+  obtenerBandejaFacturacionCat,
+  corregirEnvioBandejaFacturacionCat,
+  eliminarEnvioBandejaFacturacionCat,
+} from '../controllers/catFacturacion.controller.js';
 
 const router = express.Router();
 const ID_MONGO = '[0-9a-fA-F]{24}';
@@ -85,6 +92,22 @@ router.post('/sync-express', syncDesdeExpress);
 router.get('/alertas', getAlertasAllianz);
 router.post('/alertas/enviar', postEnviarAlertasAllianzTodas);
 router.post('/alertas/enviar/:ajustador', postEnviarAlertasAllianzAjustador);
+
+const persistAllianzUpload = attachPersistedFileMiddleware({
+  category: STORAGE_CATEGORIES.ALLIANZ,
+});
+router.post('/upload', upload.single('file'), persistAllianzUpload, (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No se subió ningún archivo' });
+  const url = getPublicPathForSingle(req, (f) => `/uploads/allianz/${f.filename}`);
+  res.json({ url, filename: req.file.originalname, ruta: url });
+});
+router.post('/notificaciones/control-horas', verificarToken, notificarControlHorasCat);
+router.post('/notificaciones/gerencia', verificarToken, notificarGerenciaCat);
+router.get('/bandeja-facturacion', verificarToken, obtenerBandejaFacturacionCat);
+router.patch('/bandeja-facturacion/envio', verificarToken, corregirEnvioBandejaFacturacionCat);
+router.post('/bandeja-facturacion/envio/corregir', verificarToken, corregirEnvioBandejaFacturacionCat);
+router.delete('/bandeja-facturacion/envio', verificarToken, eliminarEnvioBandejaFacturacionCat);
+router.post('/bandeja-facturacion/envio/eliminar', verificarToken, eliminarEnvioBandejaFacturacionCat);
 
 router.post(
   `/:id(${ID_MONGO})/archivos`,

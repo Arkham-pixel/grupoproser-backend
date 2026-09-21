@@ -16,6 +16,7 @@ import {
 import { aplicarFechaAccionEstadoAllianz, homologarEstadoAllianz } from '../utils/estadosAllianz.js';
 import { homologarTipoPolizaAllianz } from '../utils/tiposPolizaAllianz.js';
 import { homologarCiudadAllianz, resolverUbicacionCatastrofico } from '../utils/ciudadesBbvaCat.js';
+import { aplicarCamposControlHorasZurich } from '../utils/controlHorasZurichPersist.js';
 import {
   BANDERAS_LISTA_CASO,
   listarCasosLivianos,
@@ -538,6 +539,7 @@ const buildAllianzPayload = (data = {}, base = {}) => {
   const ub = resolverUbicacionCatastrofico(payload.ciudad, payload.departamento);
   if (ub.ciudad) payload.ciudad = ub.ciudad;
   if (ub.departamento) payload.departamento = ub.departamento;
+  aplicarCamposControlHorasZurich(payload, data, base);
   return aplicarFechaAccionEstadoAllianz(payload, base);
 };
 

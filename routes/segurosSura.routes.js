@@ -112,11 +112,11 @@ router.post('/upload', upload.single('file'), persistSuraUpload, (req, res) => {
   res.json({ url, filename: req.file.originalname });
 });
 
-router.get('/bandeja-facturacion', obtenerBandejaFacturacionSura);
-router.patch('/bandeja-facturacion/envio', corregirEnvioBandejaFacturacionSura);
-router.post('/bandeja-facturacion/envio/corregir', corregirEnvioBandejaFacturacionSura);
-router.delete('/bandeja-facturacion/envio', eliminarEnvioBandejaFacturacionSura);
-router.post('/bandeja-facturacion/envio/eliminar', eliminarEnvioBandejaFacturacionSura);
+router.get('/bandeja-facturacion', verificarToken, obtenerBandejaFacturacionSura);
+router.patch('/bandeja-facturacion/envio', verificarToken, corregirEnvioBandejaFacturacionSura);
+router.post('/bandeja-facturacion/envio/corregir', verificarToken, corregirEnvioBandejaFacturacionSura);
+router.delete('/bandeja-facturacion/envio', verificarToken, eliminarEnvioBandejaFacturacionSura);
+router.post('/bandeja-facturacion/envio/eliminar', verificarToken, eliminarEnvioBandejaFacturacionSura);
 
 router.post('/notificaciones/honorarios', notificarHonorariosSura);
 router.post('/notificaciones/control-horas', notificarControlHorasSura);

@@ -11,6 +11,9 @@ const ControlHorasFilaSchema = new mongoose.Schema(
     horas_campo: Number,
     horas_oficina: Number,
     horas_secretaria: Number,
+    catalogo_id: String,
+    tipo_item: String,
+    fijo: Boolean,
   },
   { _id: false }
 );
@@ -35,6 +38,7 @@ export const camposControlHorasFacturacion = () => ({
   control_horas: {
     valor_hora: Number,
     valor_hora_origen: String,
+    tipo_liquidador: String,
     gastos: Number,
     filas: [ControlHorasFilaSchema],
     actualizado_en: Date,

@@ -16,6 +16,7 @@ import {
   quiereIncluirNsr,
 } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoPrevisora, homologarEstadoPrevisora } from '../utils/estadosPrevisora.js';
+import { aplicarCamposControlHorasZurich } from '../utils/controlHorasZurichPersist.js';
 import {
   BANDERAS_LISTA_CASO,
   listarCasosLivianos,
@@ -524,6 +525,7 @@ const buildPrevisoraPayload = (data = {}, base = {}) => {
   ),
   };
   payload.checklistCatCompleto = esChecklistCatLleno(payload);
+  aplicarCamposControlHorasZurich(payload, data, base);
   return aplicarFechaAccionEstadoPrevisora(payload, base);
 };
 

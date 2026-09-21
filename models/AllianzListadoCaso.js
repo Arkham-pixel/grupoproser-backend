@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { aplicarPluginNotificacionesOperativas } from '../services/notificacionesOperativasService.js';
 import { aplicarCamposAgendaCatastrofico } from '../utils/agendaCatastrofico.js';
+import { camposControlHorasFacturacion } from '../utils/schemaControlHoras.js';
 
 const ArchivoAllianzListadoSchema = new mongoose.Schema(
   {
@@ -97,6 +98,7 @@ const AllianzListadoCasoSchema = new mongoose.Schema(
      */
     fechaEmailAperturaAllianz: Date,
     emailAperturaAllianzMessageId: String,
+    ...camposControlHorasFacturacion(),
   },
   {
     collection: 'gsk3cAppallianzListadoCasos',

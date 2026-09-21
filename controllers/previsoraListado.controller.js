@@ -10,6 +10,7 @@ import {
   quiereIncluirNsr,
 } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoPrevisora, homologarEstadoPrevisora } from '../utils/estadosPrevisora.js';
+import { aplicarCamposControlHorasZurich } from '../utils/controlHorasZurichPersist.js';
 import { crearControladoresArchivosListado } from '../utils/archivosCasoListado.js';
 import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
 import { rechazarSiFranjaOcupada } from '../services/agendaCatastroficoService.js';
@@ -301,6 +302,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
     liquidador: resolverLiquidadorParaUpdate(data.liquidador, base.liquidador),
     informeUnico: resolverInformeUnicoParaUpdate(data.informeUnico, base.informeUnico),
   });
+  aplicarCamposControlHorasZurich(payload, data, base);
   return aplicarFechaAccionEstadoPrevisora(
     armarContactoAsegurado(armarContactoIntermediario(payload)),
     base

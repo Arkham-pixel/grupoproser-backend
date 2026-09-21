@@ -44,11 +44,30 @@ import {
 } from '../utils/listarCasosLivianos.js';
 import {
   normalizarClaveGerente,
-  resolverGerenteDesdeLogin,
-  usuarioPuedeVerBandejaFacturacion,
-  puedeElegirGerenteEnBandeja,
   puedeAdministrarBandejaFacturacion,
+  puedeVerFacturacionSura,
 } from '../config/gerentesFacturacion.js';
+
+function loginDesdeReqSura(req) {
+  return String(
+    req.usuario?.login ||
+      req.user?.login ||
+      req.body?.usuario ||
+      req.body?.login ||
+      req.query?.login ||
+      req.headers['x-usuario-login'] ||
+      ''
+  ).trim();
+}
+
+function rechazarSiNoPuedeFacturarSura(req, res) {
+  if (puedeVerFacturacionSura(loginDesdeReqSura(req))) return false;
+  res.status(403).json({
+    success: false,
+    error: 'No tiene permiso para facturación de SURA.',
+  });
+  return true;
+}
 
 const SURA_RAZON_SOCIAL = 'SEGUROS GENERALES SURAMERICANA S.A.';
 
@@ -1373,37 +1392,22 @@ const buscarCasoSuraPorAjuste = async ({ casoId, numeroCaso }) => {
 
 export const obtenerBandejaFacturacionSura = async (req, res) => {
   try {
-    const login = String(req.query.login || '').trim();
-    if (!usuarioPuedeVerBandejaFacturacion({ login })) {
+    const login = String(
+      req.usuario?.login || req.user?.login || req.query.login || ''
+    ).trim();
+    if (!puedeVerFacturacionSura(login)) {
       return res.status(403).json({
         success: false,
-        error: 'No tiene permiso para consultar la bandeja de facturación',
+        error: 'No tiene permiso para consultar la bandeja de facturación de SURA',
       });
     }
 
-    let gerente = normalizarClaveGerente(req.query.gerente);
-    const esSupervisor = puedeElegirGerenteEnBandeja(login);
-    if (!gerente) gerente = resolverGerenteDesdeLogin(login);
-    if (!gerente) {
-      if (esSupervisor) {
-        return res.status(400).json({
-          success: false,
-          error: 'Seleccione el gerente o jefe para ver su bandeja',
-        });
-      }
-      return res.status(403).json({
-        success: false,
-        error: 'Su usuario no está asociado a un jefe de facturación',
-      });
-    }
-
-    const gerentePropio = resolverGerenteDesdeLogin(login);
-    if (!esSupervisor && gerentePropio && gerente !== gerentePropio) {
-      return res.status(403).json({
-        success: false,
-        error: 'Solo puede consultar su propia bandeja',
-      });
-    }
+    const pideTodos =
+      String(req.query.verTodos || '') === '1' ||
+      !req.query.gerente ||
+      String(req.query.gerente || '').toLowerCase() === 'todos';
+    const gerente = pideTodos ? null : normalizarClaveGerente(req.query.gerente);
+    const verTodos = pideTodos || !gerente;
 
     let responsables = [];
     let estados = [];
@@ -1428,6 +1432,7 @@ export const obtenerBandejaFacturacionSura = async (req, res) => {
       estados,
       aseguradoras,
       coleccion: 'sura',
+      verTodos,
     });
 
     res.json({ success: true, ...resultado });
@@ -1520,6 +1525,7 @@ export const notificarHonorariosSura = async (req, res) => {
 
 export const notificarControlHorasSura = async (req, res) => {
   try {
+    if (rechazarSiNoPuedeFacturarSura(req, res)) return;
     const {
       numeroCaso,
       numeroSiniestro,
@@ -1596,6 +1602,7 @@ export const notificarControlHorasSura = async (req, res) => {
 
 export const notificarGerenciaSura = async (req, res) => {
   try {
+    if (rechazarSiNoPuedeFacturarSura(req, res)) return;
     const {
       numeroCaso,
       numeroSiniestro,
@@ -1684,6 +1691,7 @@ async function resolverEmailAjustadorSura(codiRespnsble) {
 
 export const solicitarCorreccionControlHorasSura = async (req, res) => {
   try {
+    if (rechazarSiNoPuedeFacturarSura(req, res)) return;
     const { casoId, numeroCaso, mensaje, solicitadoPor, solicitadoPorNombre } = req.body || {};
     if (!casoId && !numeroCaso) {
       return res.status(400).json({

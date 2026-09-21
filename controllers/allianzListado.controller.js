@@ -18,6 +18,7 @@ import {
   listarCasosLivianos,
   quiereListaCompleta,
 } from '../utils/listarCasosLivianos.js';
+import { aplicarCamposControlHorasZurich } from '../utils/controlHorasZurichPersist.js';
 
 const esVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null';
@@ -254,6 +255,7 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
   const ub = resolverUbicacionCatastrofico(payload.ciudad, payload.departamento);
   if (ub.ciudad) payload.ciudad = ub.ciudad;
   if (ub.departamento) payload.departamento = ub.departamento;
+  aplicarCamposControlHorasZurich(payload, data, base);
   return aplicarFechaAccionEstadoAllianz(
     armarContactoAsegurado(armarContactoIntermediario(payload)),
     base

@@ -5,6 +5,10 @@ import Siniestro from '../models/CasoComplex.js';
 import SegurosSuraCaso from '../models/SegurosSuraCaso.js';
 import ZurichCaso from '../models/ZurichCaso.js';
 import ZurichListadoCaso from '../models/ZurichListadoCaso.js';
+import AllianzCaso from '../models/AllianzCaso.js';
+import AllianzListadoCaso from '../models/AllianzListadoCaso.js';
+import PrevisoraCaso from '../models/PrevisoraCaso.js';
+import PrevisoraListadoCaso from '../models/PrevisoraListadoCaso.js';
 import {
   normalizarClaveGerente,
   nombreGerente,
@@ -19,7 +23,12 @@ import {
 const TIPOS_ENVIO = new Set(['control_horas', 'gerencia']);
 const MAX_CASOS_BANDEJA = 500;
 const QUERY_TIMEOUT_MS = 20000;
-const ASEGURADORA_ZURICH = 'ZURICH COLOMBIA SEGUROS S.A.';
+const NOMBRE_ASEGURADORA_COLECCION = {
+  zurich: 'ZURICH COLOMBIA SEGUROS S.A.',
+  allianz: 'ALLIANZ SEGUROS S.A.',
+  previsora: 'LA PREVISORA S.A.',
+  sura: 'SEGUROS GENERALES SURAMERICANA S.A.',
+};
 
 function crearRegistroEnvio({
   tipo,
@@ -86,6 +95,10 @@ export async function resolverCasoIdFacturacion({ casoId, numeroCaso }) {
     if (existeZurich) return id;
     const existeZurichListado = await ZurichListadoCaso.exists({ _id: id });
     if (existeZurichListado) return id;
+    if (await AllianzCaso.exists({ _id: id })) return id;
+    if (await AllianzListadoCaso.exists({ _id: id })) return id;
+    if (await PrevisoraCaso.exists({ _id: id })) return id;
+    if (await PrevisoraListadoCaso.exists({ _id: id })) return id;
   }
 
   const num = String(numeroCaso || '').trim();
@@ -112,6 +125,19 @@ export async function resolverCasoIdFacturacion({ casoId, numeroCaso }) {
     .lean();
   if (porNumeroZurichListado?._id) return String(porNumeroZurichListado._id);
 
+  const porNumeroAllianz = await AllianzCaso.findOne({ consecutivo: num }).select('_id').lean();
+  if (porNumeroAllianz?._id) return String(porNumeroAllianz._id);
+  const porNumeroAllianzListado = await AllianzListadoCaso.findOne({ consecutivo: num })
+    .select('_id')
+    .lean();
+  if (porNumeroAllianzListado?._id) return String(porNumeroAllianzListado._id);
+  const porNumeroPrevisora = await PrevisoraCaso.findOne({ consecutivo: num }).select('_id').lean();
+  if (porNumeroPrevisora?._id) return String(porNumeroPrevisora._id);
+  const porNumeroPrevisoraListado = await PrevisoraListadoCaso.findOne({ consecutivo: num })
+    .select('_id')
+    .lean();
+  if (porNumeroPrevisoraListado?._id) return String(porNumeroPrevisoraListado._id);
+
   return null;
 }
 
@@ -128,7 +154,11 @@ export async function registrarEnvioFacturacion(casoId, datos) {
     (await Siniestro.findById(casoId).select('envios_facturacion').lean()) ||
     (await SegurosSuraCaso.findById(casoId).select('envios_facturacion').lean()) ||
     (await ZurichCaso.findById(casoId).select('envios_facturacion').lean()) ||
-    (await ZurichListadoCaso.findById(casoId).select('envios_facturacion').lean());
+    (await ZurichListadoCaso.findById(casoId).select('envios_facturacion').lean()) ||
+    (await AllianzCaso.findById(casoId).select('envios_facturacion').lean()) ||
+    (await AllianzListadoCaso.findById(casoId).select('envios_facturacion').lean()) ||
+    (await PrevisoraCaso.findById(casoId).select('envios_facturacion').lean()) ||
+    (await PrevisoraListadoCaso.findById(casoId).select('envios_facturacion').lean());
   const envios = Array.isArray(casoActual?.envios_facturacion) ? casoActual.envios_facturacion : [];
   const ahora = Date.now();
   const ventanaMs = 2 * 60 * 1000;
@@ -178,6 +208,18 @@ export async function registrarEnvioFacturacion(casoId, datos) {
   }
   if (!actualizado) {
     actualizado = await ZurichListadoCaso.findByIdAndUpdate(casoId, update, { new: true });
+  }
+  if (!actualizado) {
+    actualizado = await AllianzCaso.findByIdAndUpdate(casoId, update, { new: true });
+  }
+  if (!actualizado) {
+    actualizado = await AllianzListadoCaso.findByIdAndUpdate(casoId, update, { new: true });
+  }
+  if (!actualizado) {
+    actualizado = await PrevisoraCaso.findByIdAndUpdate(casoId, update, { new: true });
+  }
+  if (!actualizado) {
+    actualizado = await PrevisoraListadoCaso.findByIdAndUpdate(casoId, update, { new: true });
   }
 
   return { ok: Boolean(actualizado), registro, casoId: String(casoId) };
@@ -459,6 +501,18 @@ function modelosBandejaPorColeccion(coleccion) {
       { Modelo: ZurichListadoCaso, origen: 'listado' },
     ];
   }
+  if (coleccion === 'allianz') {
+    return [
+      { Modelo: AllianzCaso, origen: 'cat' },
+      { Modelo: AllianzListadoCaso, origen: 'listado' },
+    ];
+  }
+  if (coleccion === 'previsora') {
+    return [
+      { Modelo: PrevisoraCaso, origen: 'cat' },
+      { Modelo: PrevisoraListadoCaso, origen: 'listado' },
+    ];
+  }
   return [{ Modelo: Complex, origen: 'complex' }];
 }
 
@@ -503,7 +557,7 @@ export async function listarBandejaFacturacion({
   const mapaResp = mapaResponsables(responsables);
   const mapaEst = mapaEstadosCatalogo(estados);
   const mapaAseg = mapaAseguradoras(aseguradoras);
-  const esZurich = coleccion === 'zurich';
+  const nombreAseguradoraFija = NOMBRE_ASEGURADORA_COLECCION[coleccion] || '';
   const filtro = verTodos
     ? { 'envios_facturacion.0': { $exists: true } }
     : { 'envios_facturacion.gerente': gerenteNorm };
@@ -560,7 +614,7 @@ export async function listarBandejaFacturacion({
       const codResp = String(caso.codiRespnsble || '').trim().toUpperCase();
       const nombreAseguradora =
         resolverNombreAseguradora(caso.codiAsgrdra, mapaAseg) ||
-        (esZurich ? ASEGURADORA_ZURICH : '');
+        nombreAseguradoraFija;
       filas.push({
         casoId: String(caso._id),
         envioId: envio.id || null,
@@ -609,6 +663,10 @@ async function cargarCasoConEnvios(casoId) {
   if (!doc) doc = await SegurosSuraCaso.findById(id).lean();
   if (!doc) doc = await ZurichCaso.findById(id).lean();
   if (!doc) doc = await ZurichListadoCaso.findById(id).lean();
+  if (!doc) doc = await AllianzCaso.findById(id).lean();
+  if (!doc) doc = await AllianzListadoCaso.findById(id).lean();
+  if (!doc) doc = await PrevisoraCaso.findById(id).lean();
+  if (!doc) doc = await PrevisoraListadoCaso.findById(id).lean();
   return doc;
 }
 
@@ -629,6 +687,18 @@ async function guardarEnviosFacturacion(casoId, envios, resumenes) {
   }
   if (!actualizado) {
     actualizado = await ZurichListadoCaso.findByIdAndUpdate(casoId, { $set: payload }, { new: true });
+  }
+  if (!actualizado) {
+    actualizado = await AllianzCaso.findByIdAndUpdate(casoId, { $set: payload }, { new: true });
+  }
+  if (!actualizado) {
+    actualizado = await AllianzListadoCaso.findByIdAndUpdate(casoId, { $set: payload }, { new: true });
+  }
+  if (!actualizado) {
+    actualizado = await PrevisoraCaso.findByIdAndUpdate(casoId, { $set: payload }, { new: true });
+  }
+  if (!actualizado) {
+    actualizado = await PrevisoraListadoCaso.findByIdAndUpdate(casoId, { $set: payload }, { new: true });
   }
   return Boolean(actualizado);
 }

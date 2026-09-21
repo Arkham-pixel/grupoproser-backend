@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { aplicarPluginNotificacionesOperativas } from '../services/notificacionesOperativasService.js';
 import { aplicarCamposAgendaCatastrofico } from '../utils/agendaCatastrofico.js';
+import { camposControlHorasFacturacion } from '../utils/schemaControlHoras.js';
 
 const ArchivoPrevisoraListadoSchema = new mongoose.Schema(
   {
@@ -95,6 +96,7 @@ const PrevisoraListadoCasoSchema = new mongoose.Schema(
      */
     fechaEmailAperturaPrevisora: Date,
     emailAperturaPrevisoraMessageId: String,
+    ...camposControlHorasFacturacion(),
   },
   {
     collection: 'gsk3cAppprevisoraListadoCasos',
