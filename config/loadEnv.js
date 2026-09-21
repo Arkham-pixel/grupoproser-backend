@@ -7,7 +7,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
+const envPath = path.join(__dirname, '..', '.env');
+const alreadyProd = (process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+// En local el .env manda (evita túneles/URLs viejas de la sesión).
+// En Coolify no pisa las variables que inyecta el panel.
+dotenv.config({ path: envPath, override: !alreadyProd });
 
 if (process.env.NODE_ENV) {
   process.env.NODE_ENV = process.env.NODE_ENV.trim();

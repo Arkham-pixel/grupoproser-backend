@@ -449,9 +449,30 @@
           </div>
         `;
         startWatch();
+        const localEl = document.getElementById('local');
+        const remoteEl = document.getElementById('remote');
+        const status = document.getElementById('status');
+        let previewStream = null;
+        try {
+          if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+            throw new Error('Abra este enlace en Safari o Chrome (no en Gmail).');
+          }
+          previewStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: facingMode, width: { ideal: 1080 }, height: { ideal: 1920 } },
+            audio: true,
+          });
+          if (localEl) {
+            localEl.srcObject = previewStream;
+            localEl.muted = true;
+            localEl.setAttribute('playsinline', '');
+            localEl.play().catch(function () {});
+          }
+        } catch (camErr) {
+          showAlert(camErr.message || 'Permita cámara y micrófono para continuar.');
+        }
         const lk = joined && joined.livekit;
         if (!lk || !lk.token || !lk.url) {
-          document.getElementById('status').textContent = 'El ajustador aún no está en la llamada.';
+          if (status) status.textContent = 'Cámara encendida. Esperando videollamada…';
           return;
         }
         try {
@@ -473,9 +494,6 @@
             },
           });
           liveRoom = room;
-          const remoteEl = document.getElementById('remote');
-          const localEl = document.getElementById('local');
-          const status = document.getElementById('status');
           const attachLocal = () => {
             room.localParticipant.videoTrackPublications.forEach((pub) => {
               if (!pub.track || !localEl) return;
@@ -517,11 +535,10 @@
             } catch (_) {}
           });
           await room.connect(lk.url, lk.token);
-          const mediaOk = navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function';
-          if (!mediaOk) {
-            showAlert(
-              'El iPhone bloquea la cámara en este navegador (Gmail) y en http://. Toque ··· y «Abrir en Safari». Si ya está en Safari, pida el enlace HTTPS de prueba.'
-            );
+          if (previewStream) {
+            previewStream.getTracks().forEach(function (track) {
+              room.localParticipant.publishTrack(track).catch(function () {});
+            });
           } else {
             try { await room.localParticipant.setMicrophoneEnabled(true); } catch (_) {}
             try {
@@ -532,7 +549,8 @@
             } catch (e) {
               showAlert(e.message || 'No se pudo encender la cámara');
             }
-            attachLocal();
+          }
+          attachLocal();
             const flip = document.getElementById('flip');
             const camLabel = document.getElementById('cam-label');
             if (flip) {
@@ -562,7 +580,6 @@
                 }
               };
             }
-          }
         } catch (e) {
           showAlert(e.message || 'No se pudo conectar a la videollamada');
         }

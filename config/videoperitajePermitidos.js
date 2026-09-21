@@ -3,7 +3,10 @@
  * Debe coincidir con frontend/src/config/videoperitajePermitidos.js
  * El portal del asegurado (/public/:token) no pasa por este filtro.
  */
-export const LOGINS_VIDEOPERITAJE = ['1065012991'];
+export const LOGINS_VIDEOPERITAJE = String(process.env.LOGINS_VIDEOPERITAJE || '1065012991')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 export function usuarioPuedeVideoperitaje(user) {
   const ids = [

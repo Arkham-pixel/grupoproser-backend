@@ -29,6 +29,18 @@ function trimOrigin(url) {
   return typeof url === 'string' ? url.trim().replace(/\/+$/, '') : '';
 }
 
+function envUrl(...keys) {
+  for (const key of keys) {
+    const value = trimOrigin(process.env[key]);
+    if (value) return value;
+  }
+  return '';
+}
+
+function isProduction() {
+  return (process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+}
+
 /** Backend público → frontend (cuando el API infiere la URL desde el host de la petición). */
 const BACKEND_HOST_TO_FRONTEND = {
   'arnaldbackend.grupoproser.com.co': PRODUCTION_FRONTEND_URL,
@@ -70,32 +82,31 @@ export function localLanIPv4() {
   return ranked[0]?.ip || '';
 }
 
-function isGrupoProserOrigin(url) {
-  const host = hostnameFromUrl(url);
-  return Boolean(host && host.endsWith('grupoproser.com.co'));
+/**
+ * Portal del asegurado (correo / WhatsApp / copiar).
+ * Misma variable en local y Coolify: VIDEOPERITAJE_PUBLIC_URL, si no BASE_URL.
+ */
+export function resolveVideoperitajePublicUrl() {
+  return (
+    envUrl('VIDEOPERITAJE_PUBLIC_URL') ||
+    envUrl('BASE_URL', 'BACKEND_URL') ||
+    (isProduction() ? PRODUCTION_BACKEND_URL : 'http://localhost:3000')
+  );
 }
 
 /**
- * Enlace del asegurado (correo / WhatsApp / copiar).
- * Siempre el dominio de Arnald. Túneles LAN/Cloudflare no se envían.
+ * URL WebRTC que usa el navegador.
+ * LIVEKIT_PUBLIC_URL (celular / DNS público) o, si falta, LIVEKIT_URL.
+ * En local, localhost se reescribe a la IP LAN para el celular de la misma red.
  */
-export function resolveVideoperitajePublicUrl() {
-  const forced = trimOrigin(process.env.VIDEOPERITAJE_PUBLIC_URL);
-  if (forced && isGrupoProserOrigin(forced) && !isLocalOrigin(forced)) {
-    return forced;
-  }
-  return PRODUCTION_FRONTEND_URL;
-}
-
-/** ws/http de LiveKit que sí puede usar el celular en la misma red. */
 export function resolveLivekitClientUrl(wsUrl) {
-  const forced = trimOrigin(process.env.LIVEKIT_PUBLIC_URL);
+  const forced = envUrl('LIVEKIT_PUBLIC_URL');
   if (forced) return forced;
-  const raw = String(wsUrl || '').trim();
+  const raw = String(wsUrl || envUrl('LIVEKIT_URL') || '').trim();
   if (!raw) return raw;
   try {
     const u = new URL(raw);
-    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+    if (!isProduction() && (u.hostname === 'localhost' || u.hostname === '127.0.0.1')) {
       const lan = localLanIPv4();
       if (lan) u.hostname = lan;
     }
@@ -107,11 +118,12 @@ export function resolveLivekitClientUrl(wsUrl) {
 
 /**
  * URL del front para enlaces en correos y notificaciones.
+ * FRONTEND_URL manda siempre (localhost en local, Arnald en Coolify).
  * @param {{ requestHost?: string }} [options] - Host del request (ej. arnaldbackend…)
  */
 export function resolveFrontendUrl(options = {}) {
-  const fromEnv = trimOrigin(process.env.FRONTEND_URL);
-  if (fromEnv && !isLocalOrigin(fromEnv)) return fromEnv;
+  const fromEnv = envUrl('FRONTEND_URL');
+  if (fromEnv) return fromEnv;
 
   const requestHost = (options.requestHost || '').split(':')[0].toLowerCase();
   if (requestHost && BACKEND_HOST_TO_FRONTEND[requestHost]) {
@@ -125,18 +137,13 @@ export function resolveFrontendUrl(options = {}) {
     return BACKEND_HOST_TO_FRONTEND[backendHost];
   }
 
-  if ((process.env.NODE_ENV || '').trim().toLowerCase() === 'production') {
-    return PRODUCTION_FRONTEND_URL;
-  }
-
-  return fromEnv || 'http://localhost:5173';
+  return isProduction() ? PRODUCTION_FRONTEND_URL : 'http://localhost:5173';
 }
 
-/** URL pública del API (fallback dev → prod, proxy de archivos legacy). */
+/** URL pública del API. BASE_URL / BACKEND_URL mandan en local y en producción. */
 export function resolveBackendPublicUrl() {
-  const fromEnv =
-    trimOrigin(process.env.BASE_URL) || trimOrigin(process.env.BACKEND_URL);
-  if (fromEnv) return fromEnv;
-  if (process.env.NODE_ENV === 'production') return PRODUCTION_BACKEND_URL;
-  return PRODUCTION_BACKEND_URL;
+  return (
+    envUrl('BASE_URL', 'BACKEND_URL') ||
+    (isProduction() ? PRODUCTION_BACKEND_URL : 'http://localhost:3000')
+  );
 }
