@@ -524,13 +524,24 @@
               if (status) status.style.display = 'none';
             }
           });
-          room.on(LivekitClient.RoomEvent.Disconnected, () => {
+          room.on(LivekitClient.RoomEvent.Disconnected, async () => {
             soltarCamara(room);
-            showEnded();
+            try { await load(); } catch (_) {}
+            // Solo “gracias” si el ajustador finalizó/canceló. Un fallo de LiveKit no debe cerrar al cliente.
+            if (sesionCerrada(sesion)) {
+              showEnded();
+              return;
+            }
+            if (status) {
+              status.style.display = '';
+              status.textContent = 'Cámara encendida. Esperando videollamada…';
+            }
+            if (previewStream && localEl) {
+              localEl.srcObject = previewStream;
+              localEl.muted = true;
+              localEl.play().catch(function () {});
+            }
           });
-          const cortar = () => { soltarCamara(room); try { room.disconnect(); } catch (_) {} };
-          if (LivekitClient.RoomEvent.Reconnecting) room.on(LivekitClient.RoomEvent.Reconnecting, cortar);
-          if (LivekitClient.RoomEvent.SignalReconnecting) room.on(LivekitClient.RoomEvent.SignalReconnecting, cortar);
           room.on(LivekitClient.RoomEvent.DataReceived, async (payload, participant) => {
             if (participant && participant.isLocal) return;
             try {
@@ -585,7 +596,12 @@
               };
             }
         } catch (e) {
-          showAlert(e.message || 'No se pudo conectar a la videollamada');
+          if (status) status.textContent = 'Cámara encendida. Esperando videollamada…';
+          if (previewStream && localEl) {
+            localEl.srcObject = previewStream;
+            localEl.muted = true;
+            localEl.play().catch(function () {});
+          }
         }
       }
       function renderGuided() {
