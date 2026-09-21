@@ -608,7 +608,7 @@ export async function joinPublico(req, res) {
           canSubscribe: true,
         });
       } catch (err) {
-        livekit = { error: err.message, code: err.code };
+        livekit = err.code === 'LIVEKIT_NOT_CONFIGURED' ? null : { error: err.message, code: err.code };
       }
     }
 
