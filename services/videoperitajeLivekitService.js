@@ -81,9 +81,7 @@ export async function crearTokenLivekit({
   const jwt = await at.toJwt();
   const url = resolveLivekitClientUrl(cfg.url);
   if (!url) {
-    const error = new Error(
-      'LiveKit no tiene URL pública. En Coolify use LIVEKIT_PUBLIC_URL=wss://… (no localhost).'
-    );
+    const error = new Error('LIVEKIT_NOT_PUBLIC');
     error.code = 'LIVEKIT_NOT_CONFIGURED';
     throw error;
   }

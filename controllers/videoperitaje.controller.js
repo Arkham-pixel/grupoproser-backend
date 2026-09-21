@@ -455,8 +455,17 @@ export async function tokenLivekitPerito(req, res) {
     });
     res.json({ success: true, ...tk, sessionId: sesion._id, estado: sesion.estado });
   } catch (error) {
-    const status = error.code === 'LIVEKIT_NOT_CONFIGURED' ? 503 : 500;
-    res.status(status).json({ success: false, error: error.message, code: error.code });
+    if (error.code === 'LIVEKIT_NOT_CONFIGURED' || error.code === 'LIVEKIT_SDK_MISSING') {
+      return res.json({
+        success: true,
+        token: null,
+        url: null,
+        configured: false,
+        sessionId: sesion._id,
+        estado: sesion.estado,
+      });
+    }
+    res.status(500).json({ success: false, error: error.message, code: error.code });
   }
 }
 
