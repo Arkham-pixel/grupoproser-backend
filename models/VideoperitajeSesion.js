@@ -61,6 +61,7 @@ const VideoperitajeSesionSchema = new mongoose.Schema(
     tokenExpira: { type: Date, default: null },
     livekitRoom: { type: String, default: '' },
     inicio: Date,
+    aseguradoVistaAt: { type: Date, default: null },
     fin: Date,
     duracionSeg: { type: Number, default: 0 },
     geo: GeoSchema,

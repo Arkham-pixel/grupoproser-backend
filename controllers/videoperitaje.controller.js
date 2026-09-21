@@ -246,6 +246,13 @@ async function hidratarMedias(medias = []) {
   return list;
 }
 
+async function marcarAseguradoEnLinea(sesion) {
+  if (!sesion || !ESTADOS_ABIERTOS.has(sesion.estado)) return sesion;
+  sesion.aseguradoVistaAt = new Date();
+  await sesion.save();
+  return sesion;
+}
+
 function sesionPublicaBase(sesion) {
   return {
     id: sesion._id,
@@ -557,6 +564,7 @@ export async function obtenerPublica(req, res) {
     if (sesion.tokenExpira && sesion.tokenExpira < new Date()) {
       return res.status(410).json({ success: false, error: 'Este enlace ya venció' });
     }
+    await marcarAseguradoEnLinea(sesion);
     const medias = await hidratarMedias(sesion.medias);
     res.json({
       success: true,
@@ -595,6 +603,7 @@ export async function joinPublico(req, res) {
       sesion.estado = 'en_proceso';
       sesion.inicio = sesion.inicio || new Date();
     }
+    sesion.aseguradoVistaAt = new Date();
     await sesion.save();
 
     let livekit = null;
