@@ -365,31 +365,28 @@ function alfaArrayTieneItemConTexto(arrayExpr) {
 }
 
 /**
- * Pipeline del listado: metadatos + banderas, sin liquidador/informe (pueden ir
- * firmas/fotos en base64 y inflar 1550 casos a decenas de MB).
+ * Pipeline del listado: liviano. No inspecciona nested de liquidador (eso
+ * fuerza lectura de blobs enormes y timeout en Atlas).
  */
 export function buildAlfaListadoPipeline({ filtro = {}, skip = 0, limit = 25 } = {}) {
   return [
     { $match: filtro && Object.keys(filtro).length ? filtro : {} },
-    { $sort: { createdAt: -1 } },
+    { $sort: { _id: -1 } },
     { $skip: skip },
     { $limit: limit },
     {
       $addFields: {
         tieneLiquidador: { $eq: [{ $type: '$liquidador' }, 'object'] },
         tieneInforme: { $eq: [{ $type: '$informeUnico' }, 'object'] },
-        tieneLiquidadorConContenido: {
-          $or: [
-            alfaArrayTieneItemConTexto('$liquidador.evaluacionSismicaNSR10.presupuesto.items'),
-            alfaArrayTieneItemConTexto('$liquidador.detalleLiquidacionCat'),
-          ],
-        },
+        // Aprox. sin leer presupuesto/detalle (evita timeout en listados grandes).
+        tieneLiquidadorConContenido: { $eq: [{ $type: '$liquidador' }, 'object'] },
       },
     },
     {
       $project: {
-        // liquidador se conserva hasta enriquecer montos en el controller (luego se omite en JSON).
+        liquidador: 0,
         informeUnico: 0,
+        archivos: 0,
       },
     },
   ];

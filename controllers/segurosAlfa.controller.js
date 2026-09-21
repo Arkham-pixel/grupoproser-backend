@@ -647,7 +647,7 @@ export const listarCasosAlfa = async (req, res) => {
     const collation = filtroAsignacion ? collationVistaAsignacion() : undefined;
     const listQuery = SegurosAlfaCaso.aggregate(
       buildAlfaListadoPipeline({ filtro, skip, limit: limitNum })
-    ).option({ allowDiskUse: true, maxTimeMS: 20000 });
+    ).option({ allowDiskUse: true, maxTimeMS: 20000, hint: { _id: 1 } });
     if (collation) {
       listQuery.collation(collation);
     }
