@@ -432,6 +432,11 @@ const buildPrevisoraPayload = (data = {}, base = {}) => {
     data.fechaCasoParaPago ?? data.fechaCasoCerrado,
     base.fechaCasoParaPago ?? base.fechaCasoCerrado ?? null
   ),
+  fechaEnProcesoFacturacion: parseDateFlexible(
+    data.fechaEnProcesoFacturacion,
+    base.fechaEnProcesoFacturacion ?? null
+  ),
+  fechaFacturado: parseDateFlexible(data.fechaFacturado, base.fechaFacturado ?? null),
   documentoFaltante: toStringOrNull(data.documentoFaltante, base.documentoFaltante ?? null),
   observacionPendienteDocumento: toStringOrNull(
     data.observacionPendienteDocumento,
@@ -632,6 +637,8 @@ const mergeImportacionPrevisora = (incomingPayload = {}, existente = {}) => {
     'fechaDesistimiento',
     'fechaCasoCerrado',
     'fechaCasoParaPago',
+    'fechaEnProcesoFacturacion',
+    'fechaFacturado',
     'riskId',
     'distanciaEpicentroKm',
     'tipoNegocioHomologado',
@@ -792,6 +799,8 @@ const PROYECCION_LISTA_PREVISORA = {
   fechaDesistimiento: 1,
   fechaCasoCerrado: 1,
   fechaCasoParaPago: 1,
+  fechaEnProcesoFacturacion: 1,
+  fechaFacturado: 1,
   documentoFaltante: 1,
   observacionPendienteDocumento: 1,
   motivoObjecion: 1,

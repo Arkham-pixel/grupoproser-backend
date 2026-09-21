@@ -13,6 +13,8 @@ export const DIAS_RECORDATORIO_INACTIVIDAD_PREVISORA = 30;
 /** Estados que cierran el caso para alertas (sin recordatorio). */
 const ESTADOS_CERRADOS_PREVISORA = [
   'CASO CERRADO',
+  'EN PROCESO DE FACTURACION',
+  'FACTURADO',
   'DESISTIMIENTO',
   'CASO PARA PAGO',
   'OBJECION',

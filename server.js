@@ -52,7 +52,7 @@ if (!MONGO_URI) {
 const mongoOptions = {
   family: 4,
   serverSelectionTimeoutMS: 20000,
-  socketTimeoutMS: 45000,
+  socketTimeoutMS: 120000,
   maxPoolSize: 30,
   minPoolSize: 2,
   heartbeatFrequencyMS: 10000,

@@ -81,6 +81,8 @@ const AllianzListadoCasoSchema = new mongoose.Schema(
     fechaAutorizacionAnalista: Date,
     fechaPresentacionCifras: Date,
     fechaCasoParaPago: Date,
+    fechaEnProcesoFacturacion: Date,
+    fechaFacturado: Date,
     fechaCasoPagado: Date,
     fechaDesistido: Date,
     fechaAnulado: Date,

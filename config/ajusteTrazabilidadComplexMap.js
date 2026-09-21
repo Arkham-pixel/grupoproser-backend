@@ -57,6 +57,8 @@ export const CAMPOS_FECHA_HITOS_TRAZABILIDAD = [
   'fchaAceptacionCifrasAseguradora',
   'fchaReconsideracion',
   'fchaEnvioFiniquito',
+  'fchaEnProcesoFacturacion',
+  'fchaFacturado',
 ];
 
 function campoTieneValorFecha(valor) {

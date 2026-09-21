@@ -235,6 +235,11 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       base.fechaPresentacionCifras ?? null
     ),
     fechaCasoParaPago: pickFecha(data.fechaCasoParaPago, base.fechaCasoParaPago ?? null),
+    fechaEnProcesoFacturacion: pickFecha(
+      data.fechaEnProcesoFacturacion,
+      base.fechaEnProcesoFacturacion ?? null
+    ),
+    fechaFacturado: pickFecha(data.fechaFacturado, base.fechaFacturado ?? null),
     fechaCasoPagado: pickFecha(data.fechaCasoPagado, base.fechaCasoPagado ?? null),
     fechaDesistido: pickFecha(data.fechaDesistido, base.fechaDesistido ?? null),
     fechaAnulado: pickFecha(data.fechaAnulado, base.fechaAnulado ?? null),
@@ -360,6 +365,8 @@ const PROYECCION_LISTA_ALLIANZ_LISTADO = {
   fechaAutorizacionAnalista: 1,
   fechaPresentacionCifras: 1,
   fechaCasoParaPago: 1,
+  fechaEnProcesoFacturacion: 1,
+  fechaFacturado: 1,
   fechaCasoPagado: 1,
   fechaDesistido: 1,
   fechaAnulado: 1,

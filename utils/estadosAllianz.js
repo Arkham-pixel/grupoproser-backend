@@ -10,6 +10,8 @@ export const ESTADOS_ALLIANZ = [
   'PENDIENTE APROBACIÓN ANALISTA',
   'PRESENTACIÓN DE CIFRAS',
   'CASO PARA PAGO',
+  'EN PROCESO DE FACTURACIÓN',
+  'FACTURADO',
   'DESISTIDO',
   'ANULADO/CANCELADO',
 ];
@@ -29,6 +31,8 @@ export const FECHA_ACCION_POR_ESTADO_ALLIANZ = {
   'PENDIENTE APROBACIÓN ANALISTA': 'fechaAutorizacionAnalista',
   'PRESENTACIÓN DE CIFRAS': 'fechaPresentacionCifras',
   'CASO PARA PAGO': 'fechaCasoParaPago',
+  'EN PROCESO DE FACTURACIÓN': 'fechaEnProcesoFacturacion',
+  FACTURADO: 'fechaFacturado',
   DESISTIDO: 'fechaDesistido',
   'ANULADO/CANCELADO': 'fechaAnulado',
 };

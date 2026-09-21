@@ -9,6 +9,8 @@ export const ESTADOS_PREVISORA = [
   'OBJECIÓN',
   'DESISTIMIENTO',
   'CASO CERRADO',
+  'EN PROCESO DE FACTURACIÓN',
+  'FACTURADO',
 ];
 
 export const ESTADO_PREVISORA_DEFAULT = 'CASO NUEVO';
@@ -23,6 +25,8 @@ export const FECHA_ACCION_POR_ESTADO_PREVISORA = {
   OBJECIÓN: 'fechaObjecion',
   DESISTIMIENTO: 'fechaDesistimiento',
   'CASO CERRADO': 'fechaCasoCerrado',
+  'EN PROCESO DE FACTURACIÓN': 'fechaEnProcesoFacturacion',
+  FACTURADO: 'fechaFacturado',
 };
 
 /** Fechas legado que se espejan para agenda, boletines e importaciones. */

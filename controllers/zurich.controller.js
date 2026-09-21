@@ -443,6 +443,11 @@ const buildZurichPayload = (data = {}, base = {}) => {
     base.fechaRecepcionDocumento ?? null
   ),
   fechaFinalizado: parseDateFlexible(data.fechaFinalizado, base.fechaFinalizado ?? null),
+  fechaEnProcesoFacturacion: parseDateFlexible(
+    data.fechaEnProcesoFacturacion,
+    base.fechaEnProcesoFacturacion ?? null
+  ),
+  fechaFacturado: parseDateFlexible(data.fechaFacturado, base.fechaFacturado ?? null),
   fechaAutoridadDelegada: parseDateFlexible(
     data.fechaAutoridadDelegada,
     base.fechaAutoridadDelegada ?? null
@@ -667,6 +672,8 @@ const mergeImportacionZurich = (incomingPayload = {}, existente = {}) => {
     'fechaSolicitudDocumento',
     'fechaRecepcionDocumento',
     'fechaFinalizado',
+    'fechaEnProcesoFacturacion',
+    'fechaFacturado',
     'fechaAutoridadDelegada',
     'fechaAceptacionCliente',
     'fechaObjecion',

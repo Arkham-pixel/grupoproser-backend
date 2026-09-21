@@ -115,6 +115,8 @@ const PrevisoraCasoSchema = new mongoose.Schema(
     fechaDesistimiento: Date,
     fechaCasoCerrado: Date,
     fechaCasoParaPago: Date,
+    fechaEnProcesoFacturacion: Date,
+    fechaFacturado: Date,
     documentoFaltante: String,
     observacionPendienteDocumento: String,
     motivoObjecion: String,

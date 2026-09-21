@@ -84,25 +84,55 @@ function gestionCanonDesdeExcel(raw) {
   return g || 'EN GESTIÓN';
 }
 
-function gestionFinalParaCaso({ excelGestionRaw, mongoGestion, mongoEstado }) {
+function gestionFinalParaCaso({
+  excelGestionRaw,
+  mongoGestion,
+  mongoEstado,
+  mongoCaso = {},
+  excelDates = {},
+}) {
   const excelG = String(excelGestionRaw || '').trim()
     ? gestionCanonDesdeExcel(excelGestionRaw)
     : null;
-  // Excel tipifica PTE CONTACTO de forma explícita → respetar.
-  if (excelG === 'PTE CONTACTO') return 'PTE CONTACTO';
 
   let g = homologarEstadoGestionAlfa(mongoGestion || excelGestionRaw || '');
-  // PTE CONTACTO en Mongo sin respaldo en Excel → era homologación vieja.
-  if (g === 'PTE CONTACTO' && excelG && excelG !== 'PTE CONTACTO') {
+  if (excelG && excelG !== 'PTE CONTACTO') {
     g = excelG;
-  } else if (g === 'PTE CONTACTO' && !excelG) {
-    // Sin fila Excel confiable: no inventar PTE CONTACTO.
-    g = 'EN GESTIÓN';
+  } else if (g === 'PTE CONTACTO' || excelG === 'PTE CONTACTO') {
+    // PTE CONTACTO con avance operativo → corregir; sin avance → EN GESTIÓN.
+    const s = homologarEstadoSiniestroAlfa(mongoEstado || mongoCaso.estado, mongoCaso);
+    const has = (v) => {
+      if (v == null || v === '') return false;
+      const d = v instanceof Date ? v : new Date(v);
+      return !Number.isNaN(d.getTime());
+    };
+    const fi = has(mongoCaso.fechaInspeccion) || has(excelDates.fechaInspeccion);
+    const fl = has(mongoCaso.fechaLiquidado) || has(excelDates.fechaLiquidado);
+    const fd = has(mongoCaso.fechaUltimoDocumento) || has(excelDates.fechaUltimoDocumento);
+    const liquidador = mongoCaso.liquidador && typeof mongoCaso.liquidador === 'object';
+    const valorLiq = Number(mongoCaso.valorLiquidado) > 0;
+    if (
+      fl ||
+      valorLiq ||
+      liquidador ||
+      s === 'OBJETADO' ||
+      s === 'PROCESO DE PAGO' ||
+      s === 'PENDIENTE ACEPTACION CIFRAS' ||
+      s === 'PAGADO'
+    ) {
+      g = 'LIQUIDADO';
+    } else if (fi || s === 'INSPECCIONADO PENDIENTE' || s === 'DESISTIDO' || s === 'CERRADO') {
+      g = 'INSPECCIONADO';
+    } else if (fd) {
+      g = 'SOLICITUD DTOS';
+    } else {
+      g = 'EN GESTIÓN';
+    }
   } else if (excelG) {
     g = excelG;
   }
 
-  const s = homologarEstadoSiniestroAlfa(mongoEstado);
+  const s = homologarEstadoSiniestroAlfa(mongoEstado || mongoCaso.estado, mongoCaso);
   return sincronizarGestionConCierreSiniestroAlfa(s, g) || g || 'EN GESTIÓN';
 }
 

@@ -435,6 +435,11 @@ const buildAllianzPayload = (data = {}, base = {}) => {
     base.fechaPresentacionCifras ?? null
   ),
   fechaCasoParaPago: parseDateFlexible(data.fechaCasoParaPago, base.fechaCasoParaPago ?? null),
+  fechaEnProcesoFacturacion: parseDateFlexible(
+    data.fechaEnProcesoFacturacion,
+    base.fechaEnProcesoFacturacion ?? null
+  ),
+  fechaFacturado: parseDateFlexible(data.fechaFacturado, base.fechaFacturado ?? null),
   fechaCasoPagado: parseDateFlexible(data.fechaCasoPagado, base.fechaCasoPagado ?? null),
   fechaDesistido: parseDateFlexible(data.fechaDesistido, base.fechaDesistido ?? null),
   fechaAnulado: parseDateFlexible(data.fechaAnulado, base.fechaAnulado ?? null),
@@ -654,6 +659,8 @@ const mergeImportacionAllianz = (incomingPayload = {}, existente = {}) => {
     'fechaAutorizacionAnalista',
     'fechaPresentacionCifras',
     'fechaCasoParaPago',
+    'fechaEnProcesoFacturacion',
+    'fechaFacturado',
     'fechaCasoPagado',
     'fechaDesistido',
     'fechaAnulado',
@@ -824,6 +831,8 @@ const PROYECCION_LISTA_ALLIANZ = {
   fechaAutorizacionAnalista: 1,
   fechaPresentacionCifras: 1,
   fechaCasoParaPago: 1,
+  fechaEnProcesoFacturacion: 1,
+  fechaFacturado: 1,
   fechaCasoPagado: 1,
   fechaDesistido: 1,
   fechaAnulado: 1,

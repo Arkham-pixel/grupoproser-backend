@@ -256,6 +256,11 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       base.fechaAceptacionCliente ?? null
     ),
     fechaFinalizado: pickFecha(data.fechaFinalizado, base.fechaFinalizado ?? null),
+    fechaEnProcesoFacturacion: pickFecha(
+      data.fechaEnProcesoFacturacion,
+      base.fechaEnProcesoFacturacion ?? null
+    ),
+    fechaFacturado: pickFecha(data.fechaFacturado, base.fechaFacturado ?? null),
     fechaObjecion: pickFecha(data.fechaObjecion, base.fechaObjecion ?? null),
     fechaLiquidado: pickFecha(data.fechaLiquidado, base.fechaLiquidado ?? null),
     fechaAutorizacionAnalista: pickFecha(
@@ -442,6 +447,8 @@ const PROYECCION_LISTA_ZURICH = {
   fechaAceptacionCliente: 1,
   fechaAceptacionLiquidacion: 1,
   fechaFinalizado: 1,
+  fechaEnProcesoFacturacion: 1,
+  fechaFacturado: 1,
   fechaObjecion: 1,
   fechaLiquidado: 1,
   fechaCasoParaPago: 1,

@@ -8,6 +8,8 @@ export const ESTADO_ZURICH_LIQUIDAR = 'LIQUIDAR (INFORME UNICO / FINAL)';
 export const ESTADO_ZURICH_AUTORIDAD_DELEGADA = 'AUTORIDAD DELEGADA';
 export const ESTADO_ZURICH_ACEPTACION_CLIENTE = 'ACEPTACIÓN CLIENTE';
 export const ESTADO_ZURICH_FINALIZADO = 'FINALIZADO';
+export const ESTADO_ZURICH_EN_PROCESO_FACTURACION = 'EN PROCESO DE FACTURACIÓN';
+export const ESTADO_ZURICH_FACTURADO = 'FACTURADO';
 
 export const ESTADOS_ZURICH = [
   ESTADO_ZURICH_DEFAULT,
@@ -19,6 +21,8 @@ export const ESTADOS_ZURICH = [
   ESTADO_ZURICH_AUTORIDAD_DELEGADA,
   ESTADO_ZURICH_ACEPTACION_CLIENTE,
   ESTADO_ZURICH_FINALIZADO,
+  ESTADO_ZURICH_EN_PROCESO_FACTURACION,
+  ESTADO_ZURICH_FACTURADO,
 ];
 
 export const FECHA_ACCION_POR_ESTADO_ZURICH = {
@@ -31,6 +35,8 @@ export const FECHA_ACCION_POR_ESTADO_ZURICH = {
   [ESTADO_ZURICH_AUTORIDAD_DELEGADA]: 'fechaAutoridadDelegada',
   [ESTADO_ZURICH_ACEPTACION_CLIENTE]: 'fechaAceptacionCliente',
   [ESTADO_ZURICH_FINALIZADO]: 'fechaFinalizado',
+  [ESTADO_ZURICH_EN_PROCESO_FACTURACION]: 'fechaEnProcesoFacturacion',
+  [ESTADO_ZURICH_FACTURADO]: 'fechaFacturado',
 };
 
 const LEGACY = {
@@ -88,7 +94,12 @@ export function homologarEstadoZurich(valor) {
 }
 
 export function esEstadoCerradoZurich(estado) {
-  return homologarEstadoZurich(estado) === ESTADO_ZURICH_FINALIZADO;
+  const actual = homologarEstadoZurich(estado);
+  return (
+    actual === ESTADO_ZURICH_FINALIZADO ||
+    actual === ESTADO_ZURICH_EN_PROCESO_FACTURACION ||
+    actual === ESTADO_ZURICH_FACTURADO
+  );
 }
 
 export function esEstadoPendienteDocsZurich(estado) {
@@ -110,6 +121,9 @@ export function estadoZurichPorTipoInforme(tipoInforme, estadoActual) {
   const tipo = tipoInformeZurich(tipoInforme);
   const actual = homologarEstadoZurich(estadoActual);
   if (actual === ESTADO_ZURICH_FINALIZADO) return actual;
+  if (actual === ESTADO_ZURICH_EN_PROCESO_FACTURACION || actual === ESTADO_ZURICH_FACTURADO) {
+    return actual;
+  }
   if (tipo !== 'unico' && tipo !== 'final') return actual;
   const orden = ESTADOS_ZURICH.indexOf(actual);
   const idxLiquidar = ESTADOS_ZURICH.indexOf(ESTADO_ZURICH_LIQUIDAR);

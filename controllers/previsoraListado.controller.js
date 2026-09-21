@@ -287,6 +287,11 @@ const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
       data.fechaCasoParaPago ?? data.fechaCasoCerrado,
       base.fechaCasoParaPago ?? base.fechaCasoCerrado ?? null
     ),
+    fechaEnProcesoFacturacion: pickFecha(
+      data.fechaEnProcesoFacturacion,
+      base.fechaEnProcesoFacturacion ?? null
+    ),
+    fechaFacturado: pickFecha(data.fechaFacturado, base.fechaFacturado ?? null),
     documentoFaltante: pick(data.documentoFaltante, base.documentoFaltante ?? null),
     observacionPendienteDocumento: pick(
       data.observacionPendienteDocumento,
@@ -412,6 +417,8 @@ const PROYECCION_LISTA_PREVISORA_LISTADO = {
   fechaDesistimiento: 1,
   fechaCasoCerrado: 1,
   fechaCasoParaPago: 1,
+  fechaEnProcesoFacturacion: 1,
+  fechaFacturado: 1,
   documentoFaltante: 1,
   observacionPendienteDocumento: 1,
   motivoObjecion: 1,
