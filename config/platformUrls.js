@@ -61,6 +61,10 @@ export function isLocalOrigin(url) {
   return /localhost|127\.0\.0\.1/i.test(url || '');
 }
 
+export function isPlaceholderLivekitHost(hostname) {
+  return String(hostname || '').toLowerCase() === 'livekit.grupoproser.com.co';
+}
+
 export function isPrivateHostname(hostname) {
   const h = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
   if (h === 'localhost' || h === '127.0.0.1' || h === '::1') return true;
@@ -114,6 +118,9 @@ export function resolveLivekitClientUrl(wsUrl) {
   if (!raw) return '';
   try {
     const u = new URL(raw);
+    if (isPlaceholderLivekitHost(u.hostname)) {
+      return '';
+    }
     if (isProduction() && isPrivateHostname(u.hostname)) {
       return '';
     }
