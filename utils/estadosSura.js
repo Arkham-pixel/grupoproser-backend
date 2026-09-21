@@ -5,6 +5,8 @@ export const ESTADOS_SURA = [
   'INFORME DEL INSPECTOR',
   'INFORME PRELIMINAR Y/O ACTUALIZACIÓN',
   'INFORME ÚNICO O FINAL',
+  'EN PROCESO DE FACTURACIÓN',
+  'FACTURADO',
   'ANULADO',
   'DESISTIDO',
   'OBJETADO',
@@ -18,6 +20,11 @@ export const ESTADOS_SURA_CERRADOS = [
   'OBJETADO',
   'CANCELADO SURA',
 ];
+
+export const FECHA_ACCION_POR_ESTADO_SURA = {
+  'EN PROCESO DE FACTURACIÓN': 'fchaEnProcesoFacturacion',
+  FACTURADO: 'fchaFacturado',
+};
 
 const MAPA_LEGADO = {
   PENDIENTE: 'CASO NUEVO',
@@ -84,7 +91,12 @@ function tipoInformeSura(valor) {
 export function estadoSuraPorTipoInforme(tipoInforme, estadoActual) {
   const tipo = tipoInformeSura(tipoInforme);
   const actual = normalizarEstadoSura(estadoActual);
-  if (actual === 'ANULADO') return actual;
+  if (actual === 'ANULADO' || actual === 'DESISTIDO' || actual === 'OBJETADO' || actual === 'CANCELADO SURA') {
+    return actual;
+  }
+  if (actual === 'EN PROCESO DE FACTURACIÓN' || actual === 'FACTURADO') {
+    return actual;
+  }
   if (tipo === 'unico' || tipo === 'final') return ESTADO_SURA_INFORME_UNICO;
   if (tipo === 'preliminar') {
     if (actual === ESTADO_SURA_INFORME_UNICO) return actual;
@@ -101,7 +113,7 @@ export function aplicarEstadoDesdeTipoInformeSura(payload = {}, base = {}) {
     String(estadoEnviado).trim() !== '' &&
     normalizarEstadoSura(estadoEnviado) !== normalizarEstadoSura(estadoBase)
   ) {
-    return aplicarFechasHitoDesdeInformeUnicoSura(payload, base);
+    return aplicarFechaAccionEstadoSura(aplicarFechasHitoDesdeInformeUnicoSura(payload, base), base);
   }
   const tipo = payload?.informeUnico?.tipoInforme ?? base?.informeUnico?.tipoInforme;
   const siguiente = estadoSuraPorTipoInforme(tipo, payload.estado || base.estado);
@@ -113,7 +125,24 @@ export function aplicarEstadoDesdeTipoInformeSura(payload = {}, base = {}) {
       descripcionEstado: siguiente,
     };
   }
-  return aplicarFechasHitoDesdeInformeUnicoSura(next, base);
+  return aplicarFechaAccionEstadoSura(aplicarFechasHitoDesdeInformeUnicoSura(next, base), base);
+}
+
+function fechaVaciaSura(valor) {
+  if (valor == null || valor === '') return true;
+  if (valor instanceof Date) return Number.isNaN(valor.getTime());
+  return typeof valor === 'string' && !valor.trim();
+}
+
+export function aplicarFechaAccionEstadoSura(payload = {}, base = {}) {
+  const estado = normalizarEstadoSura(payload.estado || payload.descripcionEstado);
+  const out = { ...payload, estado };
+  const clave = FECHA_ACCION_POR_ESTADO_SURA[estado];
+  const anterior = normalizarEstadoSura(base.estado || base.descripcionEstado);
+  if (clave && fechaVaciaSura(out[clave]) && anterior !== estado) {
+    out[clave] = new Date();
+  }
+  return out;
 }
 
 /**

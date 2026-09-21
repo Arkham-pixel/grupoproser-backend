@@ -235,12 +235,13 @@ export function fechaRadicacionInformeSura(caso = {}) {
 }
 
 /**
- * Estado del siniestro (Facilitadores) desde estado de gestión SURA:
- * - Tramitado: INFORME ÚNICO O FINAL (o tipo único/final) con fecha radicada
- * - Anulado: ANULADO o Desistido
- * - Abierto: el resto
+ * Estado del siniestro (Facilitadores → columna Q ESTADO_SINIESTRO).
+ * Prioridad: campo manual estadoFacilitador (Gestionar); si vacío, se deriva del flujo SURA.
  */
 export function estadoFacilitadorDesdeCasoSura(caso = {}) {
+  const manual = normalizarEstadoFacilitador(caso.estadoFacilitador);
+  if (manual) return manual;
+
   const estado = normalizarEstadoSura(caso.estado);
   const bruto = String(caso.estado || caso.descripcionEstado || '')
     .normalize('NFD')
@@ -421,9 +422,10 @@ function fechaArchivoEtiquetaSura(caso = {}, etiqueta = '') {
 }
 
 export function sugerenciaDesdeCasoSura(caso = {}) {
-  const estado = normalizarEstadoSura(caso.estado);
   const estadoFac = estadoFacilitadorDesdeCasoSura(caso);
-  const cerradoFac = estadoFac === 'Anulado' || estadoFac === 'Tramitado';
+  const cerradoFac = ['Anulado', 'Tramitado', 'Desistido', 'Objetado', 'Cancelado Sura'].includes(
+    estadoFac
+  );
   const fechaInspeccion = parseFecha(caso.fechaInspeccion || caso.fchaInspccion || null);
   const visitaSi = Boolean(fechaInspeccion);
   const criterio = criterioConDefault(caso.estadoPagoPrimas);

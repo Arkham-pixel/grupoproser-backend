@@ -101,13 +101,52 @@ function puedeUsarEstadosRestringidosSura(identidad = {}) {
   return claves.some((k) => SURA_LOGINS_BARRA_ESTADOS.has(k));
 }
 
+function normalizarEstadoFacilitadorPayload(valor) {
+  const k = String(valor ?? '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toUpperCase();
+  if (!k) return '';
+  if (k.startsWith('ABIER')) return 'Abierto';
+  if (k.startsWith('TRAM')) return 'Tramitado';
+  if (k.startsWith('ANUL')) return 'Anulado';
+  if (k.startsWith('DESIST')) return 'Desistido';
+  if (k.startsWith('OBJET')) return 'Objetado';
+  if (k.includes('CANCELADO')) return 'Cancelado Sura';
+  return '';
+}
+
+const ESTADOS_FACILITADOR_RESTRINGIDOS = new Set([
+  'Anulado',
+  'Desistido',
+  'Objetado',
+  'Cancelado Sura',
+]);
+
 function aplicarRestriccionEstadosSura(payload, base = {}, identidad = {}) {
-  if (puedeUsarEstadosRestringidosSura(identidad)) return payload;
+  if (puedeUsarEstadosRestringidosSura(identidad)) {
+    if (payload.estadoFacilitador !== undefined) {
+      const n = normalizarEstadoFacilitadorPayload(payload.estadoFacilitador);
+      payload.estadoFacilitador = n || String(payload.estadoFacilitador || '').trim() || '';
+    }
+    return payload;
+  }
   const estadoNuevo = normalizarEstadoSura(payload.estado || payload.descripcionEstado);
   const estadoAntes = normalizarEstadoSura(base.estado || base.descripcionEstado);
   if (ESTADOS_SURA_RESTRINGIDOS.has(estadoNuevo) && estadoNuevo !== estadoAntes) {
     payload.estado = estadoAntes || base.estado;
     payload.descripcionEstado = base.descripcionEstado || estadoAntes || '';
+  }
+  // Columna Q: solo autorizados cambian Anulado / Desistido / Objetado / Cancelado Sura.
+  if (payload.estadoFacilitador !== undefined) {
+    const facNuevo = normalizarEstadoFacilitadorPayload(payload.estadoFacilitador);
+    const facAntes = normalizarEstadoFacilitadorPayload(base.estadoFacilitador);
+    if (ESTADOS_FACILITADOR_RESTRINGIDOS.has(facNuevo) && facNuevo !== facAntes) {
+      payload.estadoFacilitador = facAntes || base.estadoFacilitador || '';
+    } else if (facNuevo) {
+      payload.estadoFacilitador = facNuevo;
+    }
   }
   return payload;
 }
@@ -392,6 +431,12 @@ export const buildSuraPayload = (data = {}, base = {}) => {
       base.causa_siniestro
     ),
     estadoPagoPrimas: toStringOrNull(data.estadoPagoPrimas, base.estadoPagoPrimas ?? null),
+    estadoFacilitador: (() => {
+      const raw =
+        data.estadoFacilitador !== undefined ? data.estadoFacilitador : base.estadoFacilitador;
+      const n = normalizarEstadoFacilitadorPayload(raw);
+      return n || toStringOrNull(raw, base.estadoFacilitador ?? null) || '';
+    })(),
     valorReservaPreventivaPromedio: parseNumberFlexible(
       data.valorReservaPreventivaPromedio,
       base.valorReservaPreventivaPromedio ?? null
@@ -477,6 +522,14 @@ export const buildSuraPayload = (data = {}, base = {}) => {
   } else if (typeof payload.fchaAsgncion === 'string') {
     payload.fchaAsgncion = parseDate(payload.fchaAsgncion);
   }
+  payload.fchaEnProcesoFacturacion = parseDateFlexible(
+    data.fchaEnProcesoFacturacion,
+    base.fchaEnProcesoFacturacion ?? payload.fchaEnProcesoFacturacion ?? null
+  );
+  payload.fchaFacturado = parseDateFlexible(
+    data.fchaFacturado,
+    base.fchaFacturado ?? payload.fchaFacturado ?? null
+  );
   if (!payload.nombreCliente && !payload.nombreAseguradora) {
     payload.nombreCliente = SURA_RAZON_SOCIAL;
     payload.nombreAseguradora = SURA_RAZON_SOCIAL;
@@ -518,6 +571,7 @@ const mergeImportacionSura = (incomingPayload = {}, existente = {}) => {
     'nombIntermediario',
     'descSinstro',
     'descripcionEstado',
+    'estadoFacilitador',
     'fchaAsgncion',
     'estadoPagoPrimas',
     'valorReservaPreventivaPromedio',

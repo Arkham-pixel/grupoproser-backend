@@ -127,6 +127,8 @@ const SegurosSuraCasoSchema = new mongoose.Schema(
     fchaAceptacionCifrasAseguradora: Date,
     fchaReconsideracion: Date,
     fchaEnvioFiniquito: Date,
+    fchaEnProcesoFacturacion: Date,
+    fchaFacturado: Date,
 
     /** Campos tipo Complex (formulario agregar datos) */
     nmroAjste: String,
@@ -159,6 +161,8 @@ const SegurosSuraCasoSchema = new mongoose.Schema(
     actaInspeccionNoAplica: { type: Boolean, default: false },
     codiEstdo: String,
     descripcionEstado: String,
+    /** Portal Facilitadores columna Q (ESTADO_SINIESTRO): Abierto / Tramitado / Anulado / … */
+    estadoFacilitador: String,
     observacionesPendientes: String,
     fchaAsgncion: Date,
     vlorResrva: Number,
