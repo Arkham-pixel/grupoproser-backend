@@ -25,6 +25,16 @@ export const SURA_LOGINS_PERMISO_LIDER = Object.freeze(['72288319']);
 /** Alfa: ocultan del reporte/mapa los casos con fecha de llamada (Leyna Alfonso). */
 export const ALFA_LOGINS_COLA_FECHA_LLAMADA = Object.freeze(['1098662033']);
 
+/**
+ * Alfa: únicos autorizados a tipificar PROCESO DE PAGO.
+ * Leyna Alfonso, Silvia Rodríguez, Daniela Negrete.
+ */
+export const ALFA_LOGINS_PROCESO_DE_PAGO = Object.freeze([
+  '1098662033',
+  '1065658621',
+  '1003717060',
+]);
+
 /** Logins que ven toda la agenda CAT (todos los módulos), como admin/soporte. */
 export const AGENDA_LOGINS_VISTA_GLOBAL = Object.freeze(['1130615470']);
 
@@ -52,6 +62,17 @@ export function esLoginColaFechaLlamadaAlfa(login) {
   const clave = normalizarClaveDocumentoLogin(login);
   if (!clave) return false;
   return ALFA_LOGINS_COLA_FECHA_LLAMADA.map(normalizarClaveDocumentoLogin).includes(clave);
+}
+
+export function esLoginProcesoDePagoAlfa(login) {
+  const clave = normalizarClaveDocumentoLogin(login);
+  if (!clave) return false;
+  return ALFA_LOGINS_PROCESO_DE_PAGO.map(normalizarClaveDocumentoLogin).includes(clave);
+}
+
+export function puedeTipificarProcesoDePagoAlfa(identidad = {}) {
+  if (!identidad || typeof identidad !== 'object') return false;
+  return [identidad.login, identidad.cedula].some((v) => esLoginProcesoDePagoAlfa(v));
 }
 
 export function esIdentidadColaFechaLlamadaAlfa(opts = {}) {

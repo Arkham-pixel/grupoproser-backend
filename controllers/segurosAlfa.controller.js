@@ -39,7 +39,9 @@ import {
   homologarEstadoAlfa,
   sincronizarGestionConCierreSiniestroAlfa,
   asegurarSiniestroCompatibleConGestionAlfa,
+  validarTransicionProcesoDePagoAlfa,
 } from '../config/alfaExcelStatuses.js';
+import { puedeTipificarProcesoDePagoAlfa } from '../utils/permisosCasoPorRol.js';
 import {
   geocodeCasosAlfaPendientes,
   aplicarUbicacionesPredioAlfa,
@@ -511,12 +513,20 @@ export const crearCasoAlfa = async (req, res) => {
 
     const faltantes = validarRequeridos(payload);
     const obsErr = validarObservacionesGestion(payload);
-    if (faltantes.length > 0 || obsErr) {
+    const procesoErr = validarTransicionProcesoDePagoAlfa({
+      estadoNuevo: payload.estado,
+      estadoAnterior: '',
+      caso: payload,
+      autorizado: puedeTipificarProcesoDePagoAlfa(identidad),
+    });
+    if (faltantes.length > 0 || obsErr || procesoErr) {
       return res.status(400).json({
         success: false,
-        error: `Los siguientes campos son obligatorios: ${[...faltantes, obsErr]
-          .filter(Boolean)
-          .join(', ')}`,
+        error: procesoErr
+          ? procesoErr
+          : `Los siguientes campos son obligatorios: ${[...faltantes, obsErr]
+              .filter(Boolean)
+              .join(', ')}`,
       });
     }
 
@@ -645,19 +655,21 @@ export const listarCasosAlfa = async (req, res) => {
     const filtroExcluidos = incluirExcluidos ? {} : { excluidoBaseAlfa: { $ne: true } };
     const filtro = combinarFiltrosMongo(filtroAsignacion, filtroExcluidos);
     const collation = filtroAsignacion ? collationVistaAsignacion() : undefined;
+    // Sin hint forzado: con filtro de asignación/collation el hint {_id:1} empeora el plan
+    // y el listado del dashboard (limit 800) puede superar 20s con Atlas intermitente.
     const listQuery = SegurosAlfaCaso.aggregate(
       buildAlfaListadoPipeline({ filtro, skip, limit: limitNum })
-    ).option({ allowDiskUse: true, maxTimeMS: 20000, hint: { _id: 1 } });
+    ).option({ allowDiskUse: true, maxTimeMS: 90000 });
     if (collation) {
       listQuery.collation(collation);
     }
     const countPromise = filtroAsignacion
-      ? SegurosAlfaCaso.countDocuments(filtro).maxTimeMS(20000).collation(collation)
+      ? SegurosAlfaCaso.countDocuments(filtro).maxTimeMS(90000).collation(collation)
       : incluirExcluidos
         ? SegurosAlfaCaso.estimatedDocumentCount()
         : Promise.all([
             SegurosAlfaCaso.estimatedDocumentCount(),
-            SegurosAlfaCaso.countDocuments({ excluidoBaseAlfa: true }).maxTimeMS(15000),
+            SegurosAlfaCaso.countDocuments({ excluidoBaseAlfa: true }).maxTimeMS(30000),
           ]).then(([all, excluidos]) => Math.max(0, all - excluidos));
     const [total, documentos] = await Promise.all([countPromise, listQuery]);
 
@@ -812,12 +824,20 @@ export const actualizarCasoAlfa = async (req, res) => {
     const faltantes = validarRequeridos(payload);
     const obsErr = validarObservacionesGestion(payload);
     const cierreErr = validarCierreBajoDeducible(payload, base);
-    if (faltantes.length > 0 || obsErr || cierreErr) {
+    const procesoErr = validarTransicionProcesoDePagoAlfa({
+      estadoNuevo: payload.estado,
+      estadoAnterior: base.estado,
+      caso: payload,
+      autorizado: puedeTipificarProcesoDePagoAlfa(identidad),
+    });
+    if (faltantes.length > 0 || obsErr || cierreErr || procesoErr) {
       return res.status(400).json({
         success: false,
-        error: `Los siguientes campos son obligatorios: ${[...faltantes, obsErr, cierreErr]
-          .filter(Boolean)
-          .join(', ')}`,
+        error: procesoErr
+          ? procesoErr
+          : `Los siguientes campos son obligatorios: ${[...faltantes, obsErr, cierreErr]
+              .filter(Boolean)
+              .join(', ')}`,
       });
     }
 

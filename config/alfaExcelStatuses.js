@@ -39,8 +39,8 @@ export const ALFA_RELACION_GESTION_SINIESTRO = Object.freeze({
   'CONTACTADO Y PROGRAMADO': Object.freeze(['PENDIENTE']),
   INSPECCIONADO: Object.freeze(['INSPECCIONADO PENDIENTE', 'CERRADO', 'DESISTIDO']),
   LIQUIDADO: Object.freeze([
-    'PROCESO DE PAGO',
     'PENDIENTE ACEPTACION CIFRAS',
+    'PROCESO DE PAGO',
     'OBJETADO',
     'PAGADO',
   ]),
@@ -107,7 +107,7 @@ function canonicalDisplayStatus(normalized) {
     'INSPECCIONADO PENDIENTE': 'INSPECCIONADO PENDIENTE',
     'EN PROCESO DE PAGO': 'PROCESO DE PAGO',
     'PROCESO DE PAGO': 'PROCESO DE PAGO',
-    'ENVIADO ASEGURADORA': 'PROCESO DE PAGO',
+    'ENVIADO ASEGURADORA': 'PENDIENTE ACEPTACION CIFRAS',
     LIQUIDADO: 'PENDIENTE ACEPTACION CIFRAS',
     'PENDIENTE ACEPTACION DE CIFRAS': 'PENDIENTE ACEPTACION CIFRAS',
     'PENDIENTE ACEPTACION CIFRAS': 'PENDIENTE ACEPTACION CIFRAS',
@@ -156,16 +156,44 @@ export function homologarEstadoSiniestroAlfa(estado, extras = {}) {
   const n = normalizeAlfaStatus(raw);
 
   if (n === 'LIQUIDADO') {
-    const acep = String(extras?.liquidador?.aceptacionIndemnizacion || '')
-      .normalize('NFD')
-      .replace(/\p{M}/gu, '')
-      .toUpperCase()
-      .replace(/\s+/g, '_');
-    if (acep === 'ACEPTO' || extras?.fechaAceptacionLiquidacion) return 'PROCESO DE PAGO';
     return 'PENDIENTE ACEPTACION CIFRAS';
   }
 
   return canonicalDisplayStatus(n) || 'PENDIENTE';
+}
+
+/** Evidencia operativa de envío a la aseguradora. */
+export function casoAlfaTieneEnvioAseguradora(caso = {}) {
+  const v = caso?.fechaEnvioAseguradora;
+  if (v == null || v === '') return false;
+  if (v instanceof Date) return !Number.isNaN(v.getTime());
+  const s = String(v).trim();
+  if (!s) return false;
+  const d = new Date(s);
+  return !Number.isNaN(d.getTime());
+}
+
+/**
+ * Valida transición hacia PROCESO DE PAGO.
+ * @returns {string|null}
+ */
+export function validarTransicionProcesoDePagoAlfa({
+  estadoNuevo,
+  estadoAnterior = '',
+  caso = {},
+  autorizado = false,
+} = {}) {
+  const next = homologarEstadoSiniestroAlfa(estadoNuevo, caso);
+  const prev = homologarEstadoSiniestroAlfa(estadoAnterior, caso);
+  if (next !== 'PROCESO DE PAGO') return null;
+  if (prev === 'PROCESO DE PAGO') return null;
+  if (!autorizado) {
+    return 'PROCESO DE PAGO solo lo pueden tipificar Leyna, Silvia o Daniela.';
+  }
+  if (!casoAlfaTieneEnvioAseguradora(caso)) {
+    return 'PROCESO DE PAGO requiere fecha de envío a la aseguradora (casos enviados).';
+  }
+  return null;
 }
 
 /**
