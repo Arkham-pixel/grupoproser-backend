@@ -8,7 +8,6 @@
  */
 
 export const ALFA_ESTADOS_GESTION = Object.freeze([
-  'EN GESTIÓN',
   'PTE CONTACTO',
   'SOLICITUD DTOS',
   'CONTACTADO Y PROGRAMADO',
@@ -33,7 +32,6 @@ export const ALFA_ESTADOS_SINIESTRO = Object.freeze([
  * Relación oficial: Estado de Gestión → Estados de Siniestro permitidos.
  */
 export const ALFA_RELACION_GESTION_SINIESTRO = Object.freeze({
-  'EN GESTIÓN': Object.freeze(['PENDIENTE']),
   'PTE CONTACTO': Object.freeze(['PENDIENTE']),
   'SOLICITUD DTOS': Object.freeze(['PENDIENTE']),
   'CONTACTADO Y PROGRAMADO': Object.freeze(['PENDIENTE']),
@@ -211,12 +209,11 @@ export function homologarEstadoGestionAlfa(value) {
 
   const n = normalizeAlfaStatus(raw);
   const aliases = {
-    // EN GESTIÓN se conserva; no mezclar con PTE CONTACTO.
-    'EN GESTION': 'EN GESTIÓN',
-    'EN GESTIÓN': 'EN GESTIÓN',
-    PENDIENTE: 'EN GESTIÓN',
-    'SIN CONTACTAR': 'EN GESTIÓN',
-    // Solo tipificación explícita de contacto
+    // EN GESTIÓN ya no existe → PTE CONTACTO
+    'EN GESTION': 'PTE CONTACTO',
+    'EN GESTIÓN': 'PTE CONTACTO',
+    PENDIENTE: 'PTE CONTACTO',
+    'SIN CONTACTAR': 'PTE CONTACTO',
     'PTE CONTACTO': 'PTE CONTACTO',
     'PENDIENTE DE CONTACTO': 'PTE CONTACTO',
     'PENDIENTE DE CONTACTO Y SOLICITUD DE DOCUMENTOS': 'PTE CONTACTO',
@@ -235,13 +232,12 @@ export function homologarEstadoGestionAlfa(value) {
     'SIN RESPUESTA EFECTIVA': 'SIN RESPUESTA EFECTIVA',
     'SIN POLIZA': 'SIN PÓLIZA',
     'SIN PÓLIZA': 'SIN PÓLIZA',
-    // Legacy: CERRADO como gestión → tipificación actual Sin póliza
     CERRADO: 'SIN PÓLIZA',
     'CERRADO TOTALMENTE': 'SIN PÓLIZA',
     'CERRADOS TOTALMENTE': 'SIN PÓLIZA',
   };
-  // Desconocido → EN GESTIÓN (no inflar PTE CONTACTO).
-  return aliases[n] || 'EN GESTIÓN';
+  // Desconocido → PTE CONTACTO (EN GESTIÓN eliminado).
+  return aliases[n] || 'PTE CONTACTO';
 }
 
 /** True si el valor ya es una etiqueta oficial del catálogo de gestión. */
@@ -386,7 +382,6 @@ export function sincronizarGestionConCierreSiniestroAlfa(estadoSiniestro, estado
   }
   if (s === 'PENDIENTE') {
     if (
-      g === 'EN GESTIÓN' ||
       g === 'PTE CONTACTO' ||
       g === 'SOLICITUD DTOS' ||
       g === 'CONTACTADO Y PROGRAMADO' ||
@@ -397,9 +392,9 @@ export function sincronizarGestionConCierreSiniestroAlfa(estadoSiniestro, estado
     // Gestión avanzada incompatible con PENDIENTE: conservar tipificación;
     // asegurarSiniestroCompatibleConGestionAlfa ajusta el siniestro.
     if (g === 'INSPECCIONADO' || g === 'LIQUIDADO' || g === 'SIN PÓLIZA') return g;
-    return 'EN GESTIÓN';
+    return 'PTE CONTACTO';
   }
-  return g || 'EN GESTIÓN';
+  return g || 'PTE CONTACTO';
 }
 
 /**

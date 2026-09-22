@@ -1718,7 +1718,7 @@ export async function reconcileAlfaExcelEstadoGaps({ apply = true } = {}) {
     const before = {
       ...caso,
       estado: g.excelEstadoRaw || caso.estado || 'PENDIENTE',
-      estadoGestion: g.excelGestionRaw || caso.estadoGestion || 'EN GESTIÓN',
+      estadoGestion: g.excelGestionRaw || caso.estadoGestion || 'PTE CONTACTO',
     };
     const after = { ...caso };
     const doc = await enqueueAlfaExcelOutboundFromCaseUpdate({

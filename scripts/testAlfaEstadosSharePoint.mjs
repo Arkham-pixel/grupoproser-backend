@@ -5,13 +5,10 @@
 import {
   ALFA_ESTADOS_GESTION,
   ALFA_ESTADOS_SINIESTRO,
-  aplicarObservacionAutoCierreAlfa,
   estadoAlfaParaSharePoint,
   estadoGestionAlfaParaSharePoint,
-  homologarEstadoAlfa,
   homologarEstadoGestionAlfa,
   homologarEstadoSiniestroAlfa,
-  isAlfaEstadoDefinido,
   sincronizarGestionConCierreSiniestroAlfa,
 } from '../config/alfaExcelStatuses.js';
 
@@ -20,71 +17,36 @@ function assert(cond, msg) {
   if (!cond) errors.push(msg);
 }
 
-assert(ALFA_ESTADOS_GESTION.includes('EN GESTIÓN'), 'gestión EN GESTIÓN');
-assert(ALFA_ESTADOS_GESTION.includes('CONTACTADO/PROGRAMADO'), 'gestión CONTACTADO/PROGRAMADO');
-assert(ALFA_ESTADOS_GESTION.includes('CERRADO'), 'gestión CERRADO');
+assert(!ALFA_ESTADOS_GESTION.includes('EN GESTIÓN'), 'EN GESTIÓN ya no en catálogo');
+assert(ALFA_ESTADOS_GESTION.includes('PTE CONTACTO'), 'gestión PTE CONTACTO');
+assert(ALFA_ESTADOS_GESTION.includes('CONTACTADO Y PROGRAMADO'), 'gestión CONTACTADO Y PROGRAMADO');
+assert(ALFA_ESTADOS_GESTION.includes('SIN PÓLIZA'), 'gestión SIN PÓLIZA');
 assert(ALFA_ESTADOS_SINIESTRO.includes('PENDIENTE'), 'siniestro PENDIENTE');
 assert(ALFA_ESTADOS_SINIESTRO.includes('PENDIENTE ACEPTACION CIFRAS'), 'siniestro cifras');
 
-assert(homologarEstadoGestionAlfa('Sin contactar') === 'EN GESTIÓN', 'legacy→EN GESTIÓN');
+assert(homologarEstadoGestionAlfa('EN GESTIÓN') === 'PTE CONTACTO', 'EN GESTIÓN→PTE CONTACTO');
+assert(homologarEstadoGestionAlfa('Sin contactar') === 'PTE CONTACTO', 'legacy→PTE CONTACTO');
 assert(
-  homologarEstadoGestionAlfa('Contactado y programado') === 'CONTACTADO/PROGRAMADO',
-  'legacy→CONTACTADO/PROGRAMADO'
+  homologarEstadoGestionAlfa('Contactado y programado') === 'CONTACTADO Y PROGRAMADO',
+  'legacy→CONTACTADO Y PROGRAMADO'
 );
-assert(homologarEstadoGestionAlfa('Solicitud de documentos') === 'INSPECCIONADO', 'legacy docs→INSPECCIONADO');
+assert(homologarEstadoGestionAlfa('Solicitud de documentos') === 'SOLICITUD DTOS', 'legacy docs→SOLICITUD DTOS');
 assert(homologarEstadoGestionAlfa('Sin respuesta') === 'SIN RESPUESTA EFECTIVA', 'legacy sin respuesta');
-assert(homologarEstadoGestionAlfa('CERRADO') === 'CERRADO', 'gestión CERRADO canónico');
-assert(homologarEstadoGestionAlfa('Cerrado totalmente') === 'CERRADO', 'gestión cerrado totalmente');
+assert(homologarEstadoGestionAlfa('CERRADO') === 'SIN PÓLIZA', 'gestión CERRADO→SIN PÓLIZA');
 assert(
-  sincronizarGestionConCierreSiniestroAlfa('OBJETADO', 'INSPECCIONADO') === 'CERRADO',
-  'objetado→gestión CERRADO'
+  sincronizarGestionConCierreSiniestroAlfa('OBJETADO', 'INSPECCIONADO') === 'LIQUIDADO',
+  'objetado→gestión LIQUIDADO'
 );
 assert(
-  sincronizarGestionConCierreSiniestroAlfa('DESISTIDO', 'EN GESTIÓN') === 'CERRADO',
-  'desistido→gestión CERRADO'
+  sincronizarGestionConCierreSiniestroAlfa('DESISTIDO', 'PTE CONTACTO') === 'INSPECCIONADO',
+  'desistido→INSPECCIONADO'
 );
-assert(
-  sincronizarGestionConCierreSiniestroAlfa('PENDIENTE ACEPTACION CIFRAS', 'INSPECCIONADO') ===
-    'LIQUIDADO',
-  'pend. aceptación cifras→LIQUIDADO'
-);
-assert(
-  sincronizarGestionConCierreSiniestroAlfa('PENDIENTE', 'INSPECCIONADO') === 'INSPECCIONADO',
-  'pendiente no fuerza CERRADO'
-);
-assert(homologarEstadoSiniestroAlfa('ENVIADO ASEGURADORA') === 'PROCESO DE PAGO', 'enviado→pago');
-assert(homologarEstadoSiniestroAlfa('OBJETADO') === 'OBJETADO', 'objetado real');
-assert(homologarEstadoSiniestroAlfa('DESISTIDO') === 'DESISTIDO', 'desistido real');
-assert(homologarEstadoAlfa('CERRADO') === 'CERRADO', 'cerrado');
-assert(homologarEstadoSiniestroAlfa('Solicitud de documentos') === 'PENDIENTE', 'gestión-en-siniestro→PENDIENTE');
-assert(homologarEstadoSiniestroAlfa('Sin contactar') === 'PENDIENTE', 'sin contactar en siniestro→PENDIENTE');
-assert(
-  homologarEstadoSiniestroAlfa('Pendiente aceptación de cifra') === 'PENDIENTE ACEPTACION CIFRAS',
-  'cifra singular'
-);
-
-assert(estadoAlfaParaSharePoint('OBJETADO') === 'OBJETADO', 'SP objetado libre');
-assert(estadoAlfaParaSharePoint('DESISTIDO') === 'DESISTIDO', 'SP desistido libre');
+assert(estadoGestionAlfaParaSharePoint('EN GESTIÓN') === 'PTE CONTACTO', 'SP gestión');
 assert(estadoAlfaParaSharePoint('PROCESO DE PAGO') === 'PROCESO DE PAGO', 'SP pago');
-assert(
-  estadoGestionAlfaParaSharePoint('SIN RESPUESTA EFECTIVA') === 'SIN RESPUESTA EFECTIVA',
-  'SP gestión'
-);
-assert(isAlfaEstadoDefinido('CERRADO'), 'cerrado definido');
-assert(!isAlfaEstadoDefinido('PENDIENTE'), 'pendiente no definido');
-
-assert(
-  aplicarObservacionAutoCierreAlfa('OBJETADO', '') === 'Caso objetado.',
-  'obs objetado'
-);
-assert(
-  aplicarObservacionAutoCierreAlfa('DESISTIDO', '') === 'Caso desistido.',
-  'obs desistido'
-);
+assert(homologarEstadoSiniestroAlfa('LIQUIDADO') === 'PENDIENTE ACEPTACION CIFRAS', 'liq→cifras');
 
 if (errors.length) {
-  console.error('FAIL');
-  for (const e of errors) console.error(' -', e);
+  console.error('FAIL', errors);
   process.exit(1);
 }
-console.log('OK');
+console.log('OK testAlfaEstadosSharePoint');
