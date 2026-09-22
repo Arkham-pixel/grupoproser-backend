@@ -27,12 +27,13 @@ export const ALFA_LOGINS_COLA_FECHA_LLAMADA = Object.freeze(['1098662033']);
 
 /**
  * Alfa: únicos autorizados a tipificar PROCESO DE PAGO.
- * Leyna Alfonso, Silvia Rodríguez, Daniela Negrete.
+ * Leyna Alfonso, Silvia Rodríguez, Daniela Negrete, Oscar Atencia.
  */
 export const ALFA_LOGINS_PROCESO_DE_PAGO = Object.freeze([
   '1098662033',
   '1065658621',
   '1003717060',
+  '1065012991',
 ]);
 
 /** Logins que ven toda la agenda CAT (todos los módulos), como admin/soporte. */

@@ -188,10 +188,7 @@ export function validarTransicionProcesoDePagoAlfa({
   if (next !== 'PROCESO DE PAGO') return null;
   if (prev === 'PROCESO DE PAGO') return null;
   if (!autorizado) {
-    return 'PROCESO DE PAGO solo lo pueden tipificar Leyna, Silvia o Daniela.';
-  }
-  if (!casoAlfaTieneEnvioAseguradora(caso)) {
-    return 'PROCESO DE PAGO requiere fecha de envío a la aseguradora (casos enviados).';
+    return 'PROCESO DE PAGO solo lo pueden tipificar Leyna, Silvia, Daniela u Oscar.';
   }
   return null;
 }
