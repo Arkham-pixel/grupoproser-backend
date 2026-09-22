@@ -34,28 +34,29 @@
       }
       .btn:disabled { opacity: .5; }
       .btn.ghost { background: #fff; color: #111; border: 1px solid #d1d5db; }
-      video.main { width: 100%; aspect-ratio: 9/16; object-fit: contain !important; object-position: center; background: #000; display: block; border-radius: 0; }
+      video.main { width: 100%; aspect-ratio: 9/16; object-fit: cover; object-position: center; background: #000; display: block; border-radius: 0; }
       body.in-call video.main {
-        width: 100%; height: 100%; max-height: 100dvh; aspect-ratio: auto;
-        object-fit: contain !important; object-position: center;
-        position: absolute; left: 0; top: 0; z-index: 0;
+        width: 100%; height: 100%; max-height: none; aspect-ratio: auto;
+        object-fit: cover; object-position: center;
+        position: absolute; inset: 0; left: 0; top: 0; right: 0; bottom: 0; z-index: 0;
       }
       .stage { position: relative; overflow: hidden; border-radius: 16px; background: #000; }
       body.in-call .stage {
         position: relative; overflow: hidden; border-radius: 0;
         width: 100%; height: 100dvh; min-height: 100vh;
-        display: flex; align-items: center; justify-content: center;
+        display: block;
         background: #000;
       }
       .pip {
         position: absolute; top: 12px; right: 12px; width: 32%; aspect-ratio: 3/4;
-        object-fit: contain !important; object-position: center;
+        object-fit: cover; object-position: center;
         border-radius: 12px; border: 2px solid #fff; background: #000;
         box-shadow: 0 4px 16px rgba(0,0,0,.35); z-index: 2;
       }
       body.in-call .pip {
-        top: 36px; right: 12px; width: 26%; max-width: 128px; z-index: 4;
-        border-width: 1px;
+        top: auto; bottom: 24px; right: 12px; left: auto;
+        width: 112px; height: 150px; max-width: none; aspect-ratio: auto;
+        z-index: 4; border-width: 2px; object-fit: cover;
       }
       .tiny-brand {
         display: none;
@@ -271,10 +272,23 @@
 
       function fitVideo(el) {
         if (!el) return;
-        el.style.objectFit = 'contain';
+        const esPip = el.classList.contains('pip');
+        el.style.objectFit = 'cover';
         el.style.objectPosition = 'center';
+        if (esPip) {
+          el.style.width = '112px';
+          el.style.height = '150px';
+          el.style.top = 'auto';
+          el.style.bottom = '24px';
+          el.style.right = '12px';
+          el.style.left = 'auto';
+          el.style.position = 'absolute';
+          return;
+        }
         el.style.width = '100%';
         el.style.height = '100%';
+        el.style.inset = '0';
+        el.style.position = 'absolute';
       }
       function videoConstraints() {
         return { facingMode: { ideal: facingMode } };
