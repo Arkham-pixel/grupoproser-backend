@@ -519,6 +519,37 @@ export async function cancelarSesion(req, res) {
   }
 }
 
+/** Borra la sesión del historial (pruebas / limpieza). No elimina objetos S3 huérfanos. */
+export async function eliminarSesion(req, res) {
+  try {
+    const sesion = await VideoperitajeSesion.findById(req.params.id);
+    if (!sesion) return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+    await cerrarSalaLivekit(sesion.livekitRoom || nombreSalaLivekit(sesion._id));
+    await VideoperitajeSesion.deleteOne({ _id: sesion._id });
+    res.json({ success: true, deletedId: String(sesion._id) });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/** Vacía todo el historial de videoperitaje (solo logins permitidos). */
+export async function vaciarHistorialSesiones(req, res) {
+  try {
+    const abiertas = await VideoperitajeSesion.find({
+      estado: { $in: ['pendiente', 'en_proceso'] },
+    })
+      .select('_id livekitRoom')
+      .lean();
+    for (const s of abiertas) {
+      await cerrarSalaLivekit(s.livekitRoom || nombreSalaLivekit(s._id));
+    }
+    const result = await VideoperitajeSesion.deleteMany({});
+    res.json({ success: true, deleted: result.deletedCount || 0 });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
 export async function reenviarInvitacion(req, res) {
   try {
     const sesion = await VideoperitajeSesion.findById(req.params.id);

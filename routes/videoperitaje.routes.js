@@ -10,6 +10,8 @@ import {
   tokenLivekitPerito,
   finalizarSesion,
   cancelarSesion,
+  eliminarSesion,
+  vaciarHistorialSesiones,
   reenviarInvitacion,
   obtenerPublica,
   joinPublico,
@@ -58,7 +60,9 @@ router.use(restringirVideoperitaje);
 
 router.get('/sesiones', listarSesiones);
 router.post('/sesiones', crearSesion);
+router.delete('/sesiones', vaciarHistorialSesiones);
 router.get(`/sesiones/:id(${ID_MONGO})`, obtenerSesion);
+router.delete(`/sesiones/:id(${ID_MONGO})`, eliminarSesion);
 router.post(`/sesiones/:id(${ID_MONGO})/token-livekit`, tokenLivekitPerito);
 router.post(`/sesiones/:id(${ID_MONGO})/finalizar`, finalizarSesion);
 router.post(`/sesiones/:id(${ID_MONGO})/cancelar`, cancelarSesion);
