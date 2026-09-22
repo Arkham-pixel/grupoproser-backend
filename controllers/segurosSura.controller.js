@@ -431,6 +431,17 @@ export const buildSuraPayload = (data = {}, base = {}) => {
       base.causa_siniestro
     ),
     estadoPagoPrimas: toStringOrNull(data.estadoPagoPrimas, base.estadoPagoPrimas ?? null),
+    tipoVivienda: (() => {
+      const raw = data.tipoVivienda !== undefined ? data.tipoVivienda : base.tipoVivienda;
+      const k = String(raw ?? '')
+        .normalize('NFD')
+        .replace(/\p{M}/gu, '')
+        .trim()
+        .toUpperCase();
+      if (k.startsWith('RUR')) return 'RURAL';
+      if (k.startsWith('URB')) return 'URBANA';
+      return base.tipoVivienda || 'URBANA';
+    })(),
     estadoFacilitador: (() => {
       const raw =
         data.estadoFacilitador !== undefined ? data.estadoFacilitador : base.estadoFacilitador;
@@ -574,6 +585,7 @@ const mergeImportacionSura = (incomingPayload = {}, existente = {}) => {
     'estadoFacilitador',
     'fchaAsgncion',
     'estadoPagoPrimas',
+    'tipoVivienda',
     'valorReservaPreventivaPromedio',
     'valorComercialInmueble',
     'reserva',

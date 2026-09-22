@@ -454,6 +454,7 @@ export function sugerenciaDesdeCasoSura(caso = {}) {
       caso.descripcionEstado || caso.estado || caso.observacionLlamada || ''
     ).trim(),
     criterioDetalle: criterio,
+    tipoVivienda: tipoViviendaConDefault(caso.tipoVivienda),
   };
 }
 
@@ -544,6 +545,10 @@ export function fusionarDesdeCasoSura(destino = {}, caso = {}) {
 
   mezclado.criterioDetalle = criterioConDefault(
     destino.criterioDetalle || sugerido.criterioDetalle
+  );
+
+  mezclado.tipoVivienda = tipoViviendaConDefault(
+    caso.tipoVivienda || sugerido.tipoVivienda || destino.tipoVivienda
   );
 
   mezclado.casoSuraId = sugerido.casoSuraId || destino.casoSuraId || null;

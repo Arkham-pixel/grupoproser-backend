@@ -163,6 +163,8 @@ const SegurosSuraCasoSchema = new mongoose.Schema(
     descripcionEstado: String,
     /** Portal Facilitadores columna Q (ESTADO_SINIESTRO): Abierto / Tramitado / Anulado / … */
     estadoFacilitador: String,
+    /** URBANA | RURAL — plantilla Facilitadores TIPO_VIVIENDA */
+    tipoVivienda: { type: String, default: 'URBANA', trim: true },
     observacionesPendientes: String,
     fchaAsgncion: Date,
     vlorResrva: Number,
