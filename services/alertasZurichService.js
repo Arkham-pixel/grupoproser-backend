@@ -11,7 +11,16 @@ import { esEstadoCerradoZurich } from '../utils/estadosZurich.js';
 
 export const DIAS_RECORDATORIO_INACTIVIDAD_ZURICH = 30;
 
-const ESTADOS_CERRADOS_ZURICH = ['FINALIZADO', 'LIQUIDADO', 'OBJETADO', 'CERRADO'];
+const ESTADOS_CERRADOS_ZURICH = [
+  'FINALIZADO',
+  'LIQUIDADO',
+  'OBJETADO',
+  'CERRADO',
+  'DESISTIDO',
+  'ANULADO',
+  'FACTURADO',
+  'EN PROCESO DE FACTURACIÓN',
+];
 
 function normalizarEstadoZurich(valor) {
   return String(valor ?? '')

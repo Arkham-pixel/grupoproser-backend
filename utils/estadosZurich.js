@@ -10,6 +10,8 @@ export const ESTADO_ZURICH_ACEPTACION_CLIENTE = 'ACEPTACIÓN CLIENTE';
 export const ESTADO_ZURICH_FINALIZADO = 'FINALIZADO';
 export const ESTADO_ZURICH_EN_PROCESO_FACTURACION = 'EN PROCESO DE FACTURACIÓN';
 export const ESTADO_ZURICH_FACTURADO = 'FACTURADO';
+export const ESTADO_ZURICH_DESISTIDO = 'DESISTIDO';
+export const ESTADO_ZURICH_ANULADO = 'ANULADO';
 
 export const ESTADOS_ZURICH = [
   ESTADO_ZURICH_DEFAULT,
@@ -23,6 +25,8 @@ export const ESTADOS_ZURICH = [
   ESTADO_ZURICH_FINALIZADO,
   ESTADO_ZURICH_EN_PROCESO_FACTURACION,
   ESTADO_ZURICH_FACTURADO,
+  ESTADO_ZURICH_DESISTIDO,
+  ESTADO_ZURICH_ANULADO,
 ];
 
 export const FECHA_ACCION_POR_ESTADO_ZURICH = {
@@ -37,6 +41,8 @@ export const FECHA_ACCION_POR_ESTADO_ZURICH = {
   [ESTADO_ZURICH_FINALIZADO]: 'fechaFinalizado',
   [ESTADO_ZURICH_EN_PROCESO_FACTURACION]: 'fechaEnProcesoFacturacion',
   [ESTADO_ZURICH_FACTURADO]: 'fechaFacturado',
+  [ESTADO_ZURICH_DESISTIDO]: 'fechaDesistido',
+  [ESTADO_ZURICH_ANULADO]: 'fechaAnulado',
 };
 
 const LEGACY = {
@@ -64,6 +70,10 @@ const LEGACY = {
   'ACEPTACION CLIENTE': ESTADO_ZURICH_ACEPTACION_CLIENTE,
   'ACEPTACION LIQUIDACION': ESTADO_ZURICH_ACEPTACION_CLIENTE,
   CERRADO: ESTADO_ZURICH_FINALIZADO,
+  DESISTIMIENTO: ESTADO_ZURICH_DESISTIDO,
+  DESISTIDOS: ESTADO_ZURICH_DESISTIDO,
+  ANULADA: ESTADO_ZURICH_ANULADO,
+  ANULADOS: ESTADO_ZURICH_ANULADO,
 };
 
 const sinAcentos = (valor) =>
@@ -98,7 +108,9 @@ export function esEstadoCerradoZurich(estado) {
   return (
     actual === ESTADO_ZURICH_FINALIZADO ||
     actual === ESTADO_ZURICH_EN_PROCESO_FACTURACION ||
-    actual === ESTADO_ZURICH_FACTURADO
+    actual === ESTADO_ZURICH_FACTURADO ||
+    actual === ESTADO_ZURICH_DESISTIDO ||
+    actual === ESTADO_ZURICH_ANULADO
   );
 }
 
@@ -121,7 +133,12 @@ export function estadoZurichPorTipoInforme(tipoInforme, estadoActual) {
   const tipo = tipoInformeZurich(tipoInforme);
   const actual = homologarEstadoZurich(estadoActual);
   if (actual === ESTADO_ZURICH_FINALIZADO) return actual;
-  if (actual === ESTADO_ZURICH_EN_PROCESO_FACTURACION || actual === ESTADO_ZURICH_FACTURADO) {
+  if (
+    actual === ESTADO_ZURICH_EN_PROCESO_FACTURACION ||
+    actual === ESTADO_ZURICH_FACTURADO ||
+    actual === ESTADO_ZURICH_DESISTIDO ||
+    actual === ESTADO_ZURICH_ANULADO
+  ) {
     return actual;
   }
   if (tipo !== 'unico' && tipo !== 'final') return actual;

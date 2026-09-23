@@ -86,6 +86,8 @@ const ZurichListadoCasoSchema = new mongoose.Schema(
     fechaFinalizado: Date,
     fechaEnProcesoFacturacion: Date,
     fechaFacturado: Date,
+    fechaDesistido: Date,
+    fechaAnulado: Date,
     documentoFaltante: String,
     observacionPendienteDocumento: String,
     motivoObjecion: String,
