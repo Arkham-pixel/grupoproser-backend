@@ -286,6 +286,11 @@ const buildAlfaPayload = (data = {}, base = {}) =>
     data.fechaEnvioAseguradora,
     base.fechaEnvioAseguradora ?? null
   ),
+  fechaDesistimiento: parseDateFlexible(
+    data.fechaDesistimiento,
+    base.fechaDesistimiento ?? null
+  ),
+  fechaObjecion: parseDateFlexible(data.fechaObjecion, base.fechaObjecion ?? null),
   estado: toStringOrNull(data.estado, base.estado ?? null),
   estadoGestion: toStringOrNull(data.estadoGestion, base.estadoGestion ?? null),
   observacionesGestion:
@@ -369,6 +374,8 @@ const mergeImportacionAlfa = (incomingPayload = {}, existente = {}) => {
     'fechaLiquidado',
     'fechaAceptacionLiquidacion',
     'fechaEnvioAseguradora',
+    'fechaDesistimiento',
+    'fechaObjecion',
     'estado',
   ];
   const out = {
@@ -2012,6 +2019,8 @@ export const crearPredioVinculadoAlfa = async (req, res) => {
           fechaLiquidado: null,
           fechaAceptacionLiquidacion: null,
           fechaEnvioAseguradora: null,
+          fechaDesistimiento: null,
+          fechaObjecion: null,
           valorLiquidado: null,
           casoPadreId: base._id,
           grupoReclamacion: grupo,

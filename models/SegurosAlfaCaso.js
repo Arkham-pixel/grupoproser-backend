@@ -84,6 +84,10 @@ const SegurosAlfaCasoSchema = new mongoose.Schema(
     fechaLiquidado: Date,
     fechaAceptacionLiquidacion: Date,
     fechaEnvioAseguradora: Date,
+    /** Fecha en que el siniestro se tipificó como DESISTIDO. */
+    fechaDesistimiento: Date,
+    /** Fecha en que el siniestro se tipificó como OBJETADO. */
+    fechaObjecion: Date,
     /** ESTADO SINIESTRO (independiente de estadoGestion). */
     estado: { type: String, required: true },
     /**

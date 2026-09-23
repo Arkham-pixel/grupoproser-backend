@@ -165,6 +165,11 @@ export function buildAlfaCasoPayload(data = {}, base = {}) {
       data.fechaEnvioAseguradora,
       base.fechaEnvioAseguradora ?? null
     ),
+    fechaDesistimiento: parseDateFlexible(
+      data.fechaDesistimiento,
+      base.fechaDesistimiento ?? null
+    ),
+    fechaObjecion: parseDateFlexible(data.fechaObjecion, base.fechaObjecion ?? null),
     estado: toStringOrNull(data.estado, base.estado ?? null),
     estadoGestion: toStringOrNull(data.estadoGestion, base.estadoGestion ?? null),
     observacionesGestion:
