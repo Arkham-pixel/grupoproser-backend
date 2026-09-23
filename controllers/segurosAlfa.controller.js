@@ -639,55 +639,85 @@ async function persistAlfaMontosInflados(documentos = []) {
 
 const ALFA_LISTADO_LIMIT_MAX = 3000;
 
-export const listarCasosAlfa = async (req, res) => {
-  try {
-    const pageNum = Math.max(Number(req.query.page) || 1, 1);
-    const limitNum = Math.min(
-      Math.max(Number(req.query.limit) || 25, 1),
-      ALFA_LISTADO_LIMIT_MAX
-    );
-    const skip = (pageNum - 1) * limitNum;
-    const identidad = await obtenerIdentidadUsuarioReq(req);
-    const filtroAsignacion = await construirFiltroVistaCasos(identidad, { modulo: 'alfa' });
-    const incluirExcluidos = ['1', 'true', 'yes'].includes(
-      String(req.query.incluirExcluidos || '').toLowerCase()
-    );
-    const filtroExcluidos = incluirExcluidos ? {} : { excluidoBaseAlfa: { $ne: true } };
-    const filtro = combinarFiltrosMongo(filtroAsignacion, filtroExcluidos);
-    const collation = filtroAsignacion ? collationVistaAsignacion() : undefined;
-    // Sin hint forzado: con filtro de asignación/collation el hint {_id:1} empeora el plan
-    // y el listado del dashboard (limit 800) puede superar 20s con Atlas intermitente.
-    const listQuery = SegurosAlfaCaso.aggregate(
-      buildAlfaListadoPipeline({ filtro, skip, limit: limitNum })
-    ).option({ allowDiskUse: true, maxTimeMS: 90000 });
-    if (collation) {
-      listQuery.collation(collation);
-    }
-    const countPromise = filtroAsignacion
-      ? SegurosAlfaCaso.countDocuments(filtro).maxTimeMS(90000).collation(collation)
-      : incluirExcluidos
-        ? SegurosAlfaCaso.estimatedDocumentCount()
-        : Promise.all([
-            SegurosAlfaCaso.estimatedDocumentCount(),
-            SegurosAlfaCaso.countDocuments({ excluidoBaseAlfa: true }).maxTimeMS(30000),
-          ]).then(([all, excluidos]) => Math.max(0, all - excluidos));
-    const [total, documentos] = await Promise.all([countPromise, listQuery]);
+function esErrorRedMongoListado(error) {
+  const name = String(error?.name || '');
+  const msg = String(error?.message || error || '');
+  const code = String(error?.code || error?.cause?.code || '');
+  return (
+    name === 'MongoNetworkError' ||
+    name === 'MongoServerSelectionError' ||
+    /ECONNRESET|ETIMEDOUT|ECONNREFUSED|socket|topology was destroyed|not currently connected/i.test(
+      `${msg} ${code}`
+    )
+  );
+}
 
-    res.json({
-      success: true,
-      total,
-      page: pageNum,
-      limit: limitNum,
-      data: documentos.map((d) => sanitizarCasoAlfaParaListado(d)),
-    });
-  } catch (error) {
-    console.error('❌ Error al listar casos Seguros Alfa:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error al obtener los casos Seguros Alfa',
-      detalle: error.message,
-    });
+async function ejecutarListadoCasosAlfa(req) {
+  const pageNum = Math.max(Number(req.query.page) || 1, 1);
+  const limitNum = Math.min(
+    Math.max(Number(req.query.limit) || 25, 1),
+    ALFA_LISTADO_LIMIT_MAX
+  );
+  const skip = (pageNum - 1) * limitNum;
+  const identidad = await obtenerIdentidadUsuarioReq(req);
+  const filtroAsignacion = await construirFiltroVistaCasos(identidad, { modulo: 'alfa' });
+  const incluirExcluidos = ['1', 'true', 'yes'].includes(
+    String(req.query.incluirExcluidos || '').toLowerCase()
+  );
+  const filtroExcluidos = incluirExcluidos ? {} : { excluidoBaseAlfa: { $ne: true } };
+  const filtro = combinarFiltrosMongo(filtroAsignacion, filtroExcluidos);
+  const collation = filtroAsignacion ? collationVistaAsignacion() : undefined;
+  // Sin hint forzado: con filtro de asignación/collation el hint {_id:1} empeora el plan
+  // y el listado del dashboard (limit 800) puede superar 20s con Atlas intermitente.
+  const listQuery = SegurosAlfaCaso.aggregate(
+    buildAlfaListadoPipeline({ filtro, skip, limit: limitNum })
+  ).option({ allowDiskUse: true, maxTimeMS: 90000 });
+  if (collation) {
+    listQuery.collation(collation);
   }
+  const countPromise = filtroAsignacion
+    ? SegurosAlfaCaso.countDocuments(filtro).maxTimeMS(90000).collation(collation)
+    : incluirExcluidos
+      ? SegurosAlfaCaso.estimatedDocumentCount()
+      : Promise.all([
+          SegurosAlfaCaso.estimatedDocumentCount(),
+          SegurosAlfaCaso.countDocuments({ excluidoBaseAlfa: true }).maxTimeMS(30000),
+        ]).then(([all, excluidos]) => Math.max(0, all - excluidos));
+  const [total, documentos] = await Promise.all([countPromise, listQuery]);
+  return {
+    success: true,
+    total,
+    page: pageNum,
+    limit: limitNum,
+    data: documentos.map((d) => sanitizarCasoAlfaParaListado(d)),
+  };
+}
+
+export const listarCasosAlfa = async (req, res) => {
+  let lastError = null;
+  for (let intento = 1; intento <= 3; intento += 1) {
+    try {
+      const payload = await ejecutarListadoCasosAlfa(req);
+      return res.json(payload);
+    } catch (error) {
+      lastError = error;
+      if (intento < 3 && esErrorRedMongoListado(error)) {
+        console.warn(
+          `⚠️ Listado Seguros Alfa reintento ${intento}/3 tras error de red Mongo:`,
+          error.message
+        );
+        await new Promise((r) => setTimeout(r, 400 * intento));
+        continue;
+      }
+      break;
+    }
+  }
+  console.error('❌ Error al listar casos Seguros Alfa:', lastError);
+  res.status(500).json({
+    success: false,
+    error: 'Error al obtener los casos Seguros Alfa',
+    detalle: lastError?.message || 'Error desconocido',
+  });
 };
 
 export const obtenerCasoAlfa = async (req, res) => {

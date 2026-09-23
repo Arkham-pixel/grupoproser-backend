@@ -22,12 +22,14 @@ export const ALFA_EXCEL_OUTBOUND_RETRY_MS = Object.freeze([
 export function getAlfaExcelOutboundConfig() {
   return Object.freeze({
     cronEnabled: boolEnv('SHAREPOINT_ALFA_EXCEL_OUTBOUND_ENABLED', false),
+    // Default cada 3 min (no cada minuto): en prod `* * * * *` + batch alto
+    // saturaba Atlas (ECONNRESET) y el listado Alfa dejaba de cargar.
     cronSchedule: String(
-      process.env.SHAREPOINT_ALFA_EXCEL_OUTBOUND_CRON || '* * * * *'
+      process.env.SHAREPOINT_ALFA_EXCEL_OUTBOUND_CRON || '*/3 * * * *'
     ).trim(),
     batchSize: (() => {
       const n = parseInt(process.env.SHAREPOINT_ALFA_EXCEL_OUTBOUND_BATCH_SIZE || '', 10);
-      return Number.isFinite(n) && n > 0 ? n : 25;
+      return Number.isFinite(n) && n > 0 ? n : 10;
     })(),
     maxAttempts: (() => {
       const n = parseInt(process.env.SHAREPOINT_ALFA_EXCEL_OUTBOUND_MAX_ATTEMPTS || '', 10);

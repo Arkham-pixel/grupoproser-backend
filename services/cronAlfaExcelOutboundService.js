@@ -51,12 +51,12 @@ export function iniciarCronAlfaExcelOutbound() {
         return;
       }
       try {
-        // Varias pasadas por tick para vaciar cola rápido (hasta ~100 updates/min).
+        // Pocos rounds: el Excel Graph + detect SP pelean el pool Mongo (ECONNRESET).
         let totalClaimed = 0;
         let totalSynced = 0;
         let totalFailed = 0;
         let durationMs = 0;
-        for (let round = 0; round < 4; round += 1) {
+        for (let round = 0; round < 2; round += 1) {
           if (isAlfaExcelOutboundCycleRunning()) break;
           const summary = await runAlfaExcelOutboundWorkerCycle();
           if (summary?.skippedOverlapping) break;
