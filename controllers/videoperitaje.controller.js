@@ -16,6 +16,7 @@ import {
   datosContactoDesdeCaso,
   adjuntarMediasAlCaso,
   normalizarModulo,
+  sesionDebeAdjuntarAlCaso,
 } from '../services/videoperitajeCasoService.js';
 import {
   cerrarSalaLivekit,
@@ -24,8 +25,22 @@ import {
   nombreSalaLivekit,
 } from '../services/videoperitajeLivekitService.js';
 import { notificarInvitacionSesion } from '../services/videoperitajeNotifyService.js';
+import {
+  verificarCupoCrearSesion,
+  registrarSesionPostgres,
+  marcarSesionEnProcesoPostgres,
+  cerrarSesionPostgres,
+  verificarVentanaLlamada,
+} from '../services/videoperitajePgService.js';
 
 const ESTADOS_ABIERTOS = new Set(['pendiente', 'en_proceso']);
+
+function parseProgramadaAt(raw) {
+  if (raw == null || raw === '') return null;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
 
 function hashToken(raw) {
   return crypto.createHash('sha256').update(String(raw)).digest('hex');
@@ -193,6 +208,17 @@ async function registrarMediaPresign(sesion, ownerId, body, rol) {
     sesion.inicio = sesion.inicio || new Date();
   }
   await sesion.save();
+  if (sesionDebeAdjuntarAlCaso(sesion)) {
+    try {
+      const adjunto = await adjuntarMediasAlCaso(sesion, [media]);
+      if (adjunto?.ok && adjunto.agregados > 0) {
+        sesion.adjuntadoAlCaso = true;
+        await sesion.save();
+      }
+    } catch (err) {
+      console.warn('[videoperitaje] adjunto inmediato asegurado:', err?.message || err);
+    }
+  }
   const creado = sesion.medias[sesion.medias.length - 1];
   const [hidratada] = await hidratarMedias([creado]);
   return hidratada;
@@ -219,11 +245,17 @@ async function persistirMediaPerito(sesion, media) {
     sesion.inicio = sesion.inicio || new Date();
   }
   await sesion.save();
-  if (sesion.estado === 'finalizada' && sesion.casoId) {
-    const adjunto = await adjuntarMediasAlCaso(sesion, [media]);
-    if (adjunto?.ok) {
-      sesion.adjuntadoAlCaso = true;
-      await sesion.save();
+  // Con caso vinculado: adjuntar al instante (archivos + informe). Sin caso: no-op.
+  // También acepta video tras finalizar (sesionAceptaMediaPerito).
+  if (sesionDebeAdjuntarAlCaso(sesion) || (sesion.estado === 'finalizada' && sesion.casoId)) {
+    try {
+      const adjunto = await adjuntarMediasAlCaso(sesion, [media]);
+      if (adjunto?.ok && adjunto.agregados > 0) {
+        sesion.adjuntadoAlCaso = true;
+        await sesion.save();
+      }
+    } catch (err) {
+      console.warn('[videoperitaje] adjunto inmediato perito:', err?.message || err);
     }
   }
   const creado = sesion.medias[sesion.medias.length - 1];
@@ -266,6 +298,7 @@ function sesionPublicaBase(sesion) {
     pasos: sesion.pasos || [],
     pasosCumplidos: sesion.pasosCumplidos || [],
     geo: sesion.geo || null,
+    programadaAt: sesion.programadaAt || null,
     livekitConfigured: livekitConfig().configured,
   };
 }
@@ -337,7 +370,18 @@ export async function crearSesion(req, res) {
       }
     }
 
+    const cupo = await verificarCupoCrearSesion(modulo);
+    if (!cupo.ok) {
+      return res.status(cupo.status || 403).json({
+        success: false,
+        error: cupo.error,
+        code: cupo.code,
+        cupo: cupo.cupo || undefined,
+      });
+    }
+
     const { raw, hash } = generarTokenAcceso();
+    const programadaAt = parseProgramadaAt(body.programadaAt || body.programada_at || body.fechaHora);
     const sesion = await VideoperitajeSesion.create({
       tipo,
       estado: 'pendiente',
@@ -356,9 +400,26 @@ export async function crearSesion(req, res) {
       plantillaId,
       plantillaTitulo,
       pasos,
+      programadaAt,
+      ventanaAntesMin: Number(body.ventanaAntesMin) >= 0 ? Number(body.ventanaAntesMin) : 15,
+      ventanaDespuesMin: Number(body.ventanaDespuesMin) >= 0 ? Number(body.ventanaDespuesMin) : 60,
     });
     sesion.livekitRoom = nombreSalaLivekit(sesion._id);
     await sesion.save();
+
+    await registrarSesionPostgres(
+      {
+        ...sesion.toObject(),
+        _id: sesion._id,
+        identificacionAsegurado: String(
+          body.identificacion || body.identificacionAsegurado || body.documentoAsegurado || ''
+        ).trim(),
+      },
+      {
+        usuario,
+        duracionMaxMinutos: cupo.duracionMaxMinutos,
+      }
+    );
 
     const aviso = await notificarInvitacionSesion({
       sesion,
@@ -384,6 +445,7 @@ export async function crearSesion(req, res) {
       emailError: aviso.emailError,
       whatsappEnviado: aviso.whatsappEnviado,
       whatsappError: aviso.whatsappError,
+      cupo: cupo.cupo || undefined,
     });
   } catch (error) {
     console.error('❌ crearSesion videoperitaje:', error);
@@ -446,11 +508,30 @@ export async function tokenLivekitPerito(req, res) {
     if (!ESTADOS_ABIERTOS.has(sesion.estado) && sesion.estado !== 'en_proceso') {
       return res.status(409).json({ success: false, error: 'La sesión ya no está activa' });
     }
+
+    const ventana = await verificarVentanaLlamada(sesion);
+    if (!ventana.ok) {
+      return res.status(ventana.status || 403).json({
+        success: false,
+        error: ventana.error,
+        code: ventana.code,
+        ventana: ventana.ventana || undefined,
+      });
+    }
+
     const usuario = usuarioDesdeReq(req);
+    let pasoAEnProceso = false;
     if (sesion.estado === 'pendiente') {
       sesion.estado = 'en_proceso';
       sesion.inicio = sesion.inicio || new Date();
       await sesion.save();
+      pasoAEnProceso = true;
+    }
+    if (pasoAEnProceso) {
+      void marcarSesionEnProcesoPostgres(sesion, {
+        rol: 'auditor',
+        actorLogin: usuario.login || sesion.peritoLogin,
+      });
     }
     const room = sesion.livekitRoom || nombreSalaLivekit(sesion._id);
     const tk = await crearTokenLivekit({
@@ -492,11 +573,24 @@ export async function finalizarSesion(req, res) {
       );
     }
     if (req.body?.notas) sesion.notas = String(req.body.notas);
-    const adjunto = await adjuntarMediasAlCaso(sesion, sesion.medias);
-    sesion.adjuntadoAlCaso = Boolean(adjunto.ok && adjunto.agregados >= 0);
     await sesion.save();
+    const usuario = usuarioDesdeReq(req);
+    void cerrarSesionPostgres(sesion, {
+      evento: 'room_closed',
+      actorLogin: usuario.login || sesion.peritoLogin,
+    });
     await cerrarSalaLivekit(sesion.livekitRoom || nombreSalaLivekit(sesion._id));
-    res.json({ success: true, data: sesion, adjunto });
+    res.json({ success: true, data: sesion });
+    // Adjuntar al caso en segundo plano: no bloquea el colgado de la llamada.
+    // El video que suba después (sesión finalizada) también se adjunta en persistirMediaPerito.
+    void adjuntarMediasAlCaso(sesion, sesion.medias)
+      .then(async (adjunto) => {
+        sesion.adjuntadoAlCaso = Boolean(adjunto?.ok && adjunto.agregados >= 0);
+        await sesion.save();
+      })
+      .catch((err) => {
+        console.warn('[videoperitaje] adjuntar al finalizar (bg):', err?.message || err);
+      });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -512,6 +606,11 @@ export async function cancelarSesion(req, res) {
     sesion.estado = 'cancelada';
     sesion.fin = new Date();
     await sesion.save();
+    const usuario = usuarioDesdeReq(req);
+    void cerrarSesionPostgres(sesion, {
+      evento: 'force_end',
+      actorLogin: usuario.login || sesion.peritoLogin,
+    });
     await cerrarSalaLivekit(sesion.livekitRoom || nombreSalaLivekit(sesion._id));
     res.json({ success: true, data: sesion });
   } catch (error) {
@@ -621,6 +720,16 @@ export async function joinPublico(req, res) {
       });
     }
 
+    const ventana = await verificarVentanaLlamada(sesion);
+    if (!ventana.ok) {
+      return res.status(ventana.status || 403).json({
+        success: false,
+        error: ventana.error,
+        code: ventana.code,
+        ventana: ventana.ventana || undefined,
+      });
+    }
+
     const geo = req.body?.geo;
     if (geo && Number.isFinite(Number(geo.lat)) && Number.isFinite(Number(geo.lng))) {
       sesion.geo = {
@@ -630,12 +739,17 @@ export async function joinPublico(req, res) {
         at: new Date(),
       };
     }
-    if (sesion.estado === 'pendiente') {
+    const pasoAEnProceso = sesion.estado === 'pendiente';
+    if (pasoAEnProceso) {
       sesion.estado = 'en_proceso';
       sesion.inicio = sesion.inicio || new Date();
     }
     sesion.aseguradoVistaAt = new Date();
     await sesion.save();
+    void marcarSesionEnProcesoPostgres(sesion, {
+      rol: 'asegurado',
+      actorLogin: 'asegurado',
+    });
 
     let livekit = null;
     if (sesion.tipo === 'live' && livekitConfig().configured) {
@@ -738,6 +852,9 @@ export async function completarPasoPublico(req, res) {
       sesion.adjuntadoAlCaso = true;
     }
     await sesion.save();
+    if (sesion.estado === 'finalizada') {
+      void cerrarSesionPostgres(sesion, { evento: 'room_closed', actorLogin: 'asegurado' });
+    }
     res.json({ success: true, data: sesionPublicaBase(sesion) });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

@@ -60,6 +60,10 @@ const VideoperitajeSesionSchema = new mongoose.Schema(
     tokenHash: { type: String, required: true, unique: true, index: true },
     tokenExpira: { type: Date, default: null },
     livekitRoom: { type: String, default: '' },
+    /** Fecha/hora agendada de la videollamada (America/Bogota vía cliente). */
+    programadaAt: { type: Date, default: null, index: true },
+    ventanaAntesMin: { type: Number, default: 15 },
+    ventanaDespuesMin: { type: Number, default: 60 },
     inicio: Date,
     aseguradoVistaAt: { type: Date, default: null },
     fin: Date,
