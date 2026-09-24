@@ -19,8 +19,12 @@ function getS3Client() {
   const accessKeyId = process.env.AWS_ACCESS_KEY_ID?.trim();
   const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY?.trim();
   const endpoint = storageConfig.endpoint();
+  // WHEN_REQUIRED: evita x-amz-checksum-mode=ENABLED en URLs firmadas.
+  // Con el default del SDK v3.729+, el navegador recibe 403/CORS al abrir fotos.
   const config = {
     region: storageConfig.region(),
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
     ...(accessKeyId && secretAccessKey
       ? { credentials: { accessKeyId, secretAccessKey } }
       : {}),
@@ -227,6 +231,7 @@ export async function getSignedDownloadUrl(key, expiresIn) {
     Bucket: getBucketName(),
     Key: key,
   });
+  // URL usable en <img> / fetch del navegador (solo header Host firmado)
   return getSignedUrl(client, command, {
     expiresIn: expiresIn ?? storageConfig.signedUrlExpiresSeconds(),
   });

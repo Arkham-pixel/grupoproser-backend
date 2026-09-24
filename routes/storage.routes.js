@@ -21,6 +21,7 @@ function proxyFileUrl(req, ref) {
 /**
  * URL de descarga directa (firmada S3 / CDN) o proxy cuando hace falta.
  * GET /api/storage/signed-url?ref=s3:...
+ * GET /api/storage/signed-url?ref=s3:...&prefer=proxy  → fuerza proxy (sin CORS S3)
  *
  * HEIC → proxy (conversión JPEG en el backend).
  * Legacy /uploads → proxy o ruta local.
@@ -37,6 +38,13 @@ router.get('/signed-url', async (req, res) => {
     if (!trimmed) {
       return res.status(400).json({ success: false, message: 'Parámetro ref vacío' });
     }
+
+    // Por defecto proxy: el bucket no tiene CORS usable y las firmas con checksum
+    // rompían <img>/Word. Usar ?prefer=signed solo si el bucket CORS está OK.
+    const preferProxy =
+      req.query.prefer !== 'signed' &&
+      req.query.mode !== 'signed' &&
+      String(process.env.STORAGE_BROWSER_PREFER_PROXY || 'true').trim() !== 'false';
 
     // data/blob: el front no debería pedir firma
     if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
@@ -61,6 +69,16 @@ router.get('/signed-url', async (req, res) => {
       });
     }
 
+    // Preferir proxy: evita CORS/checksum del bucket cuando el front hace fetch
+    if (preferProxy && (s3Key || isStoredFileReference(trimmed) || trimmed.startsWith('/uploads/'))) {
+      return res.json({
+        success: true,
+        url: proxyFileUrl(req, trimmed),
+        mode: 'proxy',
+        expiresIn: null,
+      });
+    }
+
     if (s3Key) {
       try {
         const url = await getDownloadUrl(trimmed);
@@ -81,9 +99,7 @@ router.get('/signed-url', async (req, res) => {
     if (isStoredFileReference(trimmed) || trimmed.startsWith('/uploads/')) {
       return res.json({
         success: true,
-        url: proxyFileUrl(req, trimmed.startsWith('s3:') || trimmed.startsWith('/uploads/')
-          ? trimmed
-          : trimmed),
+        url: proxyFileUrl(req, trimmed),
         mode: 'proxy',
         expiresIn: null,
       });
