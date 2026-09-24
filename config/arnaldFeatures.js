@@ -2,7 +2,7 @@
  * Interruptores de producto.
  *
  * Videoperitaje en CAT: activo por defecto.
- * IA: ARNALD_IA_ENABLED=true
+ * IA: oculta en código (no depende de ARNALD_IA_ENABLED en Coolify).
  */
 
 function truthy(v) {
@@ -27,7 +27,7 @@ export function videoperitajeAdjuntoInmediatoHabilitado() {
   return truthy(process.env.VIDEOPERITAJE_ADJUNTO_INMEDIATO);
 }
 
-/** Gateway multi-proveedor Arnald IA (aún no conectar en UI). */
+/** Gateway multi-proveedor Arnald IA — oculto hasta autorización explícita. */
 export function arnaldIaHabilitado() {
-  return truthy(process.env.ARNALD_IA_ENABLED);
+  return false;
 }
