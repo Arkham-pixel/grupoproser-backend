@@ -19,6 +19,7 @@ import {
   quiereListaCompleta,
 } from '../utils/listarCasosLivianos.js';
 import { aplicarCamposControlHorasZurich } from '../utils/controlHorasZurichPersist.js';
+import { aplicarRestriccionRolCaso, obtenerIdentidadUsuarioReq } from '../utils/permisosCasoPorRol.js';
 
 const esVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null';
@@ -441,9 +442,32 @@ export const actualizarCasoListadoAllianz = async (req, res) => {
     if (!actual) {
       return res.status(404).json({ success: false, error: 'Caso del listado no encontrado' });
     }
-    const payload = buildPayload(req.body, actual.toObject(), { pisar: true });
+    const base = actual.toObject();
+    const identidad = await obtenerIdentidadUsuarioReq(req).catch(() => null);
+    const { data: bodyFiltrado, denegado } = aplicarRestriccionRolCaso(
+      req,
+      req.body || {},
+      base,
+      {
+        modulo: 'allianz',
+        rol: identidad?.rol,
+        login: identidad?.login,
+        cedula: identidad?.cedula,
+        name: identidad?.name,
+        nombre: identidad?.name,
+        empresa: identidad?.empresa,
+        caso: base,
+      }
+    );
+    if (denegado) {
+      return res.status(403).json({
+        success: false,
+        error: 'No tiene permiso para modificar este caso',
+      });
+    }
+    const payload = completarIdentificacion(buildPayload(bodyFiltrado, base, { pisar: true }));
     if (!payload.consecutivo) payload.consecutivo = actual.consecutivo || (await generarConsecutivo());
-    if (await rechazarSiFranjaOcupada(res, payload, { excludeId: actual._id })) return;
+    if (await rechazarSiFranjaOcupada(res, payload, { excludeId: actual._id, base })) return;
     const actualizado = await AllianzListadoCaso.findByIdAndUpdate(
       actual._id,
       { $set: payload },

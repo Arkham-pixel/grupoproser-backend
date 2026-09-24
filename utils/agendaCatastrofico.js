@@ -118,6 +118,20 @@ export function fechaAgendaDeCaso(caso = {}) {
   return caso.fechaCoordinandoInspeccion || caso.fechaInspeccion || null;
 }
 
+/** True si cambió fecha, horas o personas de la franja. Si no, no hay que revalidar choques. */
+export function franjaAgendaCambio(payload = {}, base = {}) {
+  if (!base || typeof base !== 'object') return true;
+  const fechaP = ymdBogota(fechaAgendaDeCaso(payload));
+  const fechaB = ymdBogota(fechaAgendaDeCaso(base));
+  return (
+    fechaP !== fechaB ||
+    normalizarHora(payload.horaInicioCoordinacion) !== normalizarHora(base.horaInicioCoordinacion) ||
+    normalizarHora(payload.horaFinCoordinacion) !== normalizarHora(base.horaFinCoordinacion) ||
+    normNombrePersona(payload.inspector) !== normNombrePersona(base.inspector) ||
+    normNombrePersona(payload.ajustador) !== normNombrePersona(base.ajustador)
+  );
+}
+
 /** Líder de área (Bernardo en Sura, Ladys en Zurich, etc.) coordinando ese módulo. */
 export function esAjustadorLiderDeAgenda(nombre, modulo = '') {
   const needles = needlesLiderModulo(modulo);

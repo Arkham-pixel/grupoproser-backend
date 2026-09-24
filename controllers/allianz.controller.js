@@ -8,7 +8,7 @@ import {
   enviarAlertasTodosAllianz,
   enviarAlertasAllianzAjustador,
 } from '../services/alertasAllianzService.js';
-import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
+import { aplicarRestriccionRolCaso, obtenerIdentidadUsuarioReq } from '../utils/permisosCasoPorRol.js';
 import {
   resolverInformeUnicoParaUpdate,
   resolverLiquidadorParaUpdate,
@@ -723,13 +723,13 @@ const mergeImportacionAllianz = (incomingPayload = {}, existente = {}) => {
 };
 
 const validarRequeridos = (payload) => {
-  const camposRequeridos = [
-    ['identificacion', 'identificación'],
-    ['estado', 'estado'],
-  ];
-  return camposRequeridos
-    .map(([campo, etiqueta]) => (!payload[campo] ? etiqueta : null))
-    .filter(Boolean);
+  const tieneIdentidad = Boolean(
+    payload.identificacion || payload.riskId || payload.zc || payload.siniestro
+  );
+  const faltantes = [];
+  if (!tieneIdentidad) faltantes.push('identificación');
+  if (!payload.estado) faltantes.push('estado');
+  return faltantes;
 };
 
 export const crearCasoAllianz = async (req, res) => {
@@ -925,8 +925,29 @@ export const actualizarCasoAllianz = async (req, res) => {
     }
 
     const base = registroActual.toObject();
-    const { data: bodyFiltrado } = aplicarRestriccionRolCaso(req, req.body || {}, base);
-    const payload = buildAllianzPayload(bodyFiltrado, base);
+    const identidad = await obtenerIdentidadUsuarioReq(req).catch(() => null);
+    const { data: bodyFiltrado, denegado } = aplicarRestriccionRolCaso(
+      req,
+      req.body || {},
+      base,
+      {
+        modulo: 'allianz',
+        rol: identidad?.rol,
+        login: identidad?.login,
+        cedula: identidad?.cedula,
+        name: identidad?.name,
+        nombre: identidad?.name,
+        empresa: identidad?.empresa,
+        caso: base,
+      }
+    );
+    if (denegado) {
+      return res.status(403).json({
+        success: false,
+        error: 'No tiene permiso para modificar este caso',
+      });
+    }
+    const payload = completarIdentificacionAllianz(buildAllianzPayload(bodyFiltrado, base));
     if (!payload.consecutivo) {
       payload.consecutivo = base.consecutivo || (await generarConsecutivoAllianz());
     }
@@ -939,7 +960,14 @@ export const actualizarCasoAllianz = async (req, res) => {
       });
     }
 
-    if (await rechazarSiFranjaOcupada(res, payload, { excludeId: registroActual._id })) return;
+    if (
+      await rechazarSiFranjaOcupada(res, payload, {
+        excludeId: registroActual._id,
+        base,
+      })
+    ) {
+      return;
+    }
     const actualizado = await AllianzCaso.findByIdAndUpdate(
       registroActual._id,
       { $set: payload },

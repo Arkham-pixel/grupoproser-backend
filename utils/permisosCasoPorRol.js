@@ -19,6 +19,22 @@ export const CAMPOS_ASIGNACION_CASO = Object.freeze([
   'inspector',
 ]);
 
+export const CAMPOS_OPERATIVOS_INSPECTOR = Object.freeze([
+  'estado',
+  'estadoGestion',
+  'fechaVisita',
+  'fechaCoordinandoInspeccion',
+  'fechaInspeccion',
+  'fechaInspeccionRealizada',
+  'fechaInspeccionado',
+  'fechaPrimerContacto',
+  'horaInicioCoordinacion',
+  'horaFinCoordinacion',
+  'observaciones',
+  'observacionesCat',
+  'modalidadAtencion',
+]);
+
 /** Logins con poderes de ajustador líder SOLO en módulo SURA. */
 export const SURA_LOGINS_PERMISO_LIDER = Object.freeze(['72288319']);
 
@@ -339,12 +355,12 @@ export function combinarFiltrosMongo(...partes) {
  * Si no hay rol (ruta sin token), no restringe (compat).
  */
 function payloadSoloEstado(payload = {}, base = {}) {
-  return {
-    payload: {
-      estado: payload.estado != null ? payload.estado : base.estado,
-    },
-    soloEstado: true,
-  };
+  const next = {};
+  for (const campo of CAMPOS_OPERATIVOS_INSPECTOR) {
+    if (payload[campo] != null) next[campo] = payload[campo];
+    else if (Object.prototype.hasOwnProperty.call(base, campo)) next[campo] = base[campo];
+  }
+  return { payload: next, soloEstado: true };
 }
 
 function payloadSinAsignacion(payload = {}, base = {}) {
@@ -383,7 +399,13 @@ export function filtrarPayloadCasoPorRol(rol, payload = {}, base = {}, opts = {}
 
 /** Aplica filtro sobre data cruda antes de buildPayload. */
 export function aplicarRestriccionRolCaso(req, data, base = {}, opts = {}) {
-  const rol = req?.user?.role || req?.usuario?.role || req?.user?.rol || req?.usuario?.rol || null;
+  const rol =
+    opts.rol ||
+    req?.user?.role ||
+    req?.usuario?.role ||
+    req?.user?.rol ||
+    req?.usuario?.rol ||
+    null;
   const login =
     opts.login ||
     req?.user?.login ||

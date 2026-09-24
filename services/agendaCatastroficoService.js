@@ -23,6 +23,7 @@ import { construirFiltroVistaEra } from '../utils/alcanceEra.js';
 import {
   ConflictoAgendaError,
   fechaAgendaDeCaso,
+  franjaAgendaCambio,
   franjaValida,
   horaAMinutos,
   minutosAHora,
@@ -395,6 +396,7 @@ export async function buscarConflictoAgenda(payload = {}, { excludeId = '', rolU
 }
 
 export async function rechazarSiFranjaOcupada(res, payload, opts = {}) {
+  if (opts.base && !franjaAgendaCambio(payload, opts.base)) return false;
   const conflicto = await buscarConflictoAgenda(payload, opts);
   if (!conflicto) return false;
   res.status(409).json({
