@@ -202,6 +202,19 @@ export const ALFA_EXCEL_MONEY_FIELDS = Object.freeze([
   'valorTotalPagar',
 ]);
 
+/** Montos de cobertura/póliza: NO aplicar ÷100 (el Excel puede traer ≥ 1.000M reales). */
+export const ALFA_EXCEL_ASEGURADO_MONEY_FIELDS = Object.freeze([
+  'valorAseguradoSid',
+  'valorAseguradoInmueble',
+  'valorAseguradoContenidos',
+  'valorReservaPreventivaPromedio',
+  'valorComercialInmueble',
+]);
+
+/** Montos de liquidación/reserva operativa: sí sanear centavos concatenados. */
+export const ALFA_EXCEL_LIQUIDACION_MONEY_FIELDS = Object.freeze(
+  ALFA_EXCEL_MONEY_FIELDS.filter((f) => !ALFA_EXCEL_ASEGURADO_MONEY_FIELDS.includes(f))
+);
 /** Invertido: header normalizado → campo */
 export function buildAlfaExcelHeaderLookup() {
   const lookup = new Map();

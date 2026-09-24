@@ -356,7 +356,7 @@ export function buildAlfaCaseDiff({ currentCase, incomingData, updatableFields }
 function cellToFieldValue(field, raw, identificacion = null) {
   if (ALFA_EXCEL_DATE_FIELDS.includes(field)) return normalizeDate(raw);
   if (ALFA_EXCEL_MONEY_FIELDS.includes(field)) {
-    return normalizeMoneyOficial(raw, identificacion);
+    return normalizeMoneyOficial(raw, identificacion, field);
   }
   if (field === 'numeroPoliza') return normalizePolicyNumberFromExcel(raw);
   if (field === 'identificacion') return normalizeIdentification(raw);

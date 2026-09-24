@@ -36,12 +36,22 @@ assert(
   'daño real no es la cédula'
 );
 assert(pesosOficialesAlfa(759_781_212) === 759_781_212, 'sin liquidador no divide < 1e9');
-assert(pesosOficialesAlfa(1_235_778_238) === 12_357_782, 'Montealegre cents concat');
-assert(normalizeMoneyOficial(1_235_778_238) === 12_357_782, 'normalizeMoneyOficial concat');
-assert(normalizeMoneyOficial(12_357_782) === 12_357_782, 'normalizeMoneyOficial already ok');
+assert(pesosOficialesAlfa(1_235_778_238) === 12_357_782, 'liquidacion-style cents concat still divides');
 assert(
-  valuesEqualForDiff(12_357_782, 1_235_778_238, 'valorAseguradoInmueble'),
-  'diff must treat inflated excel as equal to sanos'
+  normalizeMoneyOficial(1_235_778_238, null, 'valorAseguradoInmueble') === 1_235_778_238,
+  'inmueble must NOT divide'
+);
+assert(
+  normalizeMoneyOficial(12_357_782, null, 'valorAseguradoInmueble') === 12_357_782,
+  'inmueble already ok'
+);
+assert(
+  !valuesEqualForDiff(12_357_782, 1_235_778_238, 'valorAseguradoInmueble'),
+  'inmueble 12M vs 1.2B are different'
+);
+assert(
+  valuesEqualForDiff(12_357_782, 1_235_778_238, 'valorReclamado'),
+  'reclamado may still treat cents-concat as equal'
 );
 assert(
   pesosOficialesAlfa(39_748_235_030_000_000) === 397_482_350,

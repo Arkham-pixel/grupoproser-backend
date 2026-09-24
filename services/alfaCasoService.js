@@ -9,8 +9,7 @@ import {
   valuesEqualForDiff,
   normalizeDate,
   decideAlfaExcelMerge,
-  normalizeMoney,
-  pesosOficialesAlfa,
+  normalizeMoneyOficial,
 } from '../utils/alfaExcelNormalize.js';
 import { isArnaldOwnedField } from '../config/alfaExcelOwnershipMap.js';
 import {
@@ -86,21 +85,18 @@ function parseDateFlexible(value, fallback = null) {
   return Number.isNaN(d.getTime()) ? fallback ?? null : d;
 }
 
-function parseNumberFlexible(value, fallback = null) {
+function parseNumberFlexible(value, fallback = null, field = null, identificacion = null) {
   if (value === undefined || value === null || value === '') return fallback ?? null;
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return pesosOficialesAlfa(value) ?? value;
-  }
-  const n = normalizeMoney(value);
-  if (n == null) return fallback ?? null;
-  return pesosOficialesAlfa(n);
+  const n = normalizeMoneyOficial(value, identificacion, field);
+  return n == null ? fallback ?? null : n;
 }
 
 export function buildAlfaCasoPayload(data = {}, base = {}) {
+  const identificacion = toStringOrNull(data.identificacion, base.identificacion ?? null);
   const out = {
     consecutivo: base.consecutivo ?? null,
     siniestro: toStringOrNull(data.siniestro, base.siniestro ?? null),
-    identificacion: toStringOrNull(data.identificacion, base.identificacion ?? null),
+    identificacion,
     asegurado: toStringOrNull(data.asegurado, base.asegurado ?? null),
     tomador: toStringOrNull(data.tomador, base.tomador ?? null),
     ajustadorLider: toStringOrNull(data.ajustadorLider, base.ajustadorLider ?? null),
@@ -124,29 +120,49 @@ export function buildAlfaCasoPayload(data = {}, base = {}) {
     fechaFinPoliza: parseDateFlexible(data.fechaFinPoliza, base.fechaFinPoliza ?? null),
     valorAseguradoSid: parseNumberFlexible(
       data.valorAseguradoSid,
-      base.valorAseguradoSid ?? null
+      base.valorAseguradoSid ?? null,
+      'valorAseguradoSid',
+      identificacion
     ),
     valorAseguradoInmueble: parseNumberFlexible(
       data.valorAseguradoInmueble,
-      base.valorAseguradoInmueble ?? null
+      base.valorAseguradoInmueble ?? null,
+      'valorAseguradoInmueble',
+      identificacion
     ),
     valorAseguradoContenidos: parseNumberFlexible(
       data.valorAseguradoContenidos,
-      base.valorAseguradoContenidos ?? null
+      base.valorAseguradoContenidos ?? null,
+      'valorAseguradoContenidos',
+      identificacion
     ),
     cobertura: toStringOrNull(data.cobertura, base.cobertura ?? null),
     estadoPagoPrimas: toStringOrNull(data.estadoPagoPrimas, base.estadoPagoPrimas ?? null),
     valorReservaPreventivaPromedio: parseNumberFlexible(
       data.valorReservaPreventivaPromedio,
-      base.valorReservaPreventivaPromedio ?? null
+      base.valorReservaPreventivaPromedio ?? null,
+      'valorReservaPreventivaPromedio',
+      identificacion
     ),
     valorComercialInmueble: parseNumberFlexible(
       data.valorComercialInmueble,
-      base.valorComercialInmueble ?? null
+      base.valorComercialInmueble ?? null,
+      'valorComercialInmueble',
+      identificacion
     ),
-    reserva: parseNumberFlexible(data.reserva, base.reserva ?? null),
-    valorReclamado: parseNumberFlexible(data.valorReclamado, base.valorReclamado ?? null),
-    valorLiquidado: parseNumberFlexible(data.valorLiquidado, base.valorLiquidado ?? null),
+    reserva: parseNumberFlexible(data.reserva, base.reserva ?? null, 'reserva', identificacion),
+    valorReclamado: parseNumberFlexible(
+      data.valorReclamado,
+      base.valorReclamado ?? null,
+      'valorReclamado',
+      identificacion
+    ),
+    valorLiquidado: parseNumberFlexible(
+      data.valorLiquidado,
+      base.valorLiquidado ?? null,
+      'valorLiquidado',
+      identificacion
+    ),
     /** Solo ARNALD (formulario/reporte); Excel/SharePoint no los alimentan. */
     fechaLlamada: parseDateFlexible(data.fechaLlamada, base.fechaLlamada ?? null),
     observacionLlamada:

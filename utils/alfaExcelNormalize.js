@@ -327,13 +327,22 @@ export function isIncomingPersonNameWeaker(incoming, existing) {
 }
 
 /**
- * Monto Excel → pesos enteros oficiales (corrige centavos concatenados ≥ 1.000M).
- * Usar en lectura de celdas y en diffs Excel↔ARNALD.
+ * Monto Excel → pesos.
+ * - Campos asegurado/póliza: solo parseo (sin ÷100).
+ * - Campos liquidación: corrige centavos concatenados (≥ 1.000M).
  */
-export function normalizeMoneyOficial(value, identificacion = null) {
+export function normalizeMoneyOficial(value, identificacion = null, field = null) {
   if (value === undefined || value === null || value === '') return null;
   const n = typeof value === 'number' && Number.isFinite(value) ? value : normalizeMoney(value);
   if (n == null) return null;
+  const key = String(field || '');
+  const esAsegurado =
+    key === 'valorAseguradoSid' ||
+    key === 'valorAseguradoInmueble' ||
+    key === 'valorAseguradoContenidos' ||
+    key === 'valorReservaPreventivaPromedio' ||
+    key === 'valorComercialInmueble';
+  if (esAsegurado) return Math.round(n);
   const oficial = pesosOficialesAlfa(n, identificacion);
   return oficial == null ? null : oficial;
 }
@@ -348,9 +357,9 @@ export function valuesEqualForDiff(a, b, field) {
   if (a == null && b == null) return true;
   if (a == null || b == null) return false;
   if (typeof a === 'number' || typeof b === 'number') {
-    // 12.357.782 vs 1.235.778.238 (centavos pegados) deben considerarse iguales.
-    const na = normalizeMoneyOficial(a);
-    const nb = normalizeMoneyOficial(b);
+    const key = String(field || '');
+    const na = normalizeMoneyOficial(a, null, key);
+    const nb = normalizeMoneyOficial(b, null, key);
     if (na != null && nb != null) return Number(na) === Number(nb);
     const fa = typeof a === 'number' ? a : normalizeMoney(a);
     const fb = typeof b === 'number' ? b : normalizeMoney(b);
@@ -386,12 +395,14 @@ export function valuesEqualForDiff(a, b, field) {
  */
 export function decideAlfaExcelMerge(incoming, existing, { field, arnaldOwned = false } = {}) {
   const key = String(field || '');
-  // Defensa: aunque el caller pase un monto con centavos pegados, no lo trate como distinto/nuevo.
+  // Solo liquidación: sanear centavos pegados. Asegurado/póliza se respeta tal cual Excel.
   if (
     isMeaningfulExcelValue(incoming) &&
-    (/^(valor|reserva|deducible)/i.test(key) || key === 'liquidadoCoberturaTerremo')
+    (/^(valorReclamado|valorLiquidado|valorTotalPagar|reserva|deducible)/i.test(key) ||
+      key === 'liquidadoCoberturaTerremo' ||
+      key === 'valorLiquidacionCoberturasAdicionales')
   ) {
-    const san = normalizeMoneyOficial(incoming);
+    const san = normalizeMoneyOficial(incoming, null, key);
     if (san != null) incoming = san;
   }
 

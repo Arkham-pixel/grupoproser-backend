@@ -32,11 +32,12 @@ import {
   markAlfaExcelSharePointExecuted,
 } from '../services/alfaExcelSharePointImportService.js';
 import AlfaExcelSharePointSource from '../models/AlfaExcelSharePointSource.js';
+import AlfaExcelOutboundUpdate from '../models/AlfaExcelOutboundUpdate.js';
 import { getAlfaExcelSharePointImportConfig } from '../config/alfaExcelSharePointImport.js';
 import {
   enqueueAlfaExcelOutboundFromCaseUpdate,
-  countPendingAlfaExcelOutbound,
   forceEnqueueAlfaExcelOutboundCases,
+  getAlfaExcelOutboundQueueStats,
 } from '../services/alfaExcelOutboundService.js';
 import {
   runAlfaExcelOutboundWorkerCycle,
@@ -73,7 +74,7 @@ import {
   resolverInformeUnicoParaUpdate,
   scoreContenidoLiquidadorNsr,
 } from '../utils/protegerPresupuestoNsr10.js';
-import { normalizeMoney, pesosOficialesAlfa, pareceIdentificacionComoMontoAlfa } from '../utils/alfaExcelNormalize.js';
+import { normalizeMoney, normalizeMoneyOficial, pesosOficialesAlfa, pareceIdentificacionComoMontoAlfa } from '../utils/alfaExcelNormalize.js';
 import { aplicarMontosOficialesDesdeLiquidadorAlfa } from '../utils/valoresLiquidadorAlfa.js';
 import * as XLSX from 'xlsx';
 
@@ -140,10 +141,10 @@ const parseNumberFlexible = (value, fallback = null) => {
   return n == null ? null : n;
 };
 
-const parsePesosAlfa = (value, fallback = null, identificacion = null) => {
-  const n = parseNumberFlexible(value, fallback);
-  if (n == null) return null;
-  return pesosOficialesAlfa(n, identificacion);
+const parsePesosAlfa = (value, fallback = null, identificacion = null, field = null) => {
+  if (value === undefined || value === null || value === '') return fallback ?? null;
+  const n = normalizeMoneyOficial(value, identificacion, field);
+  return n == null ? fallback ?? null : n;
 };
 
 const toStringOrNull = (value, fallback = null) => {
@@ -233,51 +234,84 @@ const buildAlfaPayload = (data = {}, base = {}) =>
   fechaFinPoliza: parseDateFlexible(data.fechaFinPoliza, base.fechaFinPoliza ?? null),
   valorAseguradoSid: parsePesosAlfa(
     data.valorAseguradoSid,
-    base.valorAseguradoSid ?? null
+    base.valorAseguradoSid ?? null,
+    data.identificacion || base.identificacion,
+    'valorAseguradoSid'
   ),
   valorAseguradoInmueble: parsePesosAlfa(
     data.valorAseguradoInmueble,
-    base.valorAseguradoInmueble ?? null
+    base.valorAseguradoInmueble ?? null,
+    data.identificacion || base.identificacion,
+    'valorAseguradoInmueble'
   ),
   valorAseguradoContenidos: parsePesosAlfa(
     data.valorAseguradoContenidos,
-    base.valorAseguradoContenidos ?? null
+    base.valorAseguradoContenidos ?? null,
+    data.identificacion || base.identificacion,
+    'valorAseguradoContenidos'
   ),
   cobertura: toStringOrNull(data.cobertura, base.cobertura ?? null),
   estadoPagoPrimas: toStringOrNull(data.estadoPagoPrimas, base.estadoPagoPrimas ?? null),
   valorReservaPreventivaPromedio: parsePesosAlfa(
     data.valorReservaPreventivaPromedio,
-    base.valorReservaPreventivaPromedio ?? null
+    base.valorReservaPreventivaPromedio ?? null,
+    data.identificacion || base.identificacion,
+    'valorReservaPreventivaPromedio'
   ),
   valorComercialInmueble: parsePesosAlfa(
     data.valorComercialInmueble,
-    base.valorComercialInmueble ?? null
+    base.valorComercialInmueble ?? null,
+    data.identificacion || base.identificacion,
+    'valorComercialInmueble'
   ),
-  reserva: parsePesosAlfa(data.reserva, base.reserva ?? null),
+  reserva: parsePesosAlfa(
+    data.reserva,
+    base.reserva ?? null,
+    data.identificacion || base.identificacion,
+    'reserva'
+  ),
   valorReclamado: parsePesosAlfa(
     data.valorReclamado,
     base.valorReclamado ?? null,
-    data.identificacion || base.identificacion
+    data.identificacion || base.identificacion,
+    'valorReclamado'
   ),
   valorLiquidado: parsePesosAlfa(
     data.valorLiquidado,
     base.valorLiquidado ?? null,
-    data.identificacion || base.identificacion
+    data.identificacion || base.identificacion,
+    'valorLiquidado'
   ),
   liquidadoCoberturaTerremo: parsePesosAlfa(
     data.liquidadoCoberturaTerremo,
-    base.liquidadoCoberturaTerremo ?? null
+    base.liquidadoCoberturaTerremo ?? null,
+    data.identificacion || base.identificacion,
+    'liquidadoCoberturaTerremo'
   ),
-  deducibleTerremoto: parsePesosAlfa(data.deducibleTerremoto, base.deducibleTerremoto ?? null),
+  deducibleTerremoto: parsePesosAlfa(
+    data.deducibleTerremoto,
+    base.deducibleTerremoto ?? null,
+    data.identificacion || base.identificacion,
+    'deducibleTerremoto'
+  ),
   valorLiquidacionCoberturasAdicionales: parsePesosAlfa(
     data.valorLiquidacionCoberturasAdicionales,
-    base.valorLiquidacionCoberturasAdicionales ?? null
+    base.valorLiquidacionCoberturasAdicionales ?? null,
+    data.identificacion || base.identificacion,
+    'valorLiquidacionCoberturasAdicionales'
   ),
   deducibleCoberturasAdicionales: parsePesosAlfa(
     data.deducibleCoberturasAdicionales,
-    base.deducibleCoberturasAdicionales ?? 0
+    base.deducibleCoberturasAdicionales ?? 0,
+    data.identificacion || base.identificacion,
+    'deducibleCoberturasAdicionales'
   ),
-  valorTotalPagar: parsePesosAlfa(data.valorTotalPagar, base.valorTotalPagar ?? null),
+  valorTotalPagar: parsePesosAlfa(
+    data.valorTotalPagar,
+    base.valorTotalPagar ?? null,
+    data.identificacion || base.identificacion,
+    'valorTotalPagar'
+  ),
   fechaLlamada: parseDateFlexible(data.fechaLlamada, base.fechaLlamada ?? null),
   observacionLlamada: toStringOrNull(data.observacionLlamada, base.observacionLlamada ?? null) || '',
   fechaInspeccion: parseDateFlexible(data.fechaInspeccion, base.fechaInspeccion ?? null),
@@ -1796,13 +1830,18 @@ export const postEnviarAlertasAlfaAjustador = async (req, res) => {
 export const getControlSeguimientoAlfaStatus = async (req, res) => {
   try {
     const data = await getAlfaExcelSharePointStatus();
-    let outboundPending = 0;
+    let outboundQueue = { pending: 0, processing: 0, failed: 0, total: 0 };
     try {
-      outboundPending = await countPendingAlfaExcelOutbound();
+      outboundQueue = await getAlfaExcelOutboundQueueStats();
     } catch {
-      outboundPending = 0;
+      /* ignore */
     }
-    return res.json({ success: true, ...data, outboundPending });
+    return res.json({
+      success: true,
+      ...data,
+      outboundPending: outboundQueue.total,
+      outboundQueue,
+    });
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -1821,13 +1860,19 @@ export const postControlSeguimientoAlfaCheck = async (req, res) => {
     const force = req.body?.force === true;
     const data = await runAlfaExcelSharePointDetectCycle({ force });
     const status = await getAlfaExcelSharePointStatus();
-    let outboundPending = 0;
+    let outboundQueue = { pending: 0, processing: 0, failed: 0, total: 0 };
     try {
-      outboundPending = await countPendingAlfaExcelOutbound();
+      outboundQueue = await getAlfaExcelOutboundQueueStats();
     } catch {
-      outboundPending = 0;
+      /* ignore */
     }
-    return res.json({ success: true, cycle: data, ...status, outboundPending });
+    return res.json({
+      success: true,
+      cycle: data,
+      ...status,
+      outboundPending: outboundQueue.total,
+      outboundQueue,
+    });
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -1873,15 +1918,35 @@ export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
       500
     );
 
+    // Contar cola real (pending + processing atascados + failed)
+    let queueBefore = await getAlfaExcelOutboundQueueStats();
+
+    // Reintentar fallidos en este flush manual
+    try {
+      await AlfaExcelOutboundUpdate.updateMany(
+        { status: 'failed' },
+        {
+          $set: {
+            status: 'pending',
+            attempts: 0,
+            nextRetryAt: new Date(),
+            lastError: null,
+            lastErrorCode: null,
+          },
+        }
+      );
+      queueBefore = await getAlfaExcelOutboundQueueStats();
+    } catch {
+      /* ignore */
+    }
+
     let enqueueSummary = null;
-    const pendingBefore = await countPendingAlfaExcelOutbound();
     if (consecutivos.length > 0) {
       enqueueSummary = await forceEnqueueAlfaExcelOutboundCases({
         consecutivos,
         limit: Math.max(consecutivos.length, 1),
       });
-    } else if (forceResync && pendingBefore === 0) {
-      // Sin cola: reencola casos con montos (o lote) para que el botón sí escriba Excel
+    } else if (forceResync && queueBefore.total === 0) {
       enqueueSummary = await forceEnqueueAlfaExcelOutboundCases({
         onlyWithMoney: onlyWithMoney || true,
         limit: enqueueLimit,
@@ -1904,30 +1969,43 @@ export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
       if (!(summary.claimed > 0)) break;
     }
 
-    const pendingLeft = await countPendingAlfaExcelOutbound();
+    const outboundQueue = await getAlfaExcelOutboundQueueStats();
     const flush = {
       claimed: totalClaimed,
       synced: totalSynced,
       failed: totalFailed,
-      pendingLeft,
+      pendingLeft: outboundQueue.total,
+      queueBefore: queueBefore.total,
       roundsRun,
       durationMs: Date.now() - started,
       enqueue: enqueueSummary,
     };
+
+    let message;
+    if (flush.synced > 0 || flush.claimed > 0) {
+      message = `Enviados ${flush.synced} cambio(s) a Excel`;
+      if (outboundQueue.total > 0) {
+        message += `. Quedan ${outboundQueue.total} en cola (pulse de nuevo).`;
+      } else {
+        message += '. Cola vacía.';
+      }
+    } else if (enqueueSummary?.enqueued > 0) {
+      message = `Se reencolaron ${enqueueSummary.enqueued} casos; pulse de nuevo para enviarlos.`;
+    } else if (queueBefore.total > 0) {
+      message = `Hay ${queueBefore.total} en cola pero no se pudo enviar en este intento. Pulse de nuevo.`;
+    } else {
+      message = 'No hay cambios pendientes para enviar a Excel.';
+    }
+    if (enqueueSummary?.enqueued && flush.synced > 0) {
+      message += ` (reencolados ${enqueueSummary.enqueued}).`;
+    }
+
     return res.json({
       success: true,
       flush,
-      outboundPending: pendingLeft,
-      message:
-        flush.claimed === 0 && !(enqueueSummary?.enqueued > 0)
-          ? 'No hay cambios pendientes para enviar a Excel.'
-          : `Enviados ${flush.synced} de ${flush.claimed} a Excel` +
-            (flush.pendingLeft > 0
-              ? ` (${flush.pendingLeft} quedan en cola; pulse de nuevo).`
-              : '.') +
-            (enqueueSummary?.enqueued
-              ? ` Reencolados ${enqueueSummary.enqueued}.`
-              : ''),
+      outboundPending: outboundQueue.total,
+      outboundQueue,
+      message,
     });
   } catch (error) {
     console.error('❌ Error flush outbound Alfa Excel:', error);
