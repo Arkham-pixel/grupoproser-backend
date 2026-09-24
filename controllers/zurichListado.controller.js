@@ -164,16 +164,16 @@ const parseNumero = (valor, fallback = null, { vacioPisa = false } = {}) => {
 };
 
 const toStrPisar = (valor, existing) => {
-  if (valor === undefined) return existing ?? null;
-  return toStr(valor, null);
+  if (valor === undefined || esVacio(valor)) return existing ?? null;
+  return toStr(valor, existing);
 };
 
 const buildPayload = (data = {}, base = {}, { pisar = false } = {}) => {
   const pick = pisar ? toStrPisar : completarCampo;
   const pickFecha = pisar
-    ? (incoming, existing) => parseFecha(incoming, existing, { vacioPisa: true })
+    ? (incoming, existing) => parseFecha(incoming, existing, { vacioPisa: false })
     : completarFecha;
-  const numOpts = { vacioPisa: pisar };
+  const numOpts = { vacioPisa: false };
   const payload = completarIdentificacion({
     consecutivo: base.consecutivo ?? null,
     zc: pick(data.zc, base.zc ?? null),
