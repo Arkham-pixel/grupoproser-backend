@@ -1892,9 +1892,9 @@ export const postControlSeguimientoAlfaCheck = async (req, res) => {
  * POST /api/seguros-alfa/control-seguimiento/outbound-flush
  * Envía cola ARNALD → Excel SharePoint (manual; el cron debe estar OFF).
  * Body opcional:
- * - forceResync: true → SOLO si cola vacía: reencola amarillas (reparación explícita; no default)
+ * - forceResync: true → si cola vacía, alinea amarillas ARNALD→Excel solo donde difieren
  * - consecutivos: ['ALFA-…'] → fuerza sync de esos casos
- * - onlyWithMoney: true → (con forceResync) prioriza casos con reserva/liquidado
+ * - onlyWithMoney: true → (con forceResync) prioriza casos tipificados / con montos
  */
 export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
   try {
@@ -1948,11 +1948,14 @@ export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
       enqueueSummary = await forceEnqueueAlfaExcelOutboundCases({
         consecutivos,
         limit: Math.max(consecutivos.length, 1),
+        diffAgainstExcel: true,
       });
     } else if (forceResync && queueBefore.total === 0) {
+      // Alinear Excel con ARNALD: solo celdas amarillas que realmente difieren
       enqueueSummary = await forceEnqueueAlfaExcelOutboundCases({
         onlyWithMoney: onlyWithMoney || true,
         limit: enqueueLimit,
+        diffAgainstExcel: true,
       });
     }
 
@@ -1986,21 +1989,26 @@ export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
 
     let message;
     if (flush.synced > 0 || flush.claimed > 0) {
-      message = `Enviados ${flush.synced} cambio(s) a Excel`;
+      message = `Enviados ${flush.synced} caso(s) a Excel`;
+      if (enqueueSummary?.fieldsQueued > 0) {
+        message += ` (${enqueueSummary.fieldsQueued} campo(s) distintos)`;
+      }
       if (outboundQueue.total > 0) {
         message += `. Quedan ${outboundQueue.total} en cola (pulse de nuevo).`;
       } else {
         message += '. Cola vacía.';
       }
     } else if (enqueueSummary?.enqueued > 0) {
-      message = `Se reencolaron ${enqueueSummary.enqueued} casos; pulse de nuevo para enviarlos.`;
+      message = `Se detectaron ${enqueueSummary.enqueued} caso(s) distintos vs Excel (${enqueueSummary.fieldsQueued || 0} campos); pulse de nuevo para enviarlos.`;
+    } else if (enqueueSummary?.excelError) {
+      message = `No se pudo leer Excel para comparar: ${enqueueSummary.excelError}`;
     } else if (queueBefore.total > 0) {
       message = `Hay ${queueBefore.total} en cola pero no se pudo enviar en este intento. Pulse de nuevo.`;
     } else {
-      message = 'No hay cambios pendientes para enviar a Excel.';
+      message = 'Excel y ARNALD ya coinciden en columnas amarillas (nada pendiente).';
     }
     if (enqueueSummary?.enqueued && flush.synced > 0) {
-      message += ` (reencolados ${enqueueSummary.enqueued}).`;
+      message += ` (alineados ${enqueueSummary.enqueued}).`;
     }
 
     return res.json({

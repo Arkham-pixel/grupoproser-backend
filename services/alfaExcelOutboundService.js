@@ -17,6 +17,7 @@ import {
   ALFA_EXCEL_APPEND_FIELDS,
   filterOutboundWritableChanges,
   getOwnershipEntry,
+  getOutboundWritableFields,
   assertFieldWritableOrThrow,
 } from '../config/alfaExcelOwnershipMap.js';
 import { ALFA_EXCEL_DATE_FIELDS, ALFA_EXCEL_MONEY_FIELDS } from '../config/alfaExcelColumnMap.js';
@@ -459,13 +460,48 @@ export async function forceEnqueueAlfaExcelOutboundFullCase(caso) {
 }
 
 /**
+ * Encola solo amarillas donde ARNALD ≠ Excel (Excel queda real sin inventar “cambios”).
+ */
+export async function forceEnqueueAlfaExcelOutboundDiffVsExcel(caso, excelRows) {
+  if (!caso?._id || !Array.isArray(excelRows)) return null;
+  let hit;
+  try {
+    hit = findExcelRowForCase(caso, excelRows);
+  } catch (err) {
+    if (err?.code === 'AMBIGUOUS_EXCEL_ROW' || err?.code === 'EXCEL_ROW_NOT_FOUND') {
+      logOut('ALFA_EXCEL_OUTBOUND_FORCE_DIFF_SKIP', {
+        consecutivo: caso.consecutivo || null,
+        code: err.code,
+      });
+      return null;
+    }
+    throw err;
+  }
+  if (!hit?.rowNumber) return null;
+
+  const excelPayload = hit.payload || {};
+  const beforeDoc = { _id: caso._id };
+  for (const field of getOutboundWritableFields()) {
+    if (Object.prototype.hasOwnProperty.call(excelPayload, field)) {
+      beforeDoc[field] = excelPayload[field];
+    }
+  }
+  return enqueueAlfaExcelOutboundFromCaseUpdate({
+    beforeDoc,
+    afterDoc: caso,
+  });
+}
+
+/**
  * Reencola amarillas de varios casos (p. ej. por consecutivos o montos).
+ * Con diffAgainstExcel=true solo encola campos que realmente difieren del consolidado.
  */
 export async function forceEnqueueAlfaExcelOutboundCases({
   consecutivos = [],
   caseIds = [],
   onlyWithMoney = false,
   limit = 200,
+  diffAgainstExcel = true,
 } = {}) {
   const filtro = { excluidoBaseAlfa: { $ne: true } };
   if (Array.isArray(consecutivos) && consecutivos.length) {
@@ -480,16 +516,56 @@ export async function forceEnqueueAlfaExcelOutboundCases({
       { valorLiquidado: { $gt: 0 } },
       { valorTotalPagar: { $gt: 0 } },
       { valorReclamado: { $gt: 0 } },
+      { estadoGestion: { $exists: true, $nin: [null, '', 'PTE CONTACTO'] } },
     ];
   }
   const lim = Math.min(Math.max(Number(limit) || 200, 1), 500);
-  const casos = await SegurosAlfaCaso.find(filtro).limit(lim).lean();
-  let enqueued = 0;
-  for (const caso of casos) {
-    const out = await forceEnqueueAlfaExcelOutboundFullCase(caso);
-    if (out) enqueued += 1;
+  const casos = await SegurosAlfaCaso.find(filtro).sort({ updatedAt: -1 }).limit(lim).lean();
+
+  let excelRows = null;
+  if (diffAgainstExcel) {
+    try {
+      const resolved = await resolveSourceExcel();
+      const downloaded = await downloadDriveItemBuffer({
+        driveId: resolved.driveId,
+        itemId: resolved.itemId,
+      });
+      const parsed = parseAlfaExcelBuffer(downloaded.buffer || downloaded);
+      excelRows = parsed.rows || [];
+    } catch (err) {
+      logOut('ALFA_EXCEL_OUTBOUND_FORCE_DIFF_EXCEL_ERROR', {
+        error: err.message,
+        code: err.code || null,
+      });
+      // Sin Excel no forzar ciego: evita pisar filas sin saber el delta
+      return {
+        scanned: casos.length,
+        enqueued: 0,
+        limit: lim,
+        diffAgainstExcel: true,
+        excelError: err.message,
+      };
+    }
   }
-  return { scanned: casos.length, enqueued, limit: lim };
+
+  let enqueued = 0;
+  let fieldsQueued = 0;
+  for (const caso of casos) {
+    const out = diffAgainstExcel
+      ? await forceEnqueueAlfaExcelOutboundDiffVsExcel(caso, excelRows)
+      : await forceEnqueueAlfaExcelOutboundFullCase(caso);
+    if (out) {
+      enqueued += 1;
+      fieldsQueued += Object.keys(changesMapToObject(out.changes) || {}).length;
+    }
+  }
+  return {
+    scanned: casos.length,
+    enqueued,
+    fieldsQueued,
+    limit: lim,
+    diffAgainstExcel: Boolean(diffAgainstExcel),
+  };
 }
 
 /**
