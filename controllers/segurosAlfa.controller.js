@@ -36,6 +36,7 @@ import { getAlfaExcelSharePointImportConfig } from '../config/alfaExcelSharePoin
 import {
   enqueueAlfaExcelOutboundFromCaseUpdate,
   countPendingAlfaExcelOutbound,
+  forceEnqueueAlfaExcelOutboundCases,
 } from '../services/alfaExcelOutboundService.js';
 import {
   runAlfaExcelOutboundWorkerCycle,
@@ -1842,6 +1843,10 @@ export const postControlSeguimientoAlfaCheck = async (req, res) => {
 /**
  * POST /api/seguros-alfa/control-seguimiento/outbound-flush
  * Envía cola ARNALD → Excel SharePoint (manual; el cron debe estar OFF).
+ * Body opcional:
+ * - forceResync: true → reencola columnas amarillas con valor actual (si no hay pending)
+ * - consecutivos: ['ALFA-…'] → fuerza sync de esos casos
+ * - onlyWithMoney: true → prioriza casos con reserva/liquidado
  */
 export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
   try {
@@ -1858,6 +1863,31 @@ export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
       30
     );
     const batchSize = req.body?.batchSize ?? cfg.batchSize;
+    const consecutivos = Array.isArray(req.body?.consecutivos)
+      ? req.body.consecutivos
+      : [];
+    const forceResync = req.body?.forceResync !== false;
+    const onlyWithMoney = req.body?.onlyWithMoney === true;
+    const enqueueLimit = Math.min(
+      Math.max(Number(req.body?.enqueueLimit) || 120, 1),
+      500
+    );
+
+    let enqueueSummary = null;
+    const pendingBefore = await countPendingAlfaExcelOutbound();
+    if (consecutivos.length > 0) {
+      enqueueSummary = await forceEnqueueAlfaExcelOutboundCases({
+        consecutivos,
+        limit: Math.max(consecutivos.length, 1),
+      });
+    } else if (forceResync && pendingBefore === 0) {
+      // Sin cola: reencola casos con montos (o lote) para que el botón sí escriba Excel
+      enqueueSummary = await forceEnqueueAlfaExcelOutboundCases({
+        onlyWithMoney: onlyWithMoney || true,
+        limit: enqueueLimit,
+      });
+    }
+
     const started = Date.now();
     let totalClaimed = 0;
     let totalSynced = 0;
@@ -1882,16 +1912,22 @@ export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
       pendingLeft,
       roundsRun,
       durationMs: Date.now() - started,
+      enqueue: enqueueSummary,
     };
     return res.json({
       success: true,
       flush,
       outboundPending: pendingLeft,
       message:
-        flush.claimed === 0
+        flush.claimed === 0 && !(enqueueSummary?.enqueued > 0)
           ? 'No hay cambios pendientes para enviar a Excel.'
           : `Enviados ${flush.synced} de ${flush.claimed} a Excel` +
-            (flush.pendingLeft > 0 ? ` (${flush.pendingLeft} quedan en cola).` : '.'),
+            (flush.pendingLeft > 0
+              ? ` (${flush.pendingLeft} quedan en cola; pulse de nuevo).`
+              : '.') +
+            (enqueueSummary?.enqueued
+              ? ` Reencolados ${enqueueSummary.enqueued}.`
+              : ''),
     });
   } catch (error) {
     console.error('❌ Error flush outbound Alfa Excel:', error);

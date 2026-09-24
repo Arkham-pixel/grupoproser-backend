@@ -443,6 +443,52 @@ export async function enqueueAlfaExcelOutboundFromCaseUpdate({
 }
 
 /**
+ * Fuerza encolar TODAS las columnas amarillas con valor actual en ARNALD
+ * (before vacío). Sirve cuando Excel está desfasado y no hay pending en cola.
+ */
+export async function forceEnqueueAlfaExcelOutboundFullCase(caso) {
+  if (!caso?._id) return null;
+  return enqueueAlfaExcelOutboundFromCaseUpdate({
+    beforeDoc: { _id: caso._id },
+    afterDoc: caso,
+  });
+}
+
+/**
+ * Reencola amarillas de varios casos (p. ej. por consecutivos o montos).
+ */
+export async function forceEnqueueAlfaExcelOutboundCases({
+  consecutivos = [],
+  caseIds = [],
+  onlyWithMoney = false,
+  limit = 200,
+} = {}) {
+  const filtro = { excluidoBaseAlfa: { $ne: true } };
+  if (Array.isArray(consecutivos) && consecutivos.length) {
+    filtro.consecutivo = {
+      $in: consecutivos.map((c) => String(c).trim()).filter(Boolean),
+    };
+  } else if (Array.isArray(caseIds) && caseIds.length) {
+    filtro._id = { $in: caseIds };
+  } else if (onlyWithMoney) {
+    filtro.$or = [
+      { reserva: { $gt: 0 } },
+      { valorLiquidado: { $gt: 0 } },
+      { valorTotalPagar: { $gt: 0 } },
+      { valorReclamado: { $gt: 0 } },
+    ];
+  }
+  const lim = Math.min(Math.max(Number(limit) || 200, 1), 500);
+  const casos = await SegurosAlfaCaso.find(filtro).limit(lim).lean();
+  let enqueued = 0;
+  for (const caso of casos) {
+    const out = await forceEnqueueAlfaExcelOutboundFullCase(caso);
+    if (out) enqueued += 1;
+  }
+  return { scanned: casos.length, enqueued, limit: lim };
+}
+
+/**
  * Localiza fila Excel inequívoca para el caso (matching inverso).
  */
 export function findExcelRowForCase(caseDoc, excelRows) {
