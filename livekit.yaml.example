@@ -1,0 +1,24 @@
+# Copiar a livekit.yaml en el servidor Coolify (o pegar el contenido
+# en la env LIVEKIT_CONFIG de Coolify).
+#
+# Generar par key/secret:
+#   docker run --rm livekit/livekit-server:v1.8.4 generate-keys
+#
+# Esas mismas keys van en el .env del BACKEND ARNALD (servidor principal):
+#   LIVEKIT_URL=wss://livekit.grupoproser.com.co
+#   LIVEKIT_PUBLIC_URL=wss://livekit.grupoproser.com.co
+#   LIVEKIT_API_KEY=<API_KEY>
+#   LIVEKIT_API_SECRET=<API_SECRET>
+
+port: 7880
+log_level: info
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: true
+
+keys:
+  # Reemplazar por el output de generate-keys (formato: key: secret)
+  REPLACE_API_KEY: REPLACE_API_SECRET

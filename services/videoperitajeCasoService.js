@@ -150,3 +150,118 @@ export async function adjuntarMediasAlCaso(sesion, medias = []) {
 
   return { ok: true, agregados };
 }
+
+const CAMPOS_BUSQUEDA_CASO = [
+  'consecutivo',
+  'siniestro',
+  'zc',
+  'asegurado',
+  'nombreAsegurado',
+  'placa',
+  'poliza',
+];
+
+/**
+ * Busca casos de un módulo por texto (expediente / siniestro / asegurado).
+ * @returns {Promise<Array<{_id, etiqueta, consecutivo, siniestro, asegurado}>>}
+ */
+export async function buscarCasosParaVideoperitaje(modulo, q = '', limit = 20) {
+  const key = normalizarModulo(modulo);
+  const Model = MODULOS_CASO[key];
+  if (!Model) return [];
+  const texto = String(q || '').trim();
+  if (texto.length < 2) return [];
+
+  const rx = new RegExp(texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+  const or = CAMPOS_BUSQUEDA_CASO.map((campo) => ({ [campo]: rx }));
+  // También por ObjectId exacto
+  if (mongoose.Types.ObjectId.isValid(texto) && String(texto).length === 24) {
+    or.push({ _id: texto });
+  }
+
+  const rows = await Model.find({ $or: or })
+    .select('consecutivo siniestro zc asegurado nombreAsegurado placa poliza')
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .limit(Math.min(40, Math.max(1, Number(limit) || 20)))
+    .lean();
+
+  return rows.map((c) => {
+    const consecutivo = String(c.consecutivo || c.siniestro || c.zc || '').trim();
+    const asegurado = String(c.asegurado || c.nombreAsegurado || '').trim();
+    const siniestro = String(c.siniestro || '').trim();
+    const partes = [consecutivo, siniestro && siniestro !== consecutivo ? `Sin. ${siniestro}` : '', asegurado].filter(
+      Boolean
+    );
+    return {
+      _id: String(c._id),
+      consecutivo,
+      siniestro,
+      asegurado,
+      placa: String(c.placa || '').trim(),
+      etiqueta: partes.join(' · ') || String(c._id),
+    };
+  });
+}
+
+/**
+ * Vincula una sesión (creada sin caso) a un caso de módulo y adjunta medias.
+ */
+export async function vincularSesionACaso(sesion, modulo, casoId) {
+  const key = normalizarModulo(modulo);
+  if (!key || key === 'independiente' || !MODULOS_CASO[key]) {
+    const err = new Error('Módulo de caso inválido');
+    err.status = 400;
+    err.code = 'MODULO_INVALIDO';
+    throw err;
+  }
+  if (!casoId || !mongoose.Types.ObjectId.isValid(casoId)) {
+    const err = new Error('casoId inválido');
+    err.status = 400;
+    err.code = 'CASO_INVALIDO';
+    throw err;
+  }
+
+  const caso = await cargarCasoVinculado(key, casoId);
+  if (!caso) {
+    const err = new Error('Caso no encontrado en ese módulo');
+    err.status = 404;
+    err.code = 'CASO_NO_ENCONTRADO';
+    throw err;
+  }
+
+  if (sesion.casoId && String(sesion.casoId) !== String(casoId)) {
+    const err = new Error('Esta sesión ya está asignada a otro caso');
+    err.status = 409;
+    err.code = 'YA_ASIGNADA';
+    throw err;
+  }
+
+  const contacto = datosContactoDesdeCaso(caso);
+  sesion.modulo = key;
+  sesion.casoId = caso._id;
+  if (!sesion.expediente && contacto.expediente) sesion.expediente = contacto.expediente;
+  if (!sesion.siniestro && contacto.siniestro) sesion.siniestro = contacto.siniestro;
+  if (!sesion.aseguradoNombre && contacto.aseguradoNombre) {
+    sesion.aseguradoNombre = contacto.aseguradoNombre;
+  }
+  if (!sesion.celular && contacto.celular) sesion.celular = contacto.celular;
+  if (!sesion.email && contacto.email) sesion.email = contacto.email;
+
+  await sesion.save();
+
+  const adjunto = await adjuntarMediasAlCaso(sesion, sesion.medias || []);
+  if (adjunto?.ok) {
+    sesion.adjuntadoAlCaso = true;
+    await sesion.save();
+  }
+
+  return {
+    sesion,
+    caso: {
+      _id: String(caso._id),
+      expediente: contacto.expediente,
+      asegurado: contacto.aseguradoNombre,
+    },
+    adjunto,
+  };
+}

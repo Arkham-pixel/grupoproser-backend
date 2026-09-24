@@ -176,6 +176,194 @@ export async function verificarCupoCrearSesion(modulo) {
   }
 }
 
+function normalizarCupoRespuesta({
+  via,
+  permitido,
+  motivo,
+  plan,
+  limite,
+  usadas,
+  concurrentesMax,
+  concurrentesAhora,
+  duracionMaxMinutos,
+  compania,
+  raw,
+}) {
+  const lim = Math.max(0, Number(limite) || 0);
+  const usa = Math.max(0, Number(usadas) || 0);
+  const restantes = lim > 0 ? Math.max(0, lim - usa) : null;
+  return {
+    via,
+    permitido: Boolean(permitido),
+    motivo: motivo || (permitido ? 'ok' : 'desconocido'),
+    plan: plan || null,
+    periodo: 'semana',
+    limite: lim || null,
+    usadas: usa,
+    restantes,
+    concurrentesMax: Number(concurrentesMax) || null,
+    concurrentesAhora: Number(concurrentesAhora) || 0,
+    duracionMaxMinutos: Number(duracionMaxMinutos) || 60,
+    compania: compania || null,
+    mensaje:
+      restantes == null
+        ? 'Cupo no configurado (sin límite activo).'
+        : restantes <= 0
+          ? 'Cupo semanal agotado. Renueve o amplíe la suscripción.'
+          : `Quedan ${restantes} de ${lim} videoperitajes esta semana.`,
+    raw: raw || undefined,
+  };
+}
+
+/**
+ * Estado de cupo/suscripción para mostrar en UI (restantes de la semana).
+ * SDK → Postgres → fallback Mongo + env VIDEOPERITAJE_CUPO_SEMANAL.
+ */
+export async function obtenerEstadoCupo(modulo = 'independiente') {
+  const codigo = moduloACompaniaCodigo(modulo);
+
+  if (videoperitajeSdkConfigurado()) {
+    try {
+      const data = await sdkVerificarCupo(modulo);
+      const c = data.cupo || data || {};
+      const limite =
+        c.sesiones_por_semana ??
+        c.sesionesPorSemana ??
+        c.limite ??
+        c.limit ??
+        null;
+      const usadas =
+        c.sesiones_usadas_semana ??
+        c.sesionesUsadasSemana ??
+        c.usadas ??
+        c.used ??
+        0;
+      return normalizarCupoRespuesta({
+        via: 'sdk',
+        permitido: data.permitido !== false,
+        motivo: data.motivo || (data.permitido === false ? 'cupo' : 'ok'),
+        plan: c.plan_codigo || c.plan || data.plan || null,
+        limite,
+        usadas,
+        concurrentesMax: c.sesiones_concurrentes_max ?? c.concurrentesMax,
+        concurrentesAhora: c.sesiones_concurrentes_ahora ?? c.concurrentesAhora,
+        duracionMaxMinutos: c.duracion_max_minutos ?? c.duracionMaxMinutos,
+        compania: data.compania || { codigo },
+        raw: data,
+      });
+    } catch (err) {
+      softLog(err, 'obtenerEstadoCupo.sdk');
+      // sigue a PG / mongo
+    }
+  }
+
+  if (videoperitajePgConfigurado()) {
+    try {
+      const companiaId = await resolverCompaniaId(codigo);
+      if (!companiaId) {
+        return normalizarCupoRespuesta({
+          via: 'pg',
+          permitido: false,
+          motivo: 'sin_suscripcion_activa',
+          limite: 0,
+          usadas: 0,
+          compania: { codigo },
+        });
+      }
+      const { rows: vista } = await videoperitajePgQuery(
+        `SELECT * FROM videoperitaje.v_cupo_compania WHERE compania_id = $1 LIMIT 1`,
+        [companiaId]
+      );
+      const v = vista[0];
+      if (!v) {
+        return normalizarCupoRespuesta({
+          via: 'pg',
+          permitido: false,
+          motivo: 'sin_suscripcion_activa',
+          limite: 0,
+          usadas: 0,
+          compania: { codigo, id: companiaId },
+        });
+      }
+      const { rows: okRows } = await videoperitajePgQuery(
+        `SELECT * FROM videoperitaje.puede_iniciar_sesion($1)`,
+        [companiaId]
+      );
+      const ok = okRows[0] || {};
+      return normalizarCupoRespuesta({
+        via: 'pg',
+        permitido: Boolean(ok.permitido),
+        motivo: ok.motivo || 'ok',
+        plan: v.plan_codigo,
+        limite: v.sesiones_por_semana,
+        usadas: v.sesiones_usadas_semana,
+        concurrentesMax: v.sesiones_concurrentes_max,
+        concurrentesAhora: v.sesiones_concurrentes_ahora,
+        duracionMaxMinutos: v.duracion_max_minutos,
+        compania: {
+          id: v.compania_id,
+          codigo: v.compania_codigo,
+          nombre: v.compania_nombre,
+        },
+        raw: { vista: v, puede: ok },
+      });
+    } catch (err) {
+      softLog(err, 'obtenerEstadoCupo.pg');
+    }
+  }
+
+  // Fallback Mongo: cuenta sesiones de la semana ISO (no canceladas).
+  try {
+    const VideoperitajeSesion = (await import('../models/VideoperitajeSesion.js')).default;
+    const ahora = new Date();
+    const dia = ahora.getUTCDay() || 7; // 1=lun … 7=dom
+    const lunes = new Date(Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth(), ahora.getUTCDate()));
+    lunes.setUTCDate(lunes.getUTCDate() - (dia - 1));
+    lunes.setUTCHours(0, 0, 0, 0);
+
+    const filtroModulo =
+      !modulo || modulo === 'independiente'
+        ? {}
+        : {
+            $or: [
+              { modulo: normalizarModulo(modulo) },
+              { modulo: { $in: ['', 'independiente'] } },
+            ],
+          };
+
+    const usadas = await VideoperitajeSesion.countDocuments({
+      createdAt: { $gte: lunes },
+      estado: { $ne: 'cancelada' },
+      ...filtroModulo,
+    });
+
+    const limiteEnv = Number(process.env.VIDEOPERITAJE_CUPO_SEMANAL || 0);
+    const limite = Number.isFinite(limiteEnv) && limiteEnv > 0 ? limiteEnv : null;
+    const permitido = limite == null || usadas < limite;
+
+    return normalizarCupoRespuesta({
+      via: 'mongo',
+      permitido,
+      motivo: permitido ? 'ok' : 'cupo_semanal_agotado',
+      plan: process.env.VIDEOPERITAJE_PLAN_CODIGO || 'local',
+      limite,
+      usadas,
+      duracionMaxMinutos: Number(process.env.VIDEOPERITAJE_DURACION_MAX_MIN || 60),
+      compania: { codigo },
+    });
+  } catch (err) {
+    softLog(err, 'obtenerEstadoCupo.mongo');
+    return normalizarCupoRespuesta({
+      via: 'none',
+      permitido: true,
+      motivo: 'sin_control',
+      limite: null,
+      usadas: 0,
+      compania: { codigo },
+    });
+  }
+}
+
 /**
  * Valida fecha/hora programada antes de entrar a la sala.
  */

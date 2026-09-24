@@ -34,11 +34,12 @@
       }
       .btn:disabled { opacity: .5; }
       .btn.ghost { background: #fff; color: #111; border: 1px solid #d1d5db; }
-      video.main { width: 100%; aspect-ratio: 9/16; object-fit: cover; object-position: center; background: #000; display: block; border-radius: 0; }
+      video.main { width: 100%; aspect-ratio: 9/16; object-fit: cover; object-position: center; background: #000; display: block; border-radius: 0; transform: scaleX(-1) !important; }
       body.in-call video.main {
         width: 100%; height: 100%; max-height: none; aspect-ratio: auto;
         object-fit: cover; object-position: center;
         position: absolute; inset: 0; left: 0; top: 0; right: 0; bottom: 0; z-index: 0;
+        transform: scaleX(-1) !important;
       }
       .stage { position: relative; overflow: hidden; border-radius: 16px; background: #000; }
       body.in-call .stage {
@@ -52,6 +53,7 @@
         object-fit: cover; object-position: center;
         border-radius: 12px; border: 2px solid #fff; background: #000;
         box-shadow: 0 4px 16px rgba(0,0,0,.35); z-index: 2;
+        transform: none !important;
       }
       body.in-call .pip {
         top: auto; bottom: 24px; right: 12px; left: auto;
@@ -275,6 +277,11 @@
         const esPip = el.classList.contains('pip');
         el.style.objectFit = 'cover';
         el.style.objectPosition = 'center';
+        // Local (main): espejo. Remoto (pip): orientación real.
+        const espejo = !esPip && facingMode !== 'environment';
+        const t = espejo ? 'scaleX(-1)' : 'none';
+        el.style.transform = t;
+        el.style.webkitTransform = t;
         if (esPip) {
           el.style.width = '112px';
           el.style.height = '150px';
@@ -291,7 +298,12 @@
         el.style.position = 'absolute';
       }
       function videoConstraints() {
-        return { facingMode: { ideal: facingMode } };
+        return {
+          facingMode: { ideal: facingMode },
+          width: { ideal: 1080 },
+          height: { ideal: 1920 },
+          frameRate: { ideal: 24 },
+        };
       }
       function html(s) {
         return String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -380,13 +392,17 @@
       }
       function captureFrom(video) {
         if (!video || !video.videoWidth) return null;
+        const srcW = video.videoWidth;
+        const srcH = video.videoHeight;
+        const largo = Math.max(srcW, srcH);
+        const scale = largo > 4096 ? 4096 / largo : 1;
         const c = document.createElement('canvas');
-        c.width = video.videoWidth;
-        c.height = video.videoHeight;
-        const ctx = c.getContext('2d');
+        c.width = Math.max(1, Math.round(srcW * scale));
+        c.height = Math.max(1, Math.round(srcH * scale));
+        const ctx = c.getContext('2d', { alpha: false });
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(video, 0, 0);
+        ctx.drawImage(video, 0, 0, c.width, c.height);
         return new Promise((resolve) => c.toBlob(resolve, 'image/jpeg', 0.95));
       }
       function pistaVideoLocal(room) {
@@ -400,21 +416,74 @@
         }
         return null;
       }
+      function conTimeout(p, ms) {
+        return Promise.race([
+          p,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+        ]);
+      }
       async function captureFotoHd(video, track) {
         if (track && typeof ImageCapture === 'function') {
           try {
             const ic = new ImageCapture(track);
             if (ic.takePhoto) {
-              const still = await ic.takePhoto();
-              if (still && still.size > 8000) return still;
+              let settings;
+              try {
+                const caps = await ic.getPhotoCapabilities();
+                if (caps && caps.imageWidth && caps.imageHeight) {
+                  settings = {
+                    imageWidth: caps.imageWidth.max,
+                    imageHeight: caps.imageHeight.max,
+                  };
+                }
+              } catch (_) {}
+              const raw = await conTimeout(
+                settings ? ic.takePhoto(settings) : ic.takePhoto(),
+                2800
+              );
+              if (raw && raw.size > 8000) {
+                const tipo = String(raw.type || '');
+                if (/^image\/(jpeg|jpg|png|webp)$/i.test(tipo) && raw.size < 12 * 1024 * 1024) {
+                  return raw;
+                }
+                if (typeof createImageBitmap === 'function') {
+                  const bmp = await createImageBitmap(raw);
+                  const srcW = bmp.width;
+                  const srcH = bmp.height;
+                  const largo = Math.max(srcW, srcH);
+                  const scale = largo > 4096 ? 4096 / largo : 1;
+                  const c = document.createElement('canvas');
+                  c.width = Math.max(1, Math.round(srcW * scale));
+                  c.height = Math.max(1, Math.round(srcH * scale));
+                  const ctx = c.getContext('2d', { alpha: false });
+                  ctx.imageSmoothingEnabled = true;
+                  ctx.imageSmoothingQuality = 'high';
+                  ctx.drawImage(bmp, 0, 0, c.width, c.height);
+                  if (bmp.close) bmp.close();
+                  const blob = await new Promise((resolve) => c.toBlob(resolve, 'image/jpeg', 0.95));
+                  if (blob && blob.size > 1500) return blob;
+                }
+              }
             }
+          } catch (_) {}
+          try {
+            const ic = new ImageCapture(track);
             if (ic.grabFrame) {
               const frame = await ic.grabFrame();
+              const srcW = frame.width;
+              const srcH = frame.height;
+              const largo = Math.max(srcW, srcH);
+              const scale = largo > 4096 ? 4096 / largo : 1;
               const c = document.createElement('canvas');
-              c.width = frame.width;
-              c.height = frame.height;
-              c.getContext('2d').drawImage(frame, 0, 0);
-              return await new Promise((resolve) => c.toBlob(resolve, 'image/jpeg', 0.95));
+              c.width = Math.max(1, Math.round(srcW * scale));
+              c.height = Math.max(1, Math.round(srcH * scale));
+              const ctx = c.getContext('2d', { alpha: false });
+              ctx.imageSmoothingEnabled = true;
+              ctx.imageSmoothingQuality = 'high';
+              ctx.drawImage(frame, 0, 0, c.width, c.height);
+              if (frame.close) frame.close();
+              const blob = await new Promise((resolve) => c.toBlob(resolve, 'image/jpeg', 0.95));
+              if (blob && blob.size > 1500) return blob;
             }
           } catch (_) {}
         }
@@ -429,14 +498,14 @@
           document.body.appendChild(el);
         }
         el.style.display = 'block';
-        setTimeout(() => { el.style.display = 'none'; }, 350);
+        setTimeout(() => { el.style.display = 'none'; }, 180);
       }
       async function tomarFotoHd() {
         const localEl = document.getElementById('local');
         const blob = await captureFotoHd(localEl, pistaVideoLocal(liveRoom));
         if (!blob) return;
         flashWhite();
-        await uploadBlob(blob, { descripcion: 'Captura HD del asegurado' });
+        await uploadBlob(blob, { descripcion: 'Captura videoperitaje' });
       }
       function renderWelcome() {
         panel.innerHTML = `
@@ -515,9 +584,10 @@
             reconnectPolicy: { nextRetryDelayInMs: function () { return null; } },
             videoCaptureDefaults: {
               facingMode: facingMode,
+              resolution: { width: 2160, height: 3840 },
             },
             videoPublishDefaults: {
-              videoEncoding: { maxBitrate: 2_500_000, maxFramerate: 24 },
+              videoEncoding: { maxBitrate: 4_000_000, maxFramerate: 24 },
             },
           });
           liveRoom = room;

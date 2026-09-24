@@ -1,0 +1,33 @@
+# LiveKit PRODUCCIÓN — solo SFU (no Arnald).
+# Uso en Coolify: New Resource → Docker Compose → pegar este archivo
+# o apuntar al repo y usar este compose.
+#
+# Generar keys (en cualquier máquina con Docker):
+#   docker run --rm livekit/livekit-server:latest generate-keys
+#
+# Luego en Coolify → Environment Variables:
+#   LIVEKIT_API_KEY=...
+#   LIVEKIT_API_SECRET=...
+#   LIVEKIT_CONFIG=  (opcional; si vacío se usa el YAML montado)
+#
+# Dominio Coolify: livekit.grupoproser.com.co
+#   → Internal port del proxy HTTP/WSS: 7880 (NO 80)
+# DNS: registro A de livekit.grupoproser.com.co → IP pública de ESTE servidor Coolify
+
+services:
+  livekit:
+    image: livekit/livekit-server:v1.8.4
+    restart: unless-stopped
+    # Host network: WebRTC/UDP fiable en VPS (recomendado por LiveKit)
+    network_mode: host
+    command: --config /etc/livekit.yaml
+    environment:
+      # Coolify puede inyectar LIVEKIT_CONFIG como YAML completo;
+      # si no, se usa el archivo montado abajo.
+      LIVEKIT_CONFIG: ${LIVEKIT_CONFIG:-}
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    # Con network_mode: host los "ports:" no aplican; abre en el firewall del VPS:
+    #   TCP 7880 (signaling, detrás de Caddy/Traefik de Coolify si aplica)
+    #   TCP 7881
+    #   UDP 50000-60000 (media)

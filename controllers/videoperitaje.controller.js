@@ -17,6 +17,9 @@ import {
   adjuntarMediasAlCaso,
   normalizarModulo,
   sesionDebeAdjuntarAlCaso,
+  buscarCasosParaVideoperitaje,
+  vincularSesionACaso,
+  MODULOS_CASO,
 } from '../services/videoperitajeCasoService.js';
 import {
   cerrarSalaLivekit,
@@ -31,7 +34,13 @@ import {
   marcarSesionEnProcesoPostgres,
   cerrarSesionPostgres,
   verificarVentanaLlamada,
+  obtenerEstadoCupo,
 } from '../services/videoperitajePgService.js';
+import {
+  usuarioEsAdminVideoperitaje,
+  filtroSesionesPropias,
+  sesionPerteneceAUsuario,
+} from '../config/videoperitajePermitidos.js';
 
 const ESTADOS_ABIERTOS = new Set(['pendiente', 'en_proceso']);
 
@@ -315,7 +324,21 @@ function usuarioDesdeReq(req) {
     id: String(u.id || u._id || ''),
     login: String(u.login || u.usuario || ''),
     nombre: String(u.nombre || u.name || u.login || ''),
+    cedula: String(u.cedula || u.documento || u.codiCedula || ''),
+    usuario: String(u.usuario || ''),
+    documento: String(u.documento || ''),
+    codiCedula: String(u.codiCedula || ''),
+    rol: String(u.rol || u.role || ''),
+    role: String(u.role || u.rol || ''),
+    _id: u._id,
   };
+}
+
+function exigirSesionPropiaOAdmin(sesion, req) {
+  const usuario = usuarioDesdeReq(req);
+  if (usuarioEsAdminVideoperitaje(usuario)) return { ok: true, usuario, admin: true };
+  if (sesionPerteneceAUsuario(sesion, usuario)) return { ok: true, usuario, admin: false };
+  return { ok: false, usuario, admin: false };
 }
 
 export async function crearSesion(req, res) {
@@ -455,28 +478,48 @@ export async function crearSesion(req, res) {
 
 export async function listarSesiones(req, res) {
   try {
+    const usuario = usuarioDesdeReq(req);
+    const admin = usuarioEsAdminVideoperitaje(usuario);
     const { estado, tipo, modulo, casoId, q, page = 1, limit = 40 } = req.query;
     const filtro = {};
+    if (!admin) {
+      Object.assign(filtro, filtroSesionesPropias(usuario));
+    }
     if (estado) filtro.estado = String(estado);
     if (tipo) filtro.tipo = String(tipo);
     if (modulo) filtro.modulo = normalizarModulo(modulo);
     if (casoId && mongoose.Types.ObjectId.isValid(casoId)) filtro.casoId = casoId;
     if (q) {
       const rx = new RegExp(String(q).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      filtro.$or = [
+      const texto = [
         { expediente: rx },
         { siniestro: rx },
         { aseguradoNombre: rx },
         { celular: rx },
         { peritoNombre: rx },
       ];
+      if (filtro.$or) {
+        // Ajustador: (propias) AND (texto)
+        filtro.$and = [{ $or: filtro.$or }, { $or: texto }];
+        delete filtro.$or;
+      } else {
+        filtro.$or = texto;
+      }
     }
     const skip = (Math.max(1, Number(page)) - 1) * Math.max(1, Number(limit));
     const [data, total] = await Promise.all([
       VideoperitajeSesion.find(filtro).sort({ createdAt: -1 }).skip(skip).limit(Math.max(1, Number(limit))),
       VideoperitajeSesion.countDocuments(filtro),
     ]);
-    res.json({ success: true, data, total, page: Number(page), limit: Number(limit) });
+    res.json({
+      success: true,
+      data,
+      total,
+      page: Number(page),
+      limit: Number(limit),
+      scope: admin ? 'all' : 'own',
+      canVaciarHistorial: admin,
+    });
   } catch (error) {
     console.error('❌ listarSesiones videoperitaje:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -487,6 +530,10 @@ export async function obtenerSesion(req, res) {
   try {
     const sesion = await VideoperitajeSesion.findById(req.params.id);
     if (!sesion) return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+    const acceso = exigirSesionPropiaOAdmin(sesion, req);
+    if (!acceso.ok) {
+      return res.status(403).json({ success: false, error: 'No tiene acceso a esta sesión' });
+    }
     const medias = await hidratarMedias(sesion.medias);
     res.json({
       success: true,
@@ -502,6 +549,10 @@ export async function tokenLivekitPerito(req, res) {
   try {
     const sesion = await VideoperitajeSesion.findById(req.params.id);
     if (!sesion) return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+    const acceso = exigirSesionPropiaOAdmin(sesion, req);
+    if (!acceso.ok) {
+      return res.status(403).json({ success: false, error: 'No tiene acceso a esta sesión' });
+    }
     if (sesion.tipo !== 'live') {
       return res.status(400).json({ success: false, error: 'Esta sesión no es una videollamada' });
     }
@@ -519,7 +570,7 @@ export async function tokenLivekitPerito(req, res) {
       });
     }
 
-    const usuario = usuarioDesdeReq(req);
+    const usuario = acceso.usuario;
     let pasoAEnProceso = false;
     if (sesion.estado === 'pendiente') {
       sesion.estado = 'en_proceso';
@@ -561,6 +612,10 @@ export async function finalizarSesion(req, res) {
   try {
     const sesion = await VideoperitajeSesion.findById(req.params.id);
     if (!sesion) return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+    const acceso = exigirSesionPropiaOAdmin(sesion, req);
+    if (!acceso.ok) {
+      return res.status(403).json({ success: false, error: 'No tiene acceso a esta sesión' });
+    }
     if (sesion.estado === 'cancelada') {
       return res.status(409).json({ success: false, error: 'La sesión está cancelada' });
     }
@@ -574,7 +629,7 @@ export async function finalizarSesion(req, res) {
     }
     if (req.body?.notas) sesion.notas = String(req.body.notas);
     await sesion.save();
-    const usuario = usuarioDesdeReq(req);
+    const usuario = acceso.usuario;
     void cerrarSesionPostgres(sesion, {
       evento: 'room_closed',
       actorLogin: usuario.login || sesion.peritoLogin,
@@ -600,13 +655,17 @@ export async function cancelarSesion(req, res) {
   try {
     const sesion = await VideoperitajeSesion.findById(req.params.id);
     if (!sesion) return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+    const acceso = exigirSesionPropiaOAdmin(sesion, req);
+    if (!acceso.ok) {
+      return res.status(403).json({ success: false, error: 'No tiene acceso a esta sesión' });
+    }
     if (sesion.estado === 'finalizada') {
       return res.status(409).json({ success: false, error: 'No se puede cancelar una sesión finalizada' });
     }
     sesion.estado = 'cancelada';
     sesion.fin = new Date();
     await sesion.save();
-    const usuario = usuarioDesdeReq(req);
+    const usuario = acceso.usuario;
     void cerrarSesionPostgres(sesion, {
       evento: 'force_end',
       actorLogin: usuario.login || sesion.peritoLogin,
@@ -618,11 +677,15 @@ export async function cancelarSesion(req, res) {
   }
 }
 
-/** Borra la sesión del historial (pruebas / limpieza). No elimina objetos S3 huérfanos. */
+/** Borra la sesión del historial. Ajustador: solo las suyas. Admin: cualquiera. */
 export async function eliminarSesion(req, res) {
   try {
     const sesion = await VideoperitajeSesion.findById(req.params.id);
     if (!sesion) return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+    const acceso = exigirSesionPropiaOAdmin(sesion, req);
+    if (!acceso.ok) {
+      return res.status(403).json({ success: false, error: 'No puede eliminar esta sesión' });
+    }
     await cerrarSalaLivekit(sesion.livekitRoom || nombreSalaLivekit(sesion._id));
     await VideoperitajeSesion.deleteOne({ _id: sesion._id });
     res.json({ success: true, deletedId: String(sesion._id) });
@@ -631,9 +694,17 @@ export async function eliminarSesion(req, res) {
   }
 }
 
-/** Vacía todo el historial de videoperitaje (solo logins permitidos). */
+/** Vacía todo el historial — solo administradores de videoperitaje. */
 export async function vaciarHistorialSesiones(req, res) {
   try {
+    const usuario = usuarioDesdeReq(req);
+    if (!usuarioEsAdminVideoperitaje(usuario)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Solo el administrador puede vaciar el historial de videoperitaje.',
+        code: 'VIDEOPERITAJE_ADMIN_REQUIRED',
+      });
+    }
     const abiertas = await VideoperitajeSesion.find({
       estado: { $in: ['pendiente', 'en_proceso'] },
     })
@@ -653,6 +724,10 @@ export async function reenviarInvitacion(req, res) {
   try {
     const sesion = await VideoperitajeSesion.findById(req.params.id);
     if (!sesion) return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+    const acceso = exigirSesionPropiaOAdmin(sesion, req);
+    if (!acceso.ok) {
+      return res.status(403).json({ success: false, error: 'No tiene acceso a esta sesión' });
+    }
     if (!ESTADOS_ABIERTOS.has(sesion.estado)) {
       return res.status(409).json({ success: false, error: 'La sesión ya no admite reenvío' });
     }
@@ -684,6 +759,108 @@ export async function reenviarInvitacion(req, res) {
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/** Lista módulos que admiten asignación a caso. */
+export async function listarModulosCasoVideoperitaje(_req, res) {
+  try {
+    const data = Object.keys(MODULOS_CASO)
+      .filter((k) => k !== 'alfa') // alias de seguros-alfa
+      .map((id) => ({
+        id,
+        label:
+          {
+            'bbva-cat': 'BBVA CAT',
+            'bbva-cat-listado': 'BBVA CAT listado',
+            'seguros-alfa': 'Seguros Alfa',
+            zurich: 'Zurich',
+            allianz: 'Allianz',
+            previsora: 'Previsora',
+            'equidad-cat': 'Equidad CAT',
+          }[id] || id,
+      }));
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/** Cupo / suscripción: cuántos videoperitajes quedan esta semana (solo admin). */
+export async function obtenerCupoVideoperitaje(req, res) {
+  try {
+    const usuario = usuarioDesdeReq(req);
+    if (!usuarioEsAdminVideoperitaje(usuario)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Solo el administrador puede ver el cupo de suscripción.',
+        code: 'VIDEOPERITAJE_ADMIN_REQUIRED',
+      });
+    }
+    const modulo = normalizarModulo(req.query.modulo || 'independiente') || 'independiente';
+    const cupo = await obtenerEstadoCupo(modulo);
+    res.json({ success: true, data: cupo });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/** Busca casos de un módulo para asignar una sesión. */
+export async function buscarCasosVideoperitaje(req, res) {
+  try {
+    const modulo = normalizarModulo(req.query.modulo);
+    const q = String(req.query.q || '').trim();
+    if (!modulo || modulo === 'independiente') {
+      return res.status(400).json({ success: false, error: 'Indique un módulo de caso' });
+    }
+    if (q.length < 2) {
+      return res.json({ success: true, data: [] });
+    }
+    const data = await buscarCasosParaVideoperitaje(modulo, q, Number(req.query.limit) || 20);
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Asigna una sesión creada sin caso (módulo independiente) a un caso CAT/etc.
+ * Adjunta fotos/videos ya capturados al expediente.
+ */
+export async function asignarSesionACaso(req, res) {
+  try {
+    const sesion = await VideoperitajeSesion.findById(req.params.id);
+    if (!sesion) return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+    const acceso = exigirSesionPropiaOAdmin(sesion, req);
+    if (!acceso.ok) {
+      return res.status(403).json({ success: false, error: 'No tiene acceso a esta sesión' });
+    }
+
+    const modulo = normalizarModulo(req.body?.modulo);
+    const casoId = req.body?.casoId;
+    if (sesion.casoId && String(sesion.casoId) === String(casoId)) {
+      return res.json({
+        success: true,
+        data: sesion,
+        mensaje: 'La sesión ya estaba asignada a ese caso',
+      });
+    }
+
+    const result = await vincularSesionACaso(sesion, modulo, casoId);
+    res.json({
+      success: true,
+      data: result.sesion,
+      caso: result.caso,
+      adjunto: result.adjunto,
+      mensaje: 'Sesión asignada al caso. Fotos/videos adjuntos al expediente.',
+    });
+  } catch (error) {
+    const status = error.status || 500;
+    res.status(status).json({
+      success: false,
+      error: error.message,
+      code: error.code,
+    });
   }
 }
 

@@ -1,0 +1,26 @@
+# Coolify → Docker Compose (reemplazar el actual y Redeploy)
+# Dominio: https://livekit.grupoproser.com.co → puerto interno 7880
+#
+# AWS Security Group (obligatorio para verse):
+#   TCP 7881, UDP 7882  → 0.0.0.0/0
+#
+# Imagen v1.10.1: soporta /rtc/v1 (requerido por livekit-client 2.22)
+
+services:
+  livekit:
+    image: livekit/livekit-server:v1.10.1
+    restart: unless-stopped
+    environment:
+      LIVEKIT_CONFIG: |
+        port: 7880
+        log_level: info
+        rtc:
+          tcp_port: 7881
+          udp_port: 7882
+          use_external_ip: true
+        keys:
+          API6d7e4c0d90e32be330bc1af5: W8GXIF_G2Xx3TU1R4srzTAJRvDWnRAZghdEMNFj9u7I
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"

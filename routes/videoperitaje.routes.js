@@ -13,6 +13,10 @@ import {
   eliminarSesion,
   vaciarHistorialSesiones,
   reenviarInvitacion,
+  listarModulosCasoVideoperitaje,
+  buscarCasosVideoperitaje,
+  asignarSesionACaso,
+  obtenerCupoVideoperitaje,
   obtenerPublica,
   joinPublico,
   subirFotoPublica,
@@ -67,6 +71,10 @@ router.post(`/sesiones/:id(${ID_MONGO})/token-livekit`, tokenLivekitPerito);
 router.post(`/sesiones/:id(${ID_MONGO})/finalizar`, finalizarSesion);
 router.post(`/sesiones/:id(${ID_MONGO})/cancelar`, cancelarSesion);
 router.post(`/sesiones/:id(${ID_MONGO})/reenviar`, reenviarInvitacion);
+router.post(`/sesiones/:id(${ID_MONGO})/asignar-caso`, asignarSesionACaso);
+router.get('/casos/modulos', listarModulosCasoVideoperitaje);
+router.get('/casos/buscar', buscarCasosVideoperitaje);
+router.get('/cupo', obtenerCupoVideoperitaje);
 router.post(
   `/sesiones/:id(${ID_MONGO})/fotos`,
   upload.single('archivo'),
