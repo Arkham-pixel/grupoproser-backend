@@ -22,8 +22,8 @@ import {
   normalizeIdentification,
   normalizeClaimNumber,
   normalizeDate,
-  normalizeMoney,
   normalizePolicyNumberFromExcel,
+  normalizeMoneyOficial,
   valuesEqualForDiff,
   isPolicyPlaceholder,
   isMeaningfulExcelValue,
@@ -353,9 +353,11 @@ export function buildAlfaCaseDiff({ currentCase, incomingData, updatableFields }
   return computeAlfaImportDiff(incomingData, currentCase, updatableFields);
 }
 
-function cellToFieldValue(field, raw) {
+function cellToFieldValue(field, raw, identificacion = null) {
   if (ALFA_EXCEL_DATE_FIELDS.includes(field)) return normalizeDate(raw);
-  if (ALFA_EXCEL_MONEY_FIELDS.includes(field)) return normalizeMoney(raw);
+  if (ALFA_EXCEL_MONEY_FIELDS.includes(field)) {
+    return normalizeMoneyOficial(raw, identificacion);
+  }
   if (field === 'numeroPoliza') return normalizePolicyNumberFromExcel(raw);
   if (field === 'identificacion') return normalizeIdentification(raw);
   if (field === 'siniestro') return normalizeClaimNumber(raw);
@@ -433,14 +435,19 @@ function parseSheet(sheet) {
     mapping[field] = Number(col);
   });
 
+  const idColEntry = Object.entries(colMap).find(([, field]) => field === 'identificacion');
+  const idCol = idColEntry ? Number(idColEntry[0]) : -1;
+
   const rows = [];
   for (let r = headerRowIdx + 1; r < matriz.length; r += 1) {
     const row = matriz[r] || [];
+    const identificacion =
+      idCol >= 0 ? normalizeIdentification(row[idCol]) : null;
     const payload = {};
     let hasData = false;
     Object.entries(colMap).forEach(([colStr, field]) => {
       const raw = row[Number(colStr)];
-      const val = cellToFieldValue(field, raw);
+      const val = cellToFieldValue(field, raw, identificacion);
       payload[field] = val;
       if (val !== null && val !== undefined && String(val).trim() !== '') hasData = true;
     });

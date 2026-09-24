@@ -150,18 +150,20 @@ export function parseCopMoney(value) {
 
 /**
  * Pesos enteros para UI / Excel.
- * Si los centavos (.88) se concatenaron al entero (≥ 1.000 millones), divide ×100.
+ * Si los centavos (.88) se concatenaron al entero (≥ 1.000 millones), divide ×100
+ * (repite mientras siga ≥ 1.000M; máx. 6, por basura Excel multi-inflada).
  * 3.668.964.288 → 36.689.643
  * No divide cédulas: 1.118.293.088 no es un monto inflado.
  */
 export function pesosOficialesAlfa(value, identificacion) {
-  const n = parseCopMoney(value);
-  if (n == null || !Number.isFinite(n)) return null;
-  if (pareceIdentificacionComoMontoAlfa(n, identificacion)) return null;
-  if (Math.abs(n) >= 1_000_000_000) {
+  const parsed = parseCopMoney(value);
+  if (parsed == null || !Number.isFinite(parsed)) return null;
+  if (pareceIdentificacionComoMontoAlfa(parsed, identificacion)) return null;
+  let n = parsed;
+  for (let i = 0; i < 6 && Math.abs(n) >= 1_000_000_000; i += 1) {
     const divided = Math.round(n / 100);
     if (pareceIdentificacionComoMontoAlfa(divided, identificacion)) return null;
-    return divided;
+    n = divided;
   }
   return Math.round(n);
 }
@@ -324,6 +326,18 @@ export function isIncomingPersonNameWeaker(incoming, existing) {
   return setIsSubset(inc, cur) && inc.size < cur.size;
 }
 
+/**
+ * Monto Excel → pesos enteros oficiales (corrige centavos concatenados ≥ 1.000M).
+ * Usar en lectura de celdas y en diffs Excel↔ARNALD.
+ */
+export function normalizeMoneyOficial(value, identificacion = null) {
+  if (value === undefined || value === null || value === '') return null;
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : normalizeMoney(value);
+  if (n == null) return null;
+  const oficial = pesosOficialesAlfa(n, identificacion);
+  return oficial == null ? null : oficial;
+}
+
 export function valuesEqualForDiff(a, b, field) {
   if (a instanceof Date) a = a.toISOString().slice(0, 10);
   if (b instanceof Date) b = b.toISOString().slice(0, 10);
@@ -334,9 +348,13 @@ export function valuesEqualForDiff(a, b, field) {
   if (a == null && b == null) return true;
   if (a == null || b == null) return false;
   if (typeof a === 'number' || typeof b === 'number') {
-    const na = typeof a === 'number' ? a : normalizeMoney(a);
-    const nb = typeof b === 'number' ? b : normalizeMoney(b);
+    // 12.357.782 vs 1.235.778.238 (centavos pegados) deben considerarse iguales.
+    const na = normalizeMoneyOficial(a);
+    const nb = normalizeMoneyOficial(b);
     if (na != null && nb != null) return Number(na) === Number(nb);
+    const fa = typeof a === 'number' ? a : normalizeMoney(a);
+    const fb = typeof b === 'number' ? b : normalizeMoney(b);
+    if (fa != null && fb != null) return Number(fa) === Number(fb);
     return Number(a) === Number(b);
   }
 
@@ -367,6 +385,16 @@ export function valuesEqualForDiff(a, b, field) {
  * - Ambos llenos, campo verde (Alfa) → tomar Excel
  */
 export function decideAlfaExcelMerge(incoming, existing, { field, arnaldOwned = false } = {}) {
+  const key = String(field || '');
+  // Defensa: aunque el caller pase un monto con centavos pegados, no lo trate como distinto/nuevo.
+  if (
+    isMeaningfulExcelValue(incoming) &&
+    (/^(valor|reserva|deducible)/i.test(key) || key === 'liquidadoCoberturaTerremo')
+  ) {
+    const san = normalizeMoneyOficial(incoming);
+    if (san != null) incoming = san;
+  }
+
   const incomingOk = isMeaningfulExcelValue(incoming);
   const existingOk = isMeaningfulExcelValue(existing);
 

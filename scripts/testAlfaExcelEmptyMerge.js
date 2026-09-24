@@ -139,4 +139,26 @@ function fail(k, e) {
   pass('M_NOMBRE_REAL_SI_CAMBIA');
 }
 
+{
+  // Excel 1.235.778.238 (centavos pegados) vs ARNALD 12.357.782 → UNCHANGED
+  const d = decideAlfaExcelMerge(1_235_778_238, 12_357_782, {
+    field: 'valorAseguradoInmueble',
+    arnaldOwned: false,
+  });
+  if (d.action !== 'UNCHANGED') fail('N_INMUEBLE', new Error(JSON.stringify(d)));
+  pass('N_INMUEBLE_CENTAVOS_NO_PISA');
+}
+
+{
+  const diff = computeAlfaImportDiff(
+    { valorAseguradoInmueble: 1_235_778_238 },
+    { valorAseguradoInmueble: 12_357_782 },
+    ALFA_EXCEL_UPDATABLE_FIELDS
+  );
+  if (diff.hasChanges && diff.changes.valorAseguradoInmueble) {
+    fail('O_DIFF', new Error(JSON.stringify(diff.changes)));
+  }
+  pass('O_DIFF_SIN_FALSO_CAMBIO_INMUEBLE');
+}
+
 console.log('--- merge Excel/ARNALD: vacío no borra lleno ---');

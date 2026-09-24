@@ -2,7 +2,7 @@
  * Parseo COP Alfa: puntos de miles vs decimales.
  * node scripts/testAlfaCopMoney.mjs
  */
-import { parseCopMoney, normalizeMoney, pesosOficialesAlfa, pareceIdentificacionComoMontoAlfa } from '../utils/alfaExcelNormalize.js';
+import { parseCopMoney, normalizeMoney, normalizeMoneyOficial, pesosOficialesAlfa, pareceIdentificacionComoMontoAlfa, valuesEqualForDiff } from '../utils/alfaExcelNormalize.js';
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -36,5 +36,16 @@ assert(
   'daño real no es la cédula'
 );
 assert(pesosOficialesAlfa(759_781_212) === 759_781_212, 'sin liquidador no divide < 1e9');
+assert(pesosOficialesAlfa(1_235_778_238) === 12_357_782, 'Montealegre cents concat');
+assert(normalizeMoneyOficial(1_235_778_238) === 12_357_782, 'normalizeMoneyOficial concat');
+assert(normalizeMoneyOficial(12_357_782) === 12_357_782, 'normalizeMoneyOficial already ok');
+assert(
+  valuesEqualForDiff(12_357_782, 1_235_778_238, 'valorAseguradoInmueble'),
+  'diff must treat inflated excel as equal to sanos'
+);
+assert(
+  pesosOficialesAlfa(39_748_235_030_000_000) === 397_482_350,
+  'multi-inflated contenidos keeps dividing'
+);
 
 console.log('OK testAlfaCopMoney');
