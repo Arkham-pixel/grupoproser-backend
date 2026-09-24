@@ -21,6 +21,19 @@ export function contarPresupuestoNsr(liquidador) {
   return items.filter((it) => textoItem(it)).length;
 }
 
+function valorItemNsr(it = {}) {
+  const cant = String(it?.cantidad ?? '').replace(/[^\d]/g, '');
+  const vu = String(it?.valorUnitario ?? it?.total ?? '').replace(/[^\d]/g, '');
+  return cant.length > 0 || vu.length > 0;
+}
+
+/** Ítems NSR con cantidad o valor: distingue catálogo vacío de presupuesto real. */
+export function contarPresupuestoNsrConValor(liquidador) {
+  const items = liquidador?.evaluacionSismicaNSR10?.presupuesto?.items;
+  if (!Array.isArray(items)) return 0;
+  return items.filter((it) => textoItem(it) && valorItemNsr(it)).length;
+}
+
 export function contarContenidosNsr(liquidador) {
   const items = liquidador?.evaluacionSismicaNSR10?.contenidos?.items;
   if (!Array.isArray(items)) return 0;
@@ -200,10 +213,13 @@ export function resolverLiquidadorParaUpdate(incoming, actual) {
   }
   const scoreNew = scoreContenidoLiquidadorNsr(incoming);
   const scoreOld = scoreContenidoLiquidadorNsr(actual);
-  // Edición con datos: persistir exactamente lo enviado (no reinyectar el liquidador viejo)
-  if (scoreNew > 0) return incoming;
-  // Cascarón vacío no borra el existente
-  if (scoreOld > 0) return actual;
+  if (scoreOld > 0 && scoreNew === 0) return actual;
+  const valNew = contarPresupuestoNsrConValor(incoming);
+  const valOld = contarPresupuestoNsrConValor(actual);
+  // Catálogo sin cantidades no puede pisar un presupuesto ya digitado.
+  if (valOld > 0 && valNew === 0) {
+    return preservarPresupuestoNsrSiVacio(incoming, actual);
+  }
   return incoming;
 }
 
@@ -250,8 +266,9 @@ export function resolverInformeUnicoParaUpdate(incoming, actual) {
 }
 
 export function quiereIncluirNsr(query = {}) {
-  const v = String(query?.nsr ?? '').toLowerCase();
-  return v === '1' || v === 'true';
+  const v = String(query?.nsr ?? '1').toLowerCase();
+  if (v === '0' || v === 'false') return false;
+  return true;
 }
 
 /**
