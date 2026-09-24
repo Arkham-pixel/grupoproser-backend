@@ -1,9 +1,8 @@
 /**
- * Interruptores de producto. Todo queda listo en código pero APAGADO
- * hasta que activemos las variables de entorno en deploy.
+ * Interruptores de producto.
  *
- * Backend: VIDEOPERITAJE_EN_CAT=true | ARNALD_IA_ENABLED=true
- * Frontend: VITE_VIDEOPERITAJE_EN_CAT=true | VITE_ARNALD_IA_ENABLED=true
+ * Videoperitaje en CAT: activo por defecto.
+ * IA: ARNALD_IA_ENABLED=true
  */
 
 function truthy(v) {
@@ -12,6 +11,9 @@ function truthy(v) {
 
 /** Llamada de videoperitaje embebida en workspaces CAT (BBVA / Alfa). */
 export function videoperitajeEnCatHabilitado() {
+  if (process.env.VIDEOPERITAJE_EN_CAT === undefined || String(process.env.VIDEOPERITAJE_EN_CAT).trim() === '') {
+    return true;
+  }
   return truthy(process.env.VIDEOPERITAJE_EN_CAT);
 }
 
