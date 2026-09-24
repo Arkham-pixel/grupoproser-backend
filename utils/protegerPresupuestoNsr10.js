@@ -263,12 +263,10 @@ export function recortarNsrDelDocumento(doc, { incluirNsr = false } = {}) {
   const liq = doc.liquidador;
   if (!liq || typeof liq !== 'object' || Array.isArray(liq)) return doc;
   if (!liq.evaluacionSismicaNSR10) return doc;
-  const { evaluacionSismicaNSR10: _omitido, ...resto } = liq;
+  const { evaluacionSismicaNSR10: _omitido, nsrOmitido: _flag, ...resto } = liq;
   return {
     ...doc,
-    liquidador: {
-      ...resto,
-      nsrOmitido: true,
-    },
+    nsrOmitido: true,
+    liquidador: resto,
   };
 }
