@@ -228,6 +228,48 @@ export function buildRecentStorageSearchPrefixes(date = new Date(), monthsBack =
   return [...new Set(prefixes)];
 }
 
+/** Carpeta del objeto: year/q/month/day/usuarios/id/category/ */
+export function directorioS3Key(storedKey) {
+  const key = String(storedKey || '').replace(/^\/+/, '');
+  if (!key || !key.includes('/')) return '';
+  return `${key.replace(/\/[^/]+$/, '')}/`;
+}
+
+/**
+ * Prefijos chicos para ListObjects (mismo día + dueño). No listar el trimestre:
+ * eso satura el proxy y termina en 502 al generar Word.
+ */
+export function buildTightStorageSearchPrefixes(storedKey) {
+  const primary =
+    parseS3KeyFromStoredPath(storedKey) ||
+    String(storedKey || '')
+      .replace(/^s3:/i, '')
+      .replace(/^\/+/, '');
+  if (!primary) return [];
+  const prefixes = [];
+  const push = (value) => {
+    const k = String(value || '')
+      .replace(/^\/+/, '')
+      .replace(/\/+$/, '');
+    if (!k) return;
+    const withSlash = `${k}/`;
+    if (!prefixes.includes(withSlash)) prefixes.push(withSlash);
+  };
+
+  push(directorioS3Key(primary).replace(/\/$/, ''));
+
+  const ownerDay = primary.match(
+    /^(\d{4}\/\d{1,2}\/\d{2}\/\d{2}\/(?:usuarios|clientes)\/[^/]+)\//
+  );
+  if (ownerDay) push(ownerDay[1]);
+
+  const bucketPrefix = storageConfig.keyPrefix();
+  if (bucketPrefix) {
+    for (const p of [...prefixes]) push(`${bucketPrefix}/${p.replace(/\/$/, '')}`);
+  }
+  return prefixes;
+}
+
 /** Extrae pistas de una clave parcial o corrupta (p. ej. usuarios/id/express/archivo.pdf). */
 export function extractS3PathHints(storedKey) {
   if (!storedKey || typeof storedKey !== 'string') return null;
@@ -270,6 +312,25 @@ export function expandMissingDayS3KeyVariants(primary) {
   return variants;
 }
 
+/** Clave con día: prueba día ±1 (huso UTC) y la ruta legacy sin día. */
+export function expandNearbyDayS3KeyVariants(primary) {
+  const match = String(primary || '').match(
+    /^(\d{4}\/\d{1,2}\/\d{2})\/(\d{2})\/(usuarios|clientes)\/([^/]+)\/([^/]+)\/(.+)$/
+  );
+  if (!match) return [];
+  const [, datePrefix, dayStr, ownerType, ownerId, category, filename] = match;
+  const day = parseInt(dayStr, 10);
+  const variants = [`${datePrefix}/${ownerType}/${ownerId}/${category}/${filename}`];
+  for (const next of [day - 1, day + 1]) {
+    if (next >= 1 && next <= 31) {
+      variants.push(
+        `${datePrefix}/${String(next).padStart(2, '0')}/${ownerType}/${ownerId}/${category}/${filename}`
+      );
+    }
+  }
+  return variants;
+}
+
 export function resolveS3KeyCandidates(storedPath) {
   const primary = parseS3KeyFromStoredPath(storedPath);
   if (!primary) return [];
@@ -283,6 +344,9 @@ export function resolveS3KeyCandidates(storedPath) {
   push(primary);
 
   for (const variant of expandMissingDayS3KeyVariants(primary)) {
+    push(variant);
+  }
+  for (const variant of expandNearbyDayS3KeyVariants(primary)) {
     push(variant);
   }
 

@@ -13,7 +13,7 @@ import {
   parseS3KeyFromStoredPath,
   resolveOwnerFromRequest,
   resolveS3KeyCandidates,
-  buildRecentStorageSearchPrefixes,
+  buildTightStorageSearchPrefixes,
   extractS3PathHints,
   toLocalUploadPathFromStoredRef,
   canonicalStoredFileReference,
@@ -373,18 +373,16 @@ async function resolveS3FileForRead(storedPathOrKey) {
   const primary = keys[0];
   const hints = extractS3PathHints(primary);
   if (hints?.filename) {
-    const bucketPrefix = storageConfig.keyPrefix();
-    const searchPrefixes = buildRecentStorageSearchPrefixes().map((p) =>
-      bucketPrefix ? `${bucketPrefix}/${p}` : p
-    );
-    searchPrefixes.push(...buildRecentStorageSearchPrefixes());
-
-    const discovered = await s3.findObjectKeysByFilename(hints.filename, {
-      ownerId: hints.ownerId,
-      category: hints.category,
-      searchPrefixes,
-      maxResults: 3,
-    });
+    const searchPrefixes = buildTightStorageSearchPrefixes(storedPathOrKey);
+    const discovered = searchPrefixes.length
+      ? await s3.findObjectKeysByFilename(hints.filename, {
+          ownerId: hints.ownerId,
+          category: hints.category,
+          searchPrefixes,
+          maxResults: 3,
+          maxPages: 2,
+        })
+      : [];
 
     for (const s3Key of discovered) {
       try {

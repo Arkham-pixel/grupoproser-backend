@@ -261,7 +261,7 @@ export function getPublicObjectUrl(key) {
  */
 export async function findObjectKeysByFilename(
   filename,
-  { ownerId, category, searchPrefixes = [], maxResults = 5 } = {}
+  { ownerId, category, searchPrefixes = [], maxResults = 5, maxPages = 2 } = {}
 ) {
   if (!filename || typeof filename !== 'string') return [];
 
@@ -277,10 +277,13 @@ export async function findObjectKeysByFilename(
   const client = getS3Client();
   const bucket = getBucketName();
   const matches = [];
+  const pageLimit = Math.max(1, Number(maxPages) || 2);
 
   for (const prefix of searchPrefixes) {
     let continuationToken;
+    let pages = 0;
     do {
+      pages += 1;
       const resp = await client.send(
         new ListObjectsV2Command({
           Bucket: bucket,
@@ -299,7 +302,7 @@ export async function findObjectKeysByFilename(
       }
 
       continuationToken = resp.IsTruncated ? resp.NextContinuationToken : undefined;
-    } while (continuationToken && matches.length < maxResults);
+    } while (continuationToken && matches.length < maxResults && pages < pageLimit);
 
     if (matches.length) break;
   }
