@@ -364,9 +364,18 @@ export const buildSuraPayload = (data = {}, base = {}) => {
     base.numDocumento
   );
   const siniestro = primerTexto(data.siniestro, data.nmroSinstro, base.siniestro, base.nmroSinstro);
+  // Preferir estado/codiEstdo del select; descripcionEstado es "último comentario" y
+  // puede quedar desfasado o vacío sin que eso signifique conservar INFORME.
   const estado = normalizarEstadoSura(
-    primerTexto(data.estado, data.descripcionEstado, base.estado, base.descripcionEstado) ||
-      'CASO NUEVO'
+    primerTexto(
+      data.estado,
+      data.codiEstdo,
+      data.codi_estado,
+      data.codi_estdo,
+      data.descripcionEstado,
+      base.estado,
+      base.descripcionEstado
+    ) || 'CASO NUEVO'
   );
 
   const payload = {
@@ -546,7 +555,9 @@ export const buildSuraPayload = (data = {}, base = {}) => {
     payload.nombreAseguradora = SURA_RAZON_SOCIAL;
   }
 
-  return aplicarEstadoDesdeTipoInformeSura(payload, base);
+  return aplicarEstadoDesdeTipoInformeSura(payload, base, {
+    actualizaInforme: data.informeUnico !== undefined,
+  });
 };
 
 /** Une fila Excel con caso existente: solo pisa placeholders / vacíos / errores parseados. */

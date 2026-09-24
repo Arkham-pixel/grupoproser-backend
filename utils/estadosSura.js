@@ -105,16 +105,26 @@ export function estadoSuraPorTipoInforme(tipoInforme, estadoActual) {
   return actual;
 }
 
-export function aplicarEstadoDesdeTipoInformeSura(payload = {}, base = {}) {
+export function aplicarEstadoDesdeTipoInformeSura(payload = {}, base = {}, opts = {}) {
   const estadoEnviado = payload.estado;
   const estadoBase = base.estado;
-  if (
+  const cambioEstadoExplicito =
     estadoEnviado != null &&
     String(estadoEnviado).trim() !== '' &&
-    normalizarEstadoSura(estadoEnviado) !== normalizarEstadoSura(estadoBase)
-  ) {
-    return aplicarFechaAccionEstadoSura(aplicarFechasHitoDesdeInformeUnicoSura(payload, base), base);
+    normalizarEstadoSura(estadoEnviado) !== normalizarEstadoSura(estadoBase);
+
+  // Solo forzar estado/fechas-hito cuando este request trae informeUnico.
+  // Heredar el borrador de BD en un guardado de Datos Generales no debe
+  // devolver el caso a INFORME ni rellenar fechas de preliminar/final.
+  const guardaInformeEnEsteUpdate = opts.actualizaInforme === true;
+
+  if (cambioEstadoExplicito || !guardaInformeEnEsteUpdate) {
+    const next = guardaInformeEnEsteUpdate
+      ? aplicarFechasHitoDesdeInformeUnicoSura(payload, base)
+      : payload;
+    return aplicarFechaAccionEstadoSura(next, base);
   }
+
   const tipo = payload?.informeUnico?.tipoInforme ?? base?.informeUnico?.tipoInforme;
   const siguiente = estadoSuraPorTipoInforme(tipo, payload.estado || base.estado);
   let next = payload;

@@ -487,6 +487,7 @@ function normalizarCasoLean(doc) {
     descripcionEstado,
     descripcion_estado: doc.descripcion_estado,
     envios_facturacion: Array.isArray(doc.envios_facturacion) ? doc.envios_facturacion : [],
+    fcha_control_horas: doc.fcha_control_horas,
     fcha_envio_control_horas: doc.fcha_envio_control_horas,
     fcha_recibido_control_horas: doc.fcha_recibido_control_horas,
     control_horas: doc.control_horas,
@@ -578,6 +579,7 @@ export async function listarBandejaFacturacion({
     descripcionEstado: 1,
     descripcion_estado: 1,
     envios_facturacion: 1,
+    fcha_control_horas: 1,
     fcha_envio_control_horas: 1,
     fcha_recibido_control_horas: 1,
     control_horas: 1,
@@ -591,6 +593,30 @@ export async function listarBandejaFacturacion({
   }
 
   const filas = [];
+  const casosConEnvioControl = new Set();
+
+  const armarFilaBase = (caso, origen) => {
+    const codResp = String(caso.codiRespnsble || '').trim().toUpperCase();
+    const nombreAseguradora =
+      resolverNombreAseguradora(caso.codiAsgrdra, mapaAseg) || nombreAseguradoraFija;
+    return {
+      casoId: String(caso._id),
+      origen,
+      nmroAjste: caso.nmroAjste,
+      nmroSinstro: caso.nmroSinstro,
+      codiAsgrdra: caso.codiAsgrdra,
+      nombreAseguradora,
+      asgrBenfcro: caso.asgrBenfcro,
+      codiRespnsble: caso.codiRespnsble,
+      nombreResponsable: mapaResp[codResp] || caso.codiRespnsble,
+      codiEstdo: caso.codiEstdo,
+      nombreEstado: resolverNombreEstado(caso, mapaEst),
+      descripcionEstado: resolverNombreEstado(caso, mapaEst),
+      fchaEnvioControlHoras: caso.fcha_envio_control_horas,
+      fchaRecibidoControlHoras: caso.fcha_recibido_control_horas,
+      tieneControlHoras: controlHorasTieneDatos(resolverControlHorasDesdeEnvios(caso)),
+    };
+  };
 
   for (const { raw, origen } of docsConOrigen) {
     const caso = normalizarCasoLean(raw);
@@ -600,6 +626,9 @@ export async function listarBandejaFacturacion({
 
     enviosArr.forEach((envio, envioIndice) => {
       if (!envio || typeof envio !== 'object') return;
+      if (envio.tipo === 'control_horas') {
+        casosConEnvioControl.add(String(caso._id));
+      }
 
       const enviosFiltrados = filtrarEnvios([envio], {
         gerente: gerenteNorm,
@@ -611,25 +640,10 @@ export async function listarBandejaFacturacion({
       if (!enviosFiltrados.length) return;
       if (!textoCoincide(caso, q, mapaAseg)) return;
 
-      const codResp = String(caso.codiRespnsble || '').trim().toUpperCase();
-      const nombreAseguradora =
-        resolverNombreAseguradora(caso.codiAsgrdra, mapaAseg) ||
-        nombreAseguradoraFija;
       filas.push({
-        casoId: String(caso._id),
+        ...armarFilaBase(caso, origen),
         envioId: envio.id || null,
         envioIndice,
-        origen,
-        nmroAjste: caso.nmroAjste,
-        nmroSinstro: caso.nmroSinstro,
-        codiAsgrdra: caso.codiAsgrdra,
-        nombreAseguradora,
-        asgrBenfcro: caso.asgrBenfcro,
-        codiRespnsble: caso.codiRespnsble,
-        nombreResponsable: mapaResp[codResp] || caso.codiRespnsble,
-        codiEstdo: caso.codiEstdo,
-        nombreEstado: resolverNombreEstado(caso, mapaEst),
-        descripcionEstado: resolverNombreEstado(caso, mapaEst),
         tipoEnvio: envio.tipo,
         gerente: envio.gerente,
         nombreGerente: nombreGerente(envio.gerente),
@@ -638,14 +652,85 @@ export async function listarBandejaFacturacion({
         emailDestinatario: envio.emailDestinatario,
         nombreDestinatario: envio.nombreDestinatario,
         rolEnvio: envio.rolEnvio || 'principal',
-        fchaEnvioControlHoras: caso.fcha_envio_control_horas,
-        fchaRecibidoControlHoras: caso.fcha_recibido_control_horas,
-        tieneControlHoras: controlHorasTieneDatos(resolverControlHorasDesdeEnvios(caso)),
+        pendienteNotificar: false,
       });
     });
   }
 
-  filas.sort((a, b) => new Date(b.fechaEnvio) - new Date(a.fechaEnvio));
+  // Controles guardados (hechos) que aún no se notificaron al jefe: visibles en vista "todos".
+  const incluirHechosSinEnvio =
+    verTodos && (tipo === 'todos' || tipo === 'control_horas');
+  if (incluirHechosSinEnvio) {
+    const filtroHechos = {
+      'control_horas.filas.0': { $exists: true },
+      $or: [
+        { envios_facturacion: { $exists: false } },
+        { envios_facturacion: { $size: 0 } },
+        { envios_facturacion: { $not: { $elemMatch: { tipo: 'control_horas' } } } },
+      ],
+    };
+    // No proyectar subcampos de control_horas: choca con control_horas: 1 (path collision).
+    const proyeccionHechos = { ...proyeccion };
+    const desdeMs = desde ? new Date(desde).getTime() : null;
+    const hastaMs = hasta ? new Date(hasta).getTime() : null;
+
+    for (const fuente of fuentes) {
+      let docsHechos = [];
+      try {
+        docsHechos = await fuente.Modelo.collection
+          .find(filtroHechos)
+          .project(proyeccionHechos)
+          .sort({ fcha_control_horas: -1, updatedAt: -1 })
+          .limit(MAX_CASOS_BANDEJA)
+          .maxTimeMS(QUERY_TIMEOUT_MS)
+          .toArray();
+      } catch (errHechos) {
+        console.warn('⚠️ [bandeja] Controles hechos sin envío:', errHechos.message);
+        docsHechos = await fuente.Modelo.find(filtroHechos)
+          .select(Object.keys(proyeccionHechos).join(' '))
+          .sort({ fcha_control_horas: -1 })
+          .limit(MAX_CASOS_BANDEJA)
+          .maxTimeMS(QUERY_TIMEOUT_MS)
+          .lean();
+      }
+
+      for (const raw of docsHechos) {
+        const caso = normalizarCasoLean(raw);
+        if (!caso) continue;
+        const casoId = String(caso._id);
+        if (casosConEnvioControl.has(casoId)) continue;
+        if (!controlHorasTieneDatos(caso.control_horas)) continue;
+        if (!textoCoincide(caso, q, mapaAseg)) continue;
+
+        const fechaRef =
+          raw.fcha_control_horas ||
+          caso.control_horas?.actualizado_en ||
+          raw.updatedAt ||
+          null;
+        const tMs = fechaRef ? new Date(fechaRef).getTime() : NaN;
+        if (desdeMs && (!Number.isFinite(tMs) || tMs < desdeMs)) continue;
+        if (hastaMs && (!Number.isFinite(tMs) || tMs > hastaMs + 86400000)) continue;
+
+        filas.push({
+          ...armarFilaBase(caso, fuente.origen),
+          envioId: null,
+          envioIndice: -1,
+          tipoEnvio: 'control_horas',
+          gerente: null,
+          nombreGerente: 'Sin notificar',
+          fechaEnvio: fechaRef,
+          enviadoPor: caso.control_horas?.actualizado_por || '—',
+          emailDestinatario: '',
+          nombreDestinatario: '',
+          rolEnvio: 'principal',
+          pendienteNotificar: true,
+          tieneControlHoras: true,
+        });
+      }
+    }
+  }
+
+  filas.sort((a, b) => new Date(b.fechaEnvio || 0) - new Date(a.fechaEnvio || 0));
 
   return { items: filas, total: filas.length, gerente: gerenteNorm || 'todos', verTodos: Boolean(verTodos) };
 }
