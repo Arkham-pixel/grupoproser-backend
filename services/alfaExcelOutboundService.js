@@ -20,7 +20,11 @@ import {
   assertFieldWritableOrThrow,
 } from '../config/alfaExcelOwnershipMap.js';
 import { ALFA_EXCEL_DATE_FIELDS, ALFA_EXCEL_MONEY_FIELDS } from '../config/alfaExcelColumnMap.js';
-import { isAlfaOutboundEmptyValue, normalizeExcelHeader, pesosOficialesAlfa } from '../utils/alfaExcelNormalize.js';
+import {
+  isAlfaOutboundEmptyValue,
+  normalizeExcelHeader,
+  normalizeMoneyOficial,
+} from '../utils/alfaExcelNormalize.js';
 import {
   applyAlfaExcelCellValue,
   getAlfaExcelDefaultNumFmt,
@@ -98,8 +102,8 @@ function fieldValuesEqual(field, a, b) {
   return String(a) === String(b);
 }
 
-function moneyOutbound(value) {
-  const n = pesosOficialesAlfa(value);
+function moneyOutbound(value, field = null) {
+  const n = normalizeMoneyOficial(value, null, field);
   return n == null ? null : n;
 }
 
@@ -122,7 +126,7 @@ function serializeForOutbox(field, value) {
     return d.toISOString();
   }
   if (ALFA_EXCEL_MONEY_FIELDS.includes(field)) {
-    return moneyOutbound(value);
+    return moneyOutbound(value, field);
   }
   return value;
 }
@@ -810,10 +814,10 @@ function graphCellMatchesExpected(field, expected, range) {
   }
 
   if (ALFA_EXCEL_MONEY_FIELDS.includes(field)) {
-    const expN = moneyOutbound(expected);
+    const expN = moneyOutbound(expected, field);
     if (expN == null || !Number.isFinite(expN)) return false;
-    if (typeof raw === 'number') return Math.abs(pesosOficialesAlfa(raw) - expN) < 0.5;
-    const parsed = moneyOutbound(raw ?? text);
+    if (typeof raw === 'number') return Math.abs(moneyOutbound(raw, field) - expN) < 0.5;
+    const parsed = moneyOutbound(raw ?? text, field);
     return parsed != null && Number.isFinite(parsed) && Math.abs(parsed - expN) < 0.5;
   }
 
@@ -1467,11 +1471,45 @@ export async function runAlfaExcelOutboundCycle({ batchSize } = {}) {
 
 /** Pendientes en cola ARNALD → Excel (para botones manuales). */
 export async function countPendingAlfaExcelOutbound() {
+  const stats = await getAlfaExcelOutboundQueueStats();
+  return stats.total;
+}
+
+/**
+ * Conteo real de la cola outbound (no solo pending “listos”).
+ * Revive processing atascados (>8 min) para que el botón los cuente y pueda reenviarlos.
+ */
+export async function getAlfaExcelOutboundQueueStats() {
   const now = new Date();
-  return AlfaExcelOutboundUpdate.countDocuments({
-    status: 'pending',
-    $or: [{ nextRetryAt: null }, { nextRetryAt: { $lte: now } }],
-  }).maxTimeMS(15000);
+  const staleBefore = new Date(now.getTime() - 8 * 60 * 1000);
+  try {
+    await AlfaExcelOutboundUpdate.updateMany(
+      { status: 'processing', lastAttemptAt: { $lt: staleBefore } },
+      {
+        $set: {
+          status: 'pending',
+          nextRetryAt: now,
+          lastError: 'REVIVED_STALE_PROCESSING',
+          lastErrorCode: 'REVIVED_STALE_PROCESSING',
+        },
+      }
+    );
+  } catch {
+    /* ignore */
+  }
+
+  const [pending, processing, failed] = await Promise.all([
+    AlfaExcelOutboundUpdate.countDocuments({ status: 'pending' }).maxTimeMS(15000),
+    AlfaExcelOutboundUpdate.countDocuments({ status: 'processing' }).maxTimeMS(15000),
+    AlfaExcelOutboundUpdate.countDocuments({ status: 'failed' }).maxTimeMS(15000),
+  ]);
+
+  return {
+    pending,
+    processing,
+    failed,
+    total: pending + processing + failed,
+  };
 }
 
 /**

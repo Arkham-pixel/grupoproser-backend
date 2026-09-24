@@ -74,7 +74,7 @@ import {
   resolverInformeUnicoParaUpdate,
   scoreContenidoLiquidadorNsr,
 } from '../utils/protegerPresupuestoNsr10.js';
-import { normalizeMoney, normalizeMoneyOficial, pesosOficialesAlfa, pareceIdentificacionComoMontoAlfa } from '../utils/alfaExcelNormalize.js';
+import { normalizeMoney, normalizeMoneyOficial, pareceIdentificacionComoMontoAlfa } from '../utils/alfaExcelNormalize.js';
 import { aplicarMontosOficialesDesdeLiquidadorAlfa } from '../utils/valoresLiquidadorAlfa.js';
 import * as XLSX from 'xlsx';
 
@@ -644,9 +644,12 @@ function healAlfaMoneyDoc(doc) {
       out[f] = null;
       continue;
     }
-    const p = pesosOficialesAlfa(
+    // Asegurado/póliza: no ÷100 (montos reales pueden ser ≥ 1.000M).
+    // Liquidación: sí sanear centavos concatenados.
+    const p = normalizeMoneyOficial(
       out[f],
-      f === 'valorReclamado' || f === 'valorLiquidado' ? out.identificacion : undefined
+      f === 'valorReclamado' || f === 'valorLiquidado' ? out.identificacion : undefined,
+      f
     );
     if (p != null) out[f] = p;
   }
