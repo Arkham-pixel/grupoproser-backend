@@ -1892,9 +1892,9 @@ export const postControlSeguimientoAlfaCheck = async (req, res) => {
  * POST /api/seguros-alfa/control-seguimiento/outbound-flush
  * Envía cola ARNALD → Excel SharePoint (manual; el cron debe estar OFF).
  * Body opcional:
- * - forceResync: true → reencola columnas amarillas con valor actual (si no hay pending)
+ * - forceResync: true → SOLO si cola vacía: reencola amarillas (reparación explícita; no default)
  * - consecutivos: ['ALFA-…'] → fuerza sync de esos casos
- * - onlyWithMoney: true → prioriza casos con reserva/liquidado
+ * - onlyWithMoney: true → (con forceResync) prioriza casos con reserva/liquidado
  */
 export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
   try {
@@ -1914,7 +1914,7 @@ export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
     const consecutivos = Array.isArray(req.body?.consecutivos)
       ? req.body.consecutivos
       : [];
-    const forceResync = req.body?.forceResync !== false;
+    const forceResync = req.body?.forceResync === true;
     const onlyWithMoney = req.body?.onlyWithMoney === true;
     const enqueueLimit = Math.min(
       Math.max(Number(req.body?.enqueueLimit) || 120, 1),
