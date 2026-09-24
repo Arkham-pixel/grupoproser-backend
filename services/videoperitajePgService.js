@@ -15,18 +15,12 @@ import {
   sdkPuedeIniciarLlamada,
 } from './videoperitajeSdkClient.js';
 
-/** modulo Arnald → codigo en videoperitaje.companias */
-export function moduloACompaniaCodigo(modulo = '') {
-  const m = normalizarModulo(modulo);
-  if (!m || m === 'independiente') return 'grupoproser';
-  if (m.startsWith('bbva')) return 'bbva';
-  if (m === 'zurich') return 'zurich';
-  if (m.startsWith('equidad')) return 'equidad';
-  if (m === 'allianz') return 'allianz';
-  if (m.startsWith('sura')) return 'sura';
-  if (m === 'previsora') return 'previsora';
-  if (m === 'seguros-alfa' || m === 'alfa') return 'alfa';
-  if (m === 'interna' || m === 'arnald' || m === 'grupoproser') return 'grupoproser';
+/**
+ * Arnald = UNA empresa (Grupo Proser).
+ * Módulos CAT (bbva, zurich, etc.) solo identifican origen en la sesión;
+ * cupo/suscripción siempre contra `grupoproser`.
+ */
+export function moduloACompaniaCodigo(_modulo = '') {
   return 'grupoproser';
 }
 
