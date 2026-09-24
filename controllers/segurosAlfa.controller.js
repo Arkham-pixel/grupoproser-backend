@@ -33,7 +33,15 @@ import {
 } from '../services/alfaExcelSharePointImportService.js';
 import AlfaExcelSharePointSource from '../models/AlfaExcelSharePointSource.js';
 import { getAlfaExcelSharePointImportConfig } from '../config/alfaExcelSharePointImport.js';
-import { enqueueAlfaExcelOutboundFromCaseUpdate } from '../services/alfaExcelOutboundService.js';
+import {
+  enqueueAlfaExcelOutboundFromCaseUpdate,
+  countPendingAlfaExcelOutbound,
+} from '../services/alfaExcelOutboundService.js';
+import {
+  runAlfaExcelOutboundWorkerCycle,
+  isAlfaExcelOutboundCycleRunning,
+} from '../workers/alfaExcelOutboundWorker.js';
+import { getAlfaExcelOutboundConfig } from '../config/alfaExcelOutbound.js';
 import { generarConsecutivoAlfa, buildAlfaListadoPipeline } from '../services/alfaCasoService.js';
 import {
   homologarEstadoAlfa,
@@ -650,11 +658,14 @@ function esErrorRedMongoListado(error) {
   const name = String(error?.name || '');
   const msg = String(error?.message || error || '');
   const code = String(error?.code || error?.cause?.code || '');
+  const codeName = String(error?.codeName || error?.errorResponse?.codeName || '');
   return (
     name === 'MongoNetworkError' ||
     name === 'MongoServerSelectionError' ||
-    /ECONNRESET|ETIMEDOUT|ECONNREFUSED|socket|topology was destroyed|not currently connected/i.test(
-      `${msg} ${code}`
+    code === '50' ||
+    codeName === 'MaxTimeMSExpired' ||
+    /ECONNRESET|ETIMEDOUT|ECONNREFUSED|socket|topology was destroyed|not currently connected|exceeded time limit|MaxTimeMSExpired|multiplanner/i.test(
+      `${msg} ${code} ${codeName}`
     )
   );
 }
@@ -1784,7 +1795,13 @@ export const postEnviarAlertasAlfaAjustador = async (req, res) => {
 export const getControlSeguimientoAlfaStatus = async (req, res) => {
   try {
     const data = await getAlfaExcelSharePointStatus();
-    return res.json({ success: true, ...data });
+    let outboundPending = 0;
+    try {
+      outboundPending = await countPendingAlfaExcelOutbound();
+    } catch {
+      outboundPending = 0;
+    }
+    return res.json({ success: true, ...data, outboundPending });
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -1803,7 +1820,13 @@ export const postControlSeguimientoAlfaCheck = async (req, res) => {
     const force = req.body?.force === true;
     const data = await runAlfaExcelSharePointDetectCycle({ force });
     const status = await getAlfaExcelSharePointStatus();
-    return res.json({ success: true, cycle: data, ...status });
+    let outboundPending = 0;
+    try {
+      outboundPending = await countPendingAlfaExcelOutbound();
+    } catch {
+      outboundPending = 0;
+    }
+    return res.json({ success: true, cycle: data, ...status, outboundPending });
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -1812,6 +1835,70 @@ export const postControlSeguimientoAlfaCheck = async (req, res) => {
       uiStatus: 'error',
       headline: '⚠ No fue posible consultar Control y Seguimiento',
       tone: 'error',
+    });
+  }
+};
+
+/**
+ * POST /api/seguros-alfa/control-seguimiento/outbound-flush
+ * Envía cola ARNALD → Excel SharePoint (manual; el cron debe estar OFF).
+ */
+export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
+  try {
+    if (isAlfaExcelOutboundCycleRunning()) {
+      return res.status(409).json({
+        success: false,
+        error: 'Ya hay un envío a Excel en curso. Espere un momento.',
+        code: 'OUTBOUND_BUSY',
+      });
+    }
+    const cfg = getAlfaExcelOutboundConfig();
+    const maxRounds = Math.min(
+      Math.max(Number(req.body?.maxRounds) || 8, 1),
+      30
+    );
+    const batchSize = req.body?.batchSize ?? cfg.batchSize;
+    const started = Date.now();
+    let totalClaimed = 0;
+    let totalSynced = 0;
+    let totalFailed = 0;
+    let roundsRun = 0;
+
+    for (let i = 0; i < maxRounds; i += 1) {
+      const summary = await runAlfaExcelOutboundWorkerCycle({ batchSize });
+      if (summary?.skippedOverlapping) break;
+      roundsRun += 1;
+      totalClaimed += summary.claimed || 0;
+      totalSynced += summary.synced || 0;
+      totalFailed += summary.failed || 0;
+      if (!(summary.claimed > 0)) break;
+    }
+
+    const pendingLeft = await countPendingAlfaExcelOutbound();
+    const flush = {
+      claimed: totalClaimed,
+      synced: totalSynced,
+      failed: totalFailed,
+      pendingLeft,
+      roundsRun,
+      durationMs: Date.now() - started,
+    };
+    return res.json({
+      success: true,
+      flush,
+      outboundPending: pendingLeft,
+      message:
+        flush.claimed === 0
+          ? 'No hay cambios pendientes para enviar a Excel.'
+          : `Enviados ${flush.synced} de ${flush.claimed} a Excel` +
+            (flush.pendingLeft > 0 ? ` (${flush.pendingLeft} quedan en cola).` : '.'),
+    });
+  } catch (error) {
+    console.error('❌ Error flush outbound Alfa Excel:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Error al enviar cambios a Excel',
+      code: 'CONTROL_SEGUIMIENTO_OUTBOUND_FLUSH_ERROR',
     });
   }
 };

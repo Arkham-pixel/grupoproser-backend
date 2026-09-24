@@ -98,6 +98,29 @@ async function main() {
   const wb = XLSX.readFile(excelPath, { cellDates: true });
   const hoja = wb.SheetNames.find((n) => /BASE BBVA/i.test(n)) || wb.SheetNames[0];
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[hoja], { header: 1, defval: null, raw: true });
+  const headerEs = (rows[0] || []).map((c) => String(c || ''));
+  const headerBlob = headerEs.join(' | ').toLowerCase();
+  /** Formato nuevo (ago/sep 2026+): valores + pérdida/reserva antes de fechas. */
+  const formatoConValores =
+    /valor\s*asegurable|perdida\s*inmueble|reserva\s*actuarial/i.test(headerBlob);
+  const idx = formatoConValores
+    ? {
+        fechaSiniestro: 11,
+        fechaAviso: 12,
+        ramo: 15,
+        valorInmueble: 8,
+        valorContenidos: 9,
+        perdidaOReserva: 10,
+      }
+    : {
+        fechaSiniestro: 8,
+        fechaAviso: 9,
+        ramo: 12,
+        valorInmueble: -1,
+        valorContenidos: -1,
+        perdidaOReserva: -1,
+      };
+
   const data = rows.slice(2).filter((r) => r && r.some((c) => c != null && String(c).trim() !== ''));
 
   await mongoose.connect(process.env.MONGO_URI);
@@ -107,8 +130,16 @@ async function main() {
   let secuencial = await obtenerMaxSecuencial();
   let secuencialListado = await obtenerMaxSecuencialListado();
 
+  const toNum = (valor) => {
+    if (valor == null || valor === '') return null;
+    if (typeof valor === 'number' && Number.isFinite(valor)) return valor;
+    const n = Number(String(valor).replace(/[^\d.-]/g, ''));
+    return Number.isFinite(n) ? n : null;
+  };
+
   const resumen = {
     leidos: data.length,
+    formatoConValores,
     creados: 0,
     actualizados: 0,
     yaExistian: 0,
@@ -126,10 +157,11 @@ async function main() {
       resumen.omitidos += 1;
       continue;
     }
-    const ramo = homologarRamo(row[12]);
+    const ramo = homologarRamo(row[idx.ramo]);
     const celular = toTxt(row[6]);
     const correo = toTxt(row[7]);
     const direccionPredio = toTxt(row[3]);
+    const cuantia = idx.perdidaOReserva >= 0 ? toNum(row[idx.perdidaOReserva]) : null;
     const payload = {
       siniestro,
       zc: siniestro,
@@ -144,10 +176,10 @@ async function main() {
       telefonoAsegurado: celular,
       correoAsegurado: correo,
       informacionContacto: [celular, correo].filter(Boolean).join(' | '),
-      fechaSiniestro: fechaDia(row[8]),
+      fechaSiniestro: fechaDia(row[idx.fechaSiniestro]),
       /** Día en que se sube el Excel de asignación a ARNALD (no la fecha analista BBVA). */
       fechaAsignacion: ahora,
-      fechaCasoNuevo: fechaDia(row[9]) || fechaDia(row[8]) || ahora,
+      fechaCasoNuevo: fechaDia(row[idx.fechaAviso]) || fechaDia(row[idx.fechaSiniestro]) || ahora,
       tipoPoliza: ramo.tipoPoliza,
       tipoPolizaOtro: ramo.tipoPolizaOtro || undefined,
       causa: 'TERREMOTO',
@@ -155,6 +187,9 @@ async function main() {
       tomador: 'BBVA SEGUROS',
       estado: homologarEstadoBbvaCat('CASO NUEVO'),
     };
+    if (cuantia != null && cuantia > 0) {
+      payload.valorEstimadoAseguradora = cuantia;
+    }
 
     const existente = siniestro
       ? await BbvaCatCaso.findOne({ siniestro })
@@ -190,6 +225,9 @@ async function main() {
       fechaCasoNuevo: payload.fechaCasoNuevo,
       observaciones: direccionPredio || '',
     };
+    if (cuantia != null && cuantia > 0) {
+      payloadListado.valorEstimadoAseguradora = cuantia;
+    }
     const existenteListado = siniestro
       ? await BbvaCatListadoCaso.findOne({ $or: [{ zc: siniestro }, { siniestro }] })
       : await BbvaCatListadoCaso.findOne({ identificacion: payload.identificacion });

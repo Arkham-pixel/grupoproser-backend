@@ -1419,6 +1419,50 @@ export async function runAlfaExcelOutboundCycle({ batchSize } = {}) {
   };
 }
 
+/** Pendientes en cola ARNALD → Excel (para botones manuales). */
+export async function countPendingAlfaExcelOutbound() {
+  const now = new Date();
+  return AlfaExcelOutboundUpdate.countDocuments({
+    status: 'pending',
+    $or: [{ nextRetryAt: null }, { nextRetryAt: { $lte: now } }],
+  }).maxTimeMS(15000);
+}
+
+/**
+ * Procesa la cola outbound en varios rounds (invocado por botón, no por cron).
+ * maxRounds evita saturar Atlas/SharePoint en una sola petición.
+ */
+export async function flushAlfaExcelOutboundManual({
+  maxRounds = 8,
+  batchSize,
+} = {}) {
+  const cfg = getAlfaExcelOutboundConfig();
+  const size = batchSize ?? cfg.batchSize;
+  const rounds = Math.min(Math.max(Number(maxRounds) || 8, 1), 30);
+  const started = Date.now();
+  let totalClaimed = 0;
+  let totalSynced = 0;
+  let totalFailed = 0;
+
+  for (let i = 0; i < rounds; i += 1) {
+    const summary = await runAlfaExcelOutboundCycle({ batchSize: size });
+    totalClaimed += summary.claimed || 0;
+    totalSynced += summary.synced || 0;
+    totalFailed += summary.failed || 0;
+    if (!(summary.claimed > 0)) break;
+  }
+
+  const pendingLeft = await countPendingAlfaExcelOutbound();
+  return {
+    claimed: totalClaimed,
+    synced: totalSynced,
+    failed: totalFailed,
+    pendingLeft,
+    roundsRun: Math.min(rounds, totalClaimed > 0 ? rounds : 1),
+    durationMs: Date.now() - started,
+  };
+}
+
 function nextAlfaExcelDataRow(ws) {
   let last = 1;
   ws.eachRow({ includeEmpty: false }, (_row, n) => {

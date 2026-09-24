@@ -23,6 +23,7 @@ import {
   postEnviarAlertasAlfaAjustador,
   getControlSeguimientoAlfaStatus,
   postControlSeguimientoAlfaCheck,
+  postControlSeguimientoAlfaOutboundFlush,
   postControlSeguimientoAlfaDismissNotification,
   postGeocodePendientesAlfa,
   postUbicacionesPredioAlfa,
@@ -116,6 +117,13 @@ router.post(
   verificarAdminSoporte,
   verificarLoginAlfaExcelActualizar,
   postControlSeguimientoAlfaCheck
+);
+router.post(
+  '/control-seguimiento/outbound-flush',
+  verificarToken,
+  verificarAdminSoporte,
+  verificarLoginAlfaExcelActualizar,
+  postControlSeguimientoAlfaOutboundFlush
 );
 router.post(
   '/control-seguimiento/notification/dismiss',
