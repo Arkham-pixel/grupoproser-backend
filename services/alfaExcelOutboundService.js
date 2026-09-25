@@ -57,6 +57,8 @@ import { selectAlfaExcelFromSharePointFolder } from './alfaExcelSharePointImport
 import {
   estadoAlfaParaSharePoint,
   estadoGestionAlfaParaSharePoint,
+  homologarEstadoAlfa,
+  homologarEstadoGestionAlfa,
 } from '../config/alfaExcelStatuses.js';
 
 function homologarTipoPerdidaOutbound(value) {
@@ -480,15 +482,26 @@ export async function forceEnqueueAlfaExcelOutboundDiffVsExcel(caso, excelRows) 
   if (!hit?.rowNumber) return null;
 
   const excelPayload = hit.payload || {};
-  const beforeDoc = { _id: caso._id };
+  const writable = {};
   for (const field of getOutboundWritableFields()) {
-    if (Object.prototype.hasOwnProperty.call(excelPayload, field)) {
-      beforeDoc[field] = excelPayload[field];
-    }
+    const after = serializeForOutbox(field, caso[field]);
+    if (isAlfaOutboundEmptyValue(after)) continue;
+    const before = serializeForOutbox(field, excelPayload[field]);
+    if (fieldValuesEqual(field, before, after)) continue;
+    writable[field] = { before, after };
+  }
+  if (!Object.keys(writable).length) return null;
+
+  // Reusa el encolador normal con before/after ya filtrados a amarillas
+  const beforeDoc = { _id: caso._id };
+  const afterDoc = { _id: caso._id, consecutivo: caso.consecutivo };
+  for (const [field, diff] of Object.entries(writable)) {
+    beforeDoc[field] = diff.before;
+    afterDoc[field] = caso[field];
   }
   return enqueueAlfaExcelOutboundFromCaseUpdate({
     beforeDoc,
-    afterDoc: caso,
+    afterDoc,
   });
 }
 
@@ -502,6 +515,7 @@ export async function forceEnqueueAlfaExcelOutboundCases({
   onlyWithMoney = false,
   limit = 200,
   diffAgainstExcel = true,
+  excelRows: excelRowsPreloaded = null,
 } = {}) {
   const filtro = { excluidoBaseAlfa: { $ne: true } };
   if (Array.isArray(consecutivos) && consecutivos.length) {
@@ -522,8 +536,8 @@ export async function forceEnqueueAlfaExcelOutboundCases({
   const lim = Math.min(Math.max(Number(limit) || 200, 1), 500);
   const casos = await SegurosAlfaCaso.find(filtro).sort({ updatedAt: -1 }).limit(lim).lean();
 
-  let excelRows = null;
-  if (diffAgainstExcel) {
+  let excelRows = excelRowsPreloaded;
+  if (diffAgainstExcel && !excelRows) {
     try {
       const resolved = await resolveSourceExcel();
       const downloaded = await downloadDriveItemBuffer({
@@ -537,10 +551,10 @@ export async function forceEnqueueAlfaExcelOutboundCases({
         error: err.message,
         code: err.code || null,
       });
-      // Sin Excel no forzar ciego: evita pisar filas sin saber el delta
       return {
         scanned: casos.length,
         enqueued: 0,
+        fieldsQueued: 0,
         limit: lim,
         diffAgainstExcel: true,
         excelError: err.message,
@@ -550,6 +564,7 @@ export async function forceEnqueueAlfaExcelOutboundCases({
 
   let enqueued = 0;
   let fieldsQueued = 0;
+  let skippedNoRow = 0;
   for (const caso of casos) {
     const out = diffAgainstExcel
       ? await forceEnqueueAlfaExcelOutboundDiffVsExcel(caso, excelRows)
@@ -557,12 +572,15 @@ export async function forceEnqueueAlfaExcelOutboundCases({
     if (out) {
       enqueued += 1;
       fieldsQueued += Object.keys(changesMapToObject(out.changes) || {}).length;
+    } else if (diffAgainstExcel) {
+      skippedNoRow += 1;
     }
   }
   return {
     scanned: casos.length,
     enqueued,
     fieldsQueued,
+    skippedNoRow,
     limit: lim,
     diffAgainstExcel: Boolean(diffAgainstExcel),
   };
@@ -897,8 +915,20 @@ function graphCellMatchesExpected(field, expected, range) {
     return parsed != null && Number.isFinite(parsed) && Math.abs(parsed - expN) < 0.5;
   }
 
-  // estado y strings
-  const expS = String(field === 'estado' ? expectedEstado : expected).trim();
+  // estado / estadoGestion: comparar catálogo canónico (Sin respuesta ≡ SIN RESPUESTA EFECTIVA)
+  if (field === 'estado') {
+    const exp = homologarEstadoAlfa(expectedEstado || expected);
+    const got = homologarEstadoAlfa(raw ?? text);
+    return Boolean(exp) && exp === got;
+  }
+  if (field === 'estadoGestion') {
+    const exp = homologarEstadoGestionAlfa(expected);
+    const got = homologarEstadoGestionAlfa(raw ?? text);
+    return Boolean(exp) && exp === got;
+  }
+
+  // resto de strings
+  const expS = String(expected).trim();
   const rawS = raw == null ? '' : String(raw).trim();
   const textS = text == null ? '' : String(text).trim();
   return rawS === expS || textS === expS;
