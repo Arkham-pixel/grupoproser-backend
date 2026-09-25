@@ -172,8 +172,19 @@
       </header>
       <p class="tiny-brand">Grupo Proser · Videoperitaje</p>
       <div id="alert" class="hidden"></div>
-      <div id="panel" class="card">Cargando…</div>
+      <div id="panel" class="card">
+        Cargando…
+        <p class="hint" id="load-hint" style="display:none;margin-top:12px">
+          Si no avanza, toque el menú ⋮ y elija <strong>Abrir en Chrome</strong> o Safari (el navegador de WhatsApp a veces bloquea la videollamada).
+        </p>
+      </div>
     </div>
+    <script>
+      setTimeout(function () {
+        var h = document.getElementById('load-hint');
+        if (h) h.style.display = 'block';
+      }, 7000);
+    </script>
     <script>
       const token = decodeURIComponent((location.pathname.split('/videoperitaje/unirse/')[1] || '').split('/')[0] || '');
       function apiOrigin() {
@@ -309,9 +320,25 @@
         return String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
       }
       async function load() {
-        const r = await fetch(api);
-        const j = await r.json();
-        if (!r.ok) throw new Error(j.error || 'Enlace inválido');
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 20000) : null;
+        let r;
+        try {
+          r = await fetch(api, ctrl ? { signal: ctrl.signal } : undefined);
+        } catch (err) {
+          if (timer) clearTimeout(timer);
+          if (err && err.name === 'AbortError') {
+            throw new Error('La conexión tardó demasiado. Cierre WhatsApp y abra el enlace en Chrome o Safari.');
+          }
+          throw new Error('Sin conexión al servidor. Abra el enlace en Chrome o Safari (no en WhatsApp).');
+        }
+        if (timer) clearTimeout(timer);
+        const text = await r.text();
+        let j = {};
+        try { j = text ? JSON.parse(text) : {}; } catch (_) {
+          throw new Error('Respuesta inválida del servidor (' + r.status + ').');
+        }
+        if (!r.ok) throw new Error(j.error || 'Enlace inválido o vencido');
         sesion = j.data;
         return sesion;
       }
@@ -587,7 +614,7 @@
               resolution: { width: 2160, height: 3840 },
             },
             videoPublishDefaults: {
-              videoEncoding: { maxBitrate: 4_000_000, maxFramerate: 24 },
+              videoEncoding: { maxBitrate: 4000000, maxFramerate: 24 },
             },
           });
           liveRoom = room;
