@@ -19,7 +19,7 @@ const ID_MONGO = '[0-9a-fA-F]{24}';
 const upload = createMulterUpload({
   category: STORAGE_CATEGORIES.BBVA_CAT,
   multerOptions: {
-    limits: { fileSize: 25 * 1024 * 1024 },
+    limits: { fileSize: 50 * 1024 * 1024 },
   },
 });
 
