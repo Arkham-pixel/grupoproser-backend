@@ -181,6 +181,20 @@ function totalFila(f) {
 function plantilla(tipoLiq, ajustador, fechas = {}) {
   const nombre = String(ajustador || 'Ajustador').trim() || 'Ajustador';
   const uid = () => `fila-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  const fijo = (catalogo_id, desc, funcionario, oficina, fecha = '') => ({
+    id: uid(),
+    fecha: fecha || null,
+    descripcion: desc,
+    nombre_funcionario: funcionario,
+    cargo: 'Ajustador',
+    horas_viaje: 0,
+    horas_campo: 0,
+    horas_oficina: oficina,
+    horas_secretaria: 0,
+    catalogo_id,
+    tipo_item: 'fijo',
+    fijo: true,
+  });
   const base = (desc, oficina, campo = 0, viaje = 0, fecha = '') => ({
     id: uid(),
     fecha: fecha || null,
@@ -196,9 +210,33 @@ function plantilla(tipoLiq, ajustador, fechas = {}) {
     fijo: false,
   });
 
+  const gestionBack = [
+    fijo(
+      'recibo_back',
+      'Recibo back de asignación, cargue documental en plataforma y coordinación de la inspección',
+      'Nombre Gestor Documental',
+      2,
+      fechas.asig
+    ),
+    fijo(
+      'verificacion_poliza',
+      'Verificación de póliza con condiciones particulares y condiciones generales que aplican a la misma.',
+      nombre,
+      2,
+      fechas.asig
+    ),
+  ];
+  const soporte = fijo(
+    'soporte_sistema',
+    'Soporte sistema, cargue de documentación en plataformas, envio de correo y otras labores',
+    'Soporte Tecnico y sistemas',
+    2.5,
+    fechas.asig
+  );
+
   if (tipoLiq === 'unico') {
     return [
-      base('Verificación de póliza y condiciones particulares.', 1.5, 0, 0, fechas.asig),
+      ...gestionBack,
       base(
         'Coordinación e inspección / verificación en sitio.',
         0.5,
@@ -214,11 +252,11 @@ function plantilla(tipoLiq, ajustador, fechas = {}) {
         0,
         fechas.cifras
       ),
+      soporte,
     ];
   }
-  // preliminar + final (Excel: INFORME FINAL → tuvo preliminar y luego final)
   return [
-    base('Verificación de póliza y condiciones particulares.', 1, 0, 0, fechas.asig),
+    ...gestionBack,
     base(
       'Coordinación e inspección / verificación en sitio.',
       0.5,
@@ -235,23 +273,31 @@ function plantilla(tipoLiq, ajustador, fechas = {}) {
       0,
       fechas.cifras
     ),
+    soporte,
   ];
 }
 
 function escalar(filas, horasObjetivo) {
   const objetivo = Number(horasObjetivo);
   if (!Number.isFinite(objetivo) || objetivo <= 0) return filas;
-  const horasVar = filas.reduce((a, f) => a + totalFila(f), 0);
-  if (horasVar <= 0.001) return filas;
-  const ratio = objetivo / horasVar;
+  const fijas = filas.filter((f) => f.fijo === true || f.tipo_item === 'fijo');
+  const variables = filas.filter((f) => !(f.fijo === true || f.tipo_item === 'fijo'));
+  const horasFijas = fijas.reduce((a, f) => a + totalFila(f), 0);
+  const horasVar = variables.reduce((a, f) => a + totalFila(f), 0);
+  const restante = Math.max(0, objetivo - horasFijas);
+  if (horasVar <= 0.001 || restante <= 0.001) return filas;
+  const ratio = restante / horasVar;
   const esc = (v) => Math.round(Number(v || 0) * ratio * 4) / 4;
-  return filas.map((f) => ({
-    ...f,
-    horas_viaje: esc(f.horas_viaje),
-    horas_campo: esc(f.horas_campo),
-    horas_oficina: esc(f.horas_oficina),
-    horas_secretaria: esc(f.horas_secretaria),
-  }));
+  return filas.map((f) => {
+    if (f.fijo === true || f.tipo_item === 'fijo') return f;
+    return {
+      ...f,
+      horas_viaje: esc(f.horas_viaje),
+      horas_campo: esc(f.horas_campo),
+      horas_oficina: esc(f.horas_oficina),
+      horas_secretaria: esc(f.horas_secretaria),
+    };
+  });
 }
 
 /** Pone horas de viaje en la fila de inspección (o crea una si no hay). */
