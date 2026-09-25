@@ -30,6 +30,50 @@ const NOMBRE_ASEGURADORA_COLECCION = {
   sura: 'SEGUROS GENERALES SURAMERICANA S.A.',
 };
 
+const IVA_FACTURACION = 0.19;
+
+function parseNumeroControl(valor) {
+  if (valor === '' || valor == null) return 0;
+  const n = Number(valor);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Totales del control de horas (sin/con IVA 19%) para mostrar en bandeja. */
+export function totalesValorControlHoras(controlHoras) {
+  const ch = controlHoras && typeof controlHoras === 'object' ? controlHoras : null;
+  if (!ch) {
+    return {
+      totalHoras: 0,
+      valorHora: 0,
+      gastos: 0,
+      valorSinIva: 0,
+      valorIva: 0,
+      valorConIva: 0,
+    };
+  }
+  const filas = Array.isArray(ch.filas) ? ch.filas : [];
+  let totalHoras = 0;
+  for (const f of filas) {
+    totalHoras +=
+      parseNumeroControl(f.horas_viaje) +
+      parseNumeroControl(f.horas_campo) +
+      parseNumeroControl(f.horas_oficina) +
+      parseNumeroControl(f.horas_secretaria);
+  }
+  const valorHora = parseNumeroControl(ch.valor_hora);
+  const gastos = parseNumeroControl(ch.gastos);
+  const valorSinIva = Math.round(totalHoras * valorHora + gastos);
+  const valorConIva = Math.round(valorSinIva * (1 + IVA_FACTURACION));
+  return {
+    totalHoras: Math.round(totalHoras * 100) / 100,
+    valorHora,
+    gastos,
+    valorSinIva,
+    valorIva: valorConIva - valorSinIva,
+    valorConIva,
+  };
+}
+
 function crearRegistroEnvio({
   tipo,
   gerente,
@@ -599,6 +643,10 @@ export async function listarBandejaFacturacion({
     const codResp = String(caso.codiRespnsble || '').trim().toUpperCase();
     const nombreAseguradora =
       resolverNombreAseguradora(caso.codiAsgrdra, mapaAseg) || nombreAseguradoraFija;
+    const control =
+      (caso.control_horas && typeof caso.control_horas === 'object' && caso.control_horas) ||
+      resolverControlHorasDesdeEnvios(caso);
+    const valores = totalesValorControlHoras(control);
     return {
       casoId: String(caso._id),
       origen,
@@ -614,7 +662,10 @@ export async function listarBandejaFacturacion({
       descripcionEstado: resolverNombreEstado(caso, mapaEst),
       fchaEnvioControlHoras: caso.fcha_envio_control_horas,
       fchaRecibidoControlHoras: caso.fcha_recibido_control_horas,
-      tieneControlHoras: controlHorasTieneDatos(resolverControlHorasDesdeEnvios(caso)),
+      tieneControlHoras: controlHorasTieneDatos(control),
+      totalHoras: valores.totalHoras,
+      valorSinIva: valores.valorSinIva,
+      valorConIva: valores.valorConIva,
     };
   };
 
