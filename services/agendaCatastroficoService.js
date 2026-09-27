@@ -265,6 +265,40 @@ export function alcanceAgendaParaIdentidad(identidad) {
   return 'asignados';
 }
 
+const AGENDA_CACHE_TTL_MS = 20_000;
+const agendaQueryCache = new Map();
+
+function agendaCacheGet(key) {
+  const hit = agendaQueryCache.get(key);
+  if (!hit) return null;
+  if (Date.now() > hit.exp) {
+    agendaQueryCache.delete(key);
+    return null;
+  }
+  return hit.docs;
+}
+
+function agendaCacheSet(key, docs) {
+  if (agendaQueryCache.size > 80) {
+    const first = agendaQueryCache.keys().next().value;
+    agendaQueryCache.delete(first);
+  }
+  agendaQueryCache.set(key, { docs, exp: Date.now() + AGENDA_CACHE_TTL_MS });
+}
+
+export async function asegurarIndicesAgendaCatastrofico() {
+  const resultados = [];
+  for (const fuente of FUENTES_AGENDA) {
+    try {
+      const created = await fuente.Model.createIndexes();
+      resultados.push({ key: fuente.key, created });
+    } catch (error) {
+      console.warn(`⚠️ Índice agenda ${fuente.key}:`, error.message);
+    }
+  }
+  return resultados;
+}
+
 export async function listarEventosAgenda({
   desde,
   hasta,
@@ -273,6 +307,7 @@ export async function listarEventosAgenda({
   rolUsuario = '',
   identidad = null,
   filtrarPorIdentidad = true,
+  usarCache = false,
 } = {}) {
   const desdeYmd = ymdBogota(desde) || ymdBogota(new Date());
   const hastaYmd = ymdBogota(hasta) || desdeYmd;
@@ -292,9 +327,14 @@ export async function listarEventosAgenda({
         ) {
           filtro = combinarFiltrosMongo(filtro, await construirFiltroVistaEra());
         }
-        const docs = await fuente.Model.find(filtro)
-          .select(PROYECCION)
-          .lean();
+        const cacheKey = usarCache
+          ? `${fuente.key}:${JSON.stringify(filtro)}`
+          : '';
+        let docs = cacheKey ? agendaCacheGet(cacheKey) : null;
+        if (!docs) {
+          docs = await fuente.Model.find(filtro).select(PROYECCION).lean();
+          if (cacheKey) agendaCacheSet(cacheKey, docs);
+        }
         return docs
           .map((doc) => eventoDesdeDoc(doc, fuente))
           .filter(Boolean)

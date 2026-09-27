@@ -26,7 +26,12 @@ export async function emitirAvisosVisitaProximas(ahora = new Date()) {
   if (avisosDesactivados()) return { creadas: 0, revisadas: 0 };
   const anticipacionMin = minutosAnticipacionVisita();
   const hoy = ymdBogota(ahora);
-  const eventos = await listarEventosAgenda({ desde: hoy, hasta: hoy });
+  const eventos = await listarEventosAgenda({
+    desde: hoy,
+    hasta: hoy,
+    filtrarPorIdentidad: false,
+    usarCache: true,
+  });
   const datos = await cargarDatosOperativos();
   let creadas = 0;
   for (const ev of eventos) {

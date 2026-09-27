@@ -65,6 +65,7 @@ export const getHoyAgendaCatastrofico = async (req, res) => {
       hasta: hoy,
       rolUsuario: identidad?.rol || rolDeReq(req),
       identidad,
+      usarCache: true,
     });
     res.json({
       success: true,

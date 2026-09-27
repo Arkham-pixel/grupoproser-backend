@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { emitirAvisosVisitaProximas } from './notificacionesVisitaAgendaService.js';
 
-const CRON_SCHEDULE = process.env.NOTIF_VISITA_CRON || '* * * * *';
+const CRON_SCHEDULE = process.env.NOTIF_VISITA_CRON || '*/5 * * * *';
 const ENABLED = process.env.NOTIF_VISITA_CRON_ENABLED !== 'false';
 
 let task = null;

@@ -124,6 +124,10 @@ mongoose
   .connect(MONGO_URI, mongoOptions)
   .then(() => {
     console.log("✅ Conectado a MongoDB");
+    import('./services/agendaCatastroficoService.js')
+      .then(({ asegurarIndicesAgendaCatastrofico }) => asegurarIndicesAgendaCatastrofico())
+      .then(() => console.log('✅ Índices de agenda CAT verificados'))
+      .catch((error) => console.warn('⚠️ Índices de agenda CAT:', error.message));
     (async () => {
       try {
         const db = mongoose.connection.db;

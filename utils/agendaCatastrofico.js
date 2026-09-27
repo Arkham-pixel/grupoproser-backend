@@ -12,6 +12,19 @@ export function aplicarCamposAgendaCatastrofico(schema) {
     horaInicioCoordinacion: { type: String, default: '' },
     horaFinCoordinacion: { type: String, default: '' },
   });
+  // La agenda y el cron de visitas filtran por estas fechas. Sin índice Atlas hace COLLSCAN.
+  if (schema.path('fechaCoordinandoInspeccion')) {
+    schema.index(
+      { fechaCoordinandoInspeccion: 1 },
+      { sparse: true, name: 'idx_agenda_fecha_coord' }
+    );
+  }
+  if (schema.path('fechaInspeccion')) {
+    schema.index(
+      { fechaInspeccion: 1 },
+      { sparse: true, name: 'idx_agenda_fecha_inspeccion' }
+    );
+  }
 }
 
 export function ymdBogota(value) {
