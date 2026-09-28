@@ -75,7 +75,10 @@ import {
   scoreContenidoLiquidadorNsr,
 } from '../utils/protegerPresupuestoNsr10.js';
 import { normalizeMoney, normalizeMoneyOficial, pareceIdentificacionComoMontoAlfa } from '../utils/alfaExcelNormalize.js';
-import { aplicarMontosOficialesDesdeLiquidadorAlfa } from '../utils/valoresLiquidadorAlfa.js';
+import {
+  aplicarMontosOficialesDesdeLiquidadorAlfa,
+  liquidadorAlfaTieneCifras,
+} from '../utils/valoresLiquidadorAlfa.js';
 import * as XLSX from 'xlsx';
 
 const esValorVacio = (valor) =>
@@ -379,6 +382,18 @@ const buildAlfaPayload = (data = {}, base = {}) =>
   informeUnico: resolverInformeUnicoParaUpdate(data.informeUnico, base.informeUnico),
 });
 
+/** Montos que el liquidador gobierna: el Excel no debe pisarlos si ya hay cifras. */
+const CAMPOS_MONTO_OFICIAL_ALFA = new Set([
+  'reserva',
+  'valorReclamado',
+  'valorLiquidado',
+  'liquidadoCoberturaTerremo',
+  'deducibleTerremoto',
+  'valorLiquidacionCoberturasAdicionales',
+  'deducibleCoberturasAdicionales',
+  'valorTotalPagar',
+]);
+
 /** Une fila Excel con caso existente: solo pisa placeholders / vacíos / errores parseados. */
 const mergeImportacionAlfa = (incomingPayload = {}, existente = {}) => {
   const campos = [
@@ -439,7 +454,12 @@ const mergeImportacionAlfa = (incomingPayload = {}, existente = {}) => {
     fechaComunicacionBajoDeducible: existente.fechaComunicacionBajoDeducible ?? null,
     ubicacionPredio: existente.ubicacionPredio ?? undefined,
   };
+  const liquidadorMandaMontos = liquidadorAlfaTieneCifras(existente.liquidador);
   for (const campo of campos) {
+    if (liquidadorMandaMontos && CAMPOS_MONTO_OFICIAL_ALFA.has(campo)) {
+      out[campo] = existente[campo] ?? null;
+      continue;
+    }
     out[campo] = mergeCampoImport(incomingPayload[campo], existente[campo]);
   }
   if (!out.estado) out.estado = 'PENDIENTE';
@@ -454,7 +474,9 @@ const mergeImportacionAlfa = (incomingPayload = {}, existente = {}) => {
     out
   );
   out.observacionesGestion = out.observacionesGestion || existente.observacionesGestion || '';
-  return out;
+  // Si ya hay liquidador con cifras, los montos oficiales NO los manda el Excel:
+  // un import con saldos viejos (p. ej. AIU 20% fantasma) pisaba el reporte.
+  return aplicarMontosOficialesDesdeLiquidadorAlfa(out);
 };
 
 const validarRequeridos = (payload) => {
@@ -671,6 +693,7 @@ async function persistAlfaMontosInflados(documentos = []) {
     for (const f of [
       'valorReclamado',
       'valorLiquidado',
+      'reserva',
       ...ALFA_CAMPOS_CONTROL_LIQUIDACION,
     ]) {
       if (sameMontoAlfa(doc[f], sanado[f])) continue;
@@ -740,6 +763,8 @@ async function ejecutarListadoCasosAlfa(req) {
           SegurosAlfaCaso.countDocuments({ excluidoBaseAlfa: true }).maxTimeMS(30000),
         ]).then(([all, excluidos]) => Math.max(0, all - excluidos));
   const [total, documentos] = await Promise.all([countPromise, listQuery]);
+  // Persistir montos saneados (listado ya trae liquidador slim para recalcular).
+  void persistAlfaMontosInflados(documentos);
   return {
     success: true,
     total,
@@ -886,6 +911,24 @@ export const actualizarCasoAlfa = async (req, res) => {
       });
     }
     const payload = asegurarEstadoUnificado(buildAlfaPayload(bodyFiltrado, base));
+    if (
+      liquidadorAlfaTieneCifras(payload.liquidador) &&
+      (Number(bodyFiltrado?.valorReclamado) || Number(bodyFiltrado?.valorLiquidado))
+    ) {
+      const recIn = Math.round(Number(bodyFiltrado.valorReclamado) || 0);
+      const liqIn = Math.round(Number(bodyFiltrado.valorLiquidado) || 0);
+      const recOk = Math.round(Number(payload.valorReclamado) || 0);
+      const liqOk = Math.round(Number(payload.valorLiquidado) || 0);
+      if (
+        (recIn > 0 && Math.abs(recIn - recOk) > 1) ||
+        (liqIn > 0 && Math.abs(liqIn - liqOk) > 1)
+      ) {
+        console.warn(
+          `[Alfa montos] ${payload.consecutivo || registroActual._id}: ` +
+            `cliente reclamado=${recIn} liquidado=${liqIn} → liquidador reclamado=${recOk} liquidado=${liqOk}`
+        );
+      }
+    }
     if (!payload.consecutivo) {
       payload.consecutivo = base.consecutivo || (await generarConsecutivoAlfa());
     }

@@ -82,12 +82,12 @@ function normKeyCredit(v) {
 }
 
 function normKeyAddress(v) {
+  // Solo alfanumérico: evita falsos NO-MATCH por "#", espacios o puntuación.
   return String(v ?? '')
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
-    .trim()
     .toUpperCase()
-    .replace(/\s+/g, ' ');
+    .replace(/[^A-Z0-9]/g, '');
 }
 
 function fechaKey(v) {

@@ -127,4 +127,43 @@ assert(
   'cascarón Allianz con infoEvento default no pisa textos reales'
 );
 
+// AIU 0% (cotización PDF): no perder al omitir aiuPorcentaje en el payload entrante.
+const conAiu0 = {
+  modelo: 'nsr10',
+  cotizacionesPdf: {
+    completo: { montoFinal: 5000000, usarComoBasePresupuesto: true, paginas: [{ ruta: '/a.pdf' }] },
+  },
+  liquidacionCotizacionPdf: {
+    aiuPorcentaje: 0,
+    valorAseguradoSid: 100000000,
+    deducibleConfig: { porcentaje: 2, cantidadSMMLV: 2, baseDeducible: 'valor_asegurable' },
+  },
+};
+const sinAiuEnPayload = {
+  ...conAiu0,
+  liquidacionCotizacionPdf: {
+    valorAseguradoSid: 100000000,
+    deducibleConfig: { porcentaje: 2, cantidadSMMLV: 2, baseDeducible: 'valor_asegurable' },
+  },
+};
+const resueltoAiu = resolverLiquidadorParaUpdate(sinAiuEnPayload, conAiu0);
+assert(
+  resueltoAiu?.liquidacionCotizacionPdf?.aiuPorcentaje === 0,
+  'AIU 0 debe preservarse cuando el entrante lo omite'
+);
+
+const sinBloqueCotiz = {
+  ...conAiu0,
+  liquidacionCotizacionPdf: undefined,
+};
+const resueltoSinBloque = resolverLiquidadorParaUpdate(sinBloqueCotiz, conAiu0);
+assert(
+  resueltoSinBloque?.liquidacionCotizacionPdf?.aiuPorcentaje === 0,
+  'AIU 0 debe restaurarse si falta todo liquidacionCotizacionPdf'
+);
+assert(
+  Number(resueltoSinBloque?.liquidacionCotizacionPdf?.valorAseguradoSid) === 100000000,
+  'SID de cotización debe restaurarse si falta el bloque'
+);
+
 console.log('OK protegerPresupuestoNsr10');

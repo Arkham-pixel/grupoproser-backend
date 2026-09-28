@@ -81,12 +81,61 @@ function logOut(event, payload = {}) {
 }
 
 function normKeyAddress(v) {
+  // Solo alfanumérico: "CARRERA 11#2.13" ≡ "Carrera 11 # 2.13"
+  // (evita append de filas duplicadas por formato de dirección).
   return String(v ?? '')
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
-    .trim()
     .toUpperCase()
-    .replace(/\s+/g, ' ');
+    .replace(/[^A-Z0-9]/g, '');
+}
+
+function normKeyCredit(v) {
+  return String(v ?? '')
+    .replace(/\D/g, '')
+    .replace(/^0+/, '');
+}
+
+/**
+ * Misma cédula / póliza no implica el mismo riesgo: si dirección o crédito
+ * vienen en ambos lados y difieren, no es match.
+ */
+function excelRowConflictsOtherRisk(caseDoc, excelPayload) {
+  const dirCaso = normKeyAddress(caseDoc?.direccionPredio);
+  const dirExcel = normKeyAddress(excelPayload?.direccionPredio);
+  if (dirCaso && dirExcel && dirCaso !== dirExcel) return true;
+
+  const credCaso = normKeyCredit(caseDoc?.numeroCredito);
+  const credExcel = normKeyCredit(excelPayload?.numeroCredito);
+  if (credCaso && credExcel && credCaso !== credExcel) return true;
+
+  return false;
+}
+
+/**
+ * Fila Excel que ya representa el mismo riesgo (ID + crédito o ID + dirección),
+ * aunque el match estricto falle por póliza placeholder / formato.
+ * Evita append de duplicados al final del consolidado.
+ */
+function findSoftDuplicateExcelRow(caseDoc, excelRows) {
+  const id = normId(caseDoc?.identificacion);
+  if (!id || String(id).length < 5) return null;
+  const dirCaso = normKeyAddress(caseDoc?.direccionPredio);
+  const credCaso = normKeyCredit(caseDoc?.numeroCredito);
+  const hits = [];
+  for (const row of excelRows) {
+    const p = row.payload || {};
+    if (normId(p.identificacion) !== id) continue;
+    if (excelRowConflictsOtherRisk(caseDoc, p)) continue;
+    const dirExcel = normKeyAddress(p.direccionPredio);
+    const credExcel = normKeyCredit(p.numeroCredito);
+    const sameDir = Boolean(dirCaso && dirExcel && dirCaso === dirExcel);
+    const sameCred = Boolean(credCaso && credExcel && credCaso === credExcel);
+    if (sameDir || sameCred) hits.push(row);
+  }
+  if (!hits.length) return null;
+  hits.sort((a, b) => a.rowNumber - b.rowNumber);
+  return hits[0];
 }
 
 function fieldValuesEqual(field, a, b) {
@@ -592,6 +641,7 @@ export async function forceEnqueueAlfaExcelOutboundCases({
 export function findExcelRowForCase(caseDoc, excelRows) {
   const hits = [];
   for (const row of excelRows) {
+    if (excelRowConflictsOtherRisk(caseDoc, row.payload)) continue;
     const match = matchAlfaCaseForExcelRow(row.payload, [caseDoc]);
     if (
       match.actionHint === 'MATCH' &&
@@ -651,6 +701,25 @@ export function findExcelRowForCase(caseDoc, excelRows) {
     }));
     throw err;
   }
+
+  // Fallback: misma ID + dirección/crédito aunque la póliza Excel ≠ ARNALD
+  // (evita NOT_FOUND → append de duplicados al final del consolidado).
+  const soft = findSoftDuplicateExcelRow(caseDoc, excelRows);
+  if (soft) {
+    logOut('ALFA_EXCEL_OUTBOUND_SOFT_ROW_MATCH', {
+      consecutivo: caseDoc?.consecutivo || null,
+      rowNumber: soft.rowNumber,
+      identificacion: normId(caseDoc?.identificacion),
+    });
+    return {
+      rowNumber: soft.rowNumber,
+      allRowNumbers: [soft.rowNumber],
+      strategy: 'SOFT_ID_DIR_OR_CREDITO',
+      evidence: { identificacion: true, soft: true },
+      payload: soft.payload,
+    };
+  }
+
   const err = new Error('EXCEL_ROW_NOT_FOUND');
   err.code = 'EXCEL_ROW_NOT_FOUND';
   throw err;
@@ -1712,13 +1781,25 @@ export async function syncMissingArnaldCasosToAlfaExcel({
         : {};
     const casos = await SegurosAlfaCaso.find(idFilter).lean();
     const missing = [];
+    let softSkipped = 0;
     for (const caso of casos) {
       const id = normId(caso.identificacion);
       if (!id || String(id).length < 5) continue;
       try {
         findExcelRowForCase(caso, excelRows);
       } catch (e) {
-        if (e?.code === 'EXCEL_ROW_NOT_FOUND') missing.push(caso);
+        if (e?.code !== 'EXCEL_ROW_NOT_FOUND') continue;
+        const soft = findSoftDuplicateExcelRow(caso, excelRows);
+        if (soft) {
+          softSkipped += 1;
+          logOut('ALFA_EXCEL_APPEND_SOFT_DUP_SKIP', {
+            consecutivo: caso.consecutivo || null,
+            identificacion: id,
+            existingRow: soft.rowNumber,
+          });
+          continue;
+        }
+        missing.push(caso);
       }
     }
 
@@ -1727,12 +1808,14 @@ export async function syncMissingArnaldCasosToAlfaExcel({
         fileName,
         excelRowsBefore,
         appended: totalAppended,
+        softSkipped,
         rounds: round,
         done: true,
       });
       return {
         appended: totalAppended,
         missing: 0,
+        softSkipped,
         excelRowsBefore,
         excelRowsAfter: excelRowsBefore + totalAppended,
         fileName,

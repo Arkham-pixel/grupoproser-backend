@@ -592,6 +592,36 @@ export async function clearWorkbookRange({
   );
 }
 
+/**
+ * Elimina filas enteras y desplaza hacia arriba (útil con archivo en coautoría/lock).
+ * address ej. "2040:2040" o "A2040:AZ2040".
+ */
+export async function deleteWorkbookRangeRows({
+  driveId,
+  itemId,
+  worksheetName,
+  address,
+  sessionId,
+  shift = 'Up',
+} = {}) {
+  if (!driveId || !itemId || !worksheetName || !address) {
+    throw new SharePointConfigError('Parámetros incompletos para deleteWorkbookRangeRows');
+  }
+  const ws = encodeURIComponent(worksheetName);
+  const addr = encodeURIComponent(address);
+  const headers = {};
+  if (sessionId) headers['workbook-session-id'] = sessionId;
+
+  return graphRequest(
+    `/drives/${driveId}/items/${itemId}/workbook/worksheets('${ws}')/range(address='${addr}')/delete`,
+    {
+      method: 'POST',
+      headers,
+      body: { shift },
+    }
+  );
+}
+
 /** Lee values/text de una celda vía Graph. */
 export async function readWorkbookRange({
   driveId,

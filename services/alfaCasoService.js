@@ -386,8 +386,9 @@ function alfaArrayTieneItemConTexto(arrayExpr) {
 }
 
 /**
- * Pipeline del listado: liviano. No inspecciona nested de liquidador (eso
- * fuerza lectura de blobs enormes y timeout en Atlas).
+ * Pipeline del listado: liviano. Slim liquidador para sanear montos sin traer
+ * presupuesto/detalle/firmas (blobs que timeout en Atlas).
+ * Nota Mongo: no mezclar exclusiones (campo:0) con inclusiones/expresiones.
  */
 export function buildAlfaListadoPipeline({ filtro = {}, skip = 0, limit = 25 } = {}) {
   return [
@@ -401,6 +402,28 @@ export function buildAlfaListadoPipeline({ filtro = {}, skip = 0, limit = 25 } =
         tieneInforme: { $eq: [{ $type: '$informeUnico' }, 'object'] },
         // Aprox. sin leer presupuesto/detalle (evita timeout en listados grandes).
         tieneLiquidadorConContenido: { $eq: [{ $type: '$liquidador' }, 'object'] },
+        _liquidadorSlim: {
+          cotizacionesPdf: '$liquidador.cotizacionesPdf',
+          cotizacionPdf: '$liquidador.cotizacionPdf',
+          liquidacionCotizacionPdf: '$liquidador.liquidacionCotizacionPdf',
+          otrosAmparos: '$liquidador.otrosAmparos',
+          valorReclamadoCaso: '$liquidador.valorReclamadoCaso',
+          encabezado: {
+            valorAseguradoSid: '$liquidador.encabezado.valorAseguradoSid',
+          },
+          liquidacionCatastrofico: {
+            valorAsegurado: '$liquidador.liquidacionCatastrofico.valorAsegurado',
+            hospedajeManual: '$liquidador.liquidacionCatastrofico.hospedajeManual',
+            deducibleConfig: '$liquidador.liquidacionCatastrofico.deducibleConfig',
+            deducibleConfigPresupuesto:
+              '$liquidador.liquidacionCatastrofico.deducibleConfigPresupuesto',
+          },
+          evaluacionSismicaNSR10: {
+            presupuesto: {
+              aiuPorcentaje: '$liquidador.evaluacionSismicaNSR10.presupuesto.aiuPorcentaje',
+            },
+          },
+        },
       },
     },
     {
@@ -408,6 +431,16 @@ export function buildAlfaListadoPipeline({ filtro = {}, skip = 0, limit = 25 } =
         liquidador: 0,
         informeUnico: 0,
         archivos: 0,
+      },
+    },
+    {
+      $addFields: {
+        liquidador: '$_liquidadorSlim',
+      },
+    },
+    {
+      $project: {
+        _liquidadorSlim: 0,
       },
     },
   ];

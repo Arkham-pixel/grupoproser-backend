@@ -205,6 +205,9 @@ export function preservarPresupuestoNsrSiVacio(nuevo, actual) {
  * Resuelve liquidador para $set: nunca dejar null/vacío si ya había contenido.
  * Si el cliente envía un liquidador CON contenido, se confía en él (edición real).
  * Solo se protege el cascarón vacío que borraría un liquidador ya guardado.
+ *
+ * Además: no perder AIU 0% / SID / deducible de liquidacionCotizacionPdf cuando
+ * el payload entrante omite esas claves (causa típica de montos ×1.2 en el reporte).
  */
 export function resolverLiquidadorParaUpdate(incoming, actual) {
   if (incoming === undefined) return actual ?? null;
@@ -217,10 +220,60 @@ export function resolverLiquidadorParaUpdate(incoming, actual) {
   const valNew = contarPresupuestoNsrConValor(incoming);
   const valOld = contarPresupuestoNsrConValor(actual);
   // Catálogo sin cantidades no puede pisar un presupuesto ya digitado.
+  let next = incoming;
   if (valOld > 0 && valNew === 0) {
-    return preservarPresupuestoNsrSiVacio(incoming, actual);
+    next = preservarPresupuestoNsrSiVacio(incoming, actual);
   }
-  return incoming;
+  return preservarLiquidacionCotizacionPdfAlfa(next, actual);
+}
+
+/**
+ * Conserva claves críticas de liquidacionCotizacionPdf si el entrante las omite.
+ * AIU 0 es válido y frecuente: si se pierde, el backend cae al default 20% y el
+ * reporte muestra reclamado/liquidado inflados (×1.2).
+ */
+export function preservarLiquidacionCotizacionPdfAlfa(incoming, actual) {
+  if (!incoming || typeof incoming !== 'object') return incoming;
+  const prev =
+    actual?.liquidacionCotizacionPdf && typeof actual.liquidacionCotizacionPdf === 'object'
+      ? actual.liquidacionCotizacionPdf
+      : null;
+  if (!prev) return incoming;
+
+  const cur =
+    incoming.liquidacionCotizacionPdf && typeof incoming.liquidacionCotizacionPdf === 'object'
+      ? { ...incoming.liquidacionCotizacionPdf }
+      : {};
+
+  let changed = false;
+  const aiuIn = cur.aiuPorcentaje;
+  const aiuPrev = prev.aiuPorcentaje;
+  const aiuInAusente = aiuIn == null || aiuIn === '';
+  if (aiuInAusente && (aiuPrev === 0 || aiuPrev === '0' || Number.isFinite(Number(aiuPrev)))) {
+    cur.aiuPorcentaje = aiuPrev === 0 || aiuPrev === '0' ? 0 : Number(aiuPrev);
+    changed = true;
+  }
+
+  if (
+    (cur.valorAseguradoSid == null || String(cur.valorAseguradoSid).trim() === '') &&
+    prev.valorAseguradoSid != null &&
+    String(prev.valorAseguradoSid).trim() !== ''
+  ) {
+    cur.valorAseguradoSid = prev.valorAseguradoSid;
+    changed = true;
+  }
+
+  if (
+    (!cur.deducibleConfig || typeof cur.deducibleConfig !== 'object') &&
+    prev.deducibleConfig &&
+    typeof prev.deducibleConfig === 'object'
+  ) {
+    cur.deducibleConfig = { ...prev.deducibleConfig };
+    changed = true;
+  }
+
+  if (!changed && incoming.liquidacionCotizacionPdf) return incoming;
+  return { ...incoming, liquidacionCotizacionPdf: cur };
 }
 
 /**

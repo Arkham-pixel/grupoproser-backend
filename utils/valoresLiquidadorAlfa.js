@@ -179,8 +179,10 @@ function resumenCotizacion(liquidador = {}) {
     }
   }
   total = round2(total);
+  // aiuPorcentaje 0 es válido (sin AIU). Solo caer al default si viene vacío/NaN.
   const aiuLiq = Number(liquidador?.liquidacionCotizacionPdf?.aiuPorcentaje);
-  const aiuPct = Number.isFinite(aiuLiq) && aiuLiq > 0 ? aiuLiq : AIU_DEFAULT;
+  let aiuPct = Number.isFinite(aiuLiq) ? aiuLiq : AIU_DEFAULT;
+  if (aiuPct > 1) aiuPct /= 100;
   return { total, nUsadas, usaComoBase: nUsadas > 0 && total > 0, aiuPct };
 }
 
@@ -255,10 +257,8 @@ export function aplicarMontosOficialesDesdeLiquidadorAlfa(doc = {}) {
   const recOk = Math.round(Number(montos.valorReclamado) || 0);
   const liqOk = Math.round(Number(montos.valorLiquidado) || 0);
 
-  if (recOk > 0) {
-    out.valorReclamado = recOk;
-  }
-  // Liquidador = fuente de verdad del valor liquidado / total a pagar.
+  // Liquidador = fuente de verdad. Siempre sobrescribe planos (también reclamado=0).
+  out.valorReclamado = recOk;
   out.valorLiquidado = liqOk;
 
   // Campos de control de liquidación (fuente: liquidador existente).
@@ -271,6 +271,14 @@ export function aplicarMontosOficialesDesdeLiquidadorAlfa(doc = {}) {
     Number(montos.deducibleCoberturasAdicionales) || 0
   );
   out.valorTotalPagar = Math.round(Number(montos.valorTotalPagar) || 0);
+  // Reserva del caso = monto a indemnizar (misma fuente que valorLiquidado).
+  out.reserva = out.valorLiquidado;
+
+  // Con cotización PDF, el SID del plano debe coincidir con liquidacionCotizacionPdf
+  // (evita que un import/Excel deje SID ×2 y el deducible se descuadre después).
+  if (montos.usaCotiz && Number(montos.sid) > 0) {
+    out.valorAseguradoSid = Math.round(Number(montos.sid));
+  }
 
   return out;
 }
@@ -282,12 +290,27 @@ export function extraerMontosLiquidadorAlfa(liquidador = {}, caso = {}) {
   const enc = liquidador.encabezado || {};
   const cotiz = resumenCotizacion(liquidador);
   const usaCotiz = cotiz.usaComoBase;
+  const cotizLiq =
+    liquidador.liquidacionCotizacionPdf && typeof liquidador.liquidacionCotizacionPdf === 'object'
+      ? liquidador.liquidacionCotizacionPdf
+      : {};
 
-  const sid =
-    n(enc.valorAseguradoSid) ||
-    n(caso.valorAseguradoSid) ||
-    n(liq.valorAsegurado) ||
-    n(cotiz.total && enc.valorAseguradoSid);
+  // Misma regla que el FE: con cotización PDF el SID del deducible es el de liquidacionCotizacionPdf.
+  // Si se usa encabezado/caso inflado (p. ej. ×2), el deducible sale el doble del liquidador.
+  const sidCotiz = n(cotizLiq.valorAseguradoSid);
+  const sidEnc = n(enc.valorAseguradoSid);
+  const sidCaso = n(caso.valorAseguradoSid);
+  const sidLiq = n(liq.valorAsegurado);
+  let sid = 0;
+  if (usaCotiz && sidCotiz > 0) {
+    sid = sidCotiz;
+  } else {
+    sid = sidEnc || sidCaso || sidLiq || 0;
+  }
+  // Si cotiz trae SID y el del caso/encabezado es ~×2, preferir cotiz (evita deducible duplicado).
+  if (sidCotiz > 0 && sid > 0 && Math.abs(sid / sidCotiz - 2) < 0.02) {
+    sid = sidCotiz;
+  }
 
   const detalle = Array.isArray(liquidador.detalleLiquidacionCat)
     ? liquidador.detalleLiquidacionCat
@@ -328,16 +351,12 @@ export function extraerMontosLiquidadorAlfa(liquidador = {}, caso = {}) {
     totalDaniosCat = round2(subtotal + aiu + contenidos);
   }
 
-  const cotizLiq =
-    liquidador.liquidacionCotizacionPdf && typeof liquidador.liquidacionCotizacionPdf === 'object'
-      ? liquidador.liquidacionCotizacionPdf
-      : {};
   const cfgDed =
     (usaCotiz
       ? cotizLiq.deducibleConfig || liq.deducibleConfig
       : liq.deducibleConfigPresupuesto || liq.deducibleConfig) || {};
   const deducible = calcularDeducible({
-    valorAsegurado: sid || n(liq.valorAsegurado),
+    valorAsegurado: sid || sidLiq,
     totalDanios: totalDaniosCat,
     cfg: cfgDed,
   });
@@ -349,11 +368,9 @@ export function extraerMontosLiquidadorAlfa(liquidador = {}, caso = {}) {
   const indemnizacionPrincipal = Math.max(0, round2(totalDaniosCat - deducible + hospedaje));
   const valorLiquidado = Math.max(0, round2(indemnizacionPrincipal + totalOtrosAmparos));
 
-  const reclamadoCaso = n(liquidador.valorReclamadoCaso);
-  const valorReclamado =
-    reclamadoCaso > 0 && !pareceInfladoPorCentavos(reclamadoCaso, totalDaniosCat)
-      ? reclamadoCaso
-      : totalDaniosCat;
+  // Reclamado oficial = daños del liquidador (subtotal + AIU real).
+  // No preferir valorReclamadoCaso: suele quedar pegado un AIU 20% fantasma (×1.2).
+  const valorReclamado = totalDaniosCat;
 
   return {
     valorReclamado,
