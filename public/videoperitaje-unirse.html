@@ -309,12 +309,20 @@
         el.style.position = 'absolute';
       }
       function videoConstraints() {
-        return {
+        // 720×1280: FOV amplio. 1080×1920 / 4K recorta el sensor en muchas frontales.
+        const base = {
           facingMode: { ideal: facingMode },
-          width: { ideal: 1080 },
-          height: { ideal: 1920 },
+          width: { ideal: 720 },
+          height: { ideal: 1280 },
           frameRate: { ideal: 24 },
         };
+        if (facingMode === 'user') {
+          return Object.assign({}, base, {
+            resizeMode: 'none',
+            advanced: [{ zoom: 1.0 }],
+          });
+        }
+        return base;
       }
       function html(s) {
         return String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -459,8 +467,8 @@
                 const caps = await ic.getPhotoCapabilities();
                 if (caps && caps.imageWidth && caps.imageHeight) {
                   settings = {
-                    imageWidth: caps.imageWidth.max,
-                    imageHeight: caps.imageHeight.max,
+                    imageWidth: Math.min(1920, caps.imageWidth.max || 1920),
+                    imageHeight: Math.min(2560, caps.imageHeight.max || 2560),
                   };
                 }
               } catch (_) {}
@@ -611,10 +619,10 @@
             reconnectPolicy: { nextRetryDelayInMs: function () { return null; } },
             videoCaptureDefaults: {
               facingMode: facingMode,
-              resolution: { width: 2160, height: 3840 },
+              resolution: { width: 720, height: 1280 },
             },
             videoPublishDefaults: {
-              videoEncoding: { maxBitrate: 4000000, maxFramerate: 24 },
+              videoEncoding: { maxBitrate: 2500000, maxFramerate: 24 },
             },
           });
           liveRoom = room;
