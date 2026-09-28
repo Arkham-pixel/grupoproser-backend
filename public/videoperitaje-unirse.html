@@ -201,6 +201,7 @@
       let sesion = null;
       let stream = null;
       let liveRoom = null;
+      let liveReconnectAttempts = 0;
       let watchTimer = null;
       let facingMode = 'user';
       let callEnded = false;
@@ -623,7 +624,11 @@
         const pagePublica = /\.grupoproser\.com\.co$/i.test(location.hostname);
         const lkPrivado = /^(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.)/i.test(lkHost);
         if (!lk || !lk.token || !lk.url || (pagePublica && lkPrivado)) {
-          if (status) status.textContent = 'Cámara encendida. Esperando videollamada…';
+          const why = (lk && lk.error) || (pagePublica && lkPrivado
+            ? 'El servidor de video no es público.'
+            : 'Sin token de videollamada. Avise al ajustador.');
+          if (status) status.textContent = why;
+          showAlert(why);
           return;
         }
         try {
@@ -634,7 +639,12 @@
             dynacast: true,
             stopLocalTrackOnUnpublish: true,
             disconnectOnPageLeave: true,
-            reconnectPolicy: { nextRetryDelayInMs: function () { return null; } },
+            reconnectPolicy: {
+              nextRetryDelayInMs: function (ctx) {
+                if (!ctx || ctx.retryCount > 8) return null;
+                return Math.min(800 * Math.pow(2, ctx.retryCount), 8000);
+              },
+            },
             videoCaptureDefaults: {
               facingMode: facingMode,
               resolution: { width: 720, height: 1280 },
@@ -672,6 +682,7 @@
               if (status) status.style.display = 'none';
             }
           });
+          let reconnecting = false;
           room.on(LivekitClient.RoomEvent.Disconnected, async () => {
             soltarCamara(room);
             try { await load(); } catch (_) {}
@@ -680,15 +691,37 @@
               showEnded();
               return;
             }
-            if (status) {
-              status.style.display = '';
-              status.textContent = 'Cámara encendida. Esperando videollamada…';
-            }
             if (previewStream && localEl) {
               localEl.srcObject = previewStream;
               localEl.muted = true;
               localEl.play().catch(function () {});
             }
+            if (reconnecting || liveRoom !== room) return;
+            if (liveReconnectAttempts >= 3) {
+              if (status) status.textContent = 'Sin video. Recargue el enlace en Chrome o Safari.';
+              showAlert('Se perdió la videollamada. Recargue el enlace.');
+              return;
+            }
+            reconnecting = true;
+            liveReconnectAttempts += 1;
+            if (status) {
+              status.style.display = '';
+              status.textContent = 'Reconectando videollamada…';
+            }
+            try {
+              const joined2 = await join();
+              const lk2 = joined2 && joined2.livekit;
+              if (lk2 && lk2.token && lk2.url) {
+                liveRoom = null;
+                try { room.disconnect(); } catch (_) {}
+                await renderLive(joined2);
+                liveReconnectAttempts = 0;
+                return;
+              }
+            } catch (_) { /* reintento manual */ }
+            reconnecting = false;
+            if (status) status.textContent = 'Sin video. Toque Entrar de nuevo o recargue el enlace.';
+            showAlert('Se perdió la videollamada. Recargue el enlace o pulse Entrar otra vez.');
           });
           room.on(LivekitClient.RoomEvent.DataReceived, async (payload, participant) => {
             if (participant && participant.isLocal) return;
@@ -745,7 +778,9 @@
               };
             }
         } catch (e) {
-          if (status) status.textContent = 'Cámara encendida. Esperando videollamada…';
+          const msg = (e && e.message) || 'No se pudo conectar la videollamada';
+          if (status) status.textContent = msg;
+          showAlert(msg);
           if (previewStream && localEl) {
             localEl.srcObject = previewStream;
             localEl.muted = true;
