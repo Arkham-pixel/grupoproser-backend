@@ -44,6 +44,12 @@ import {
   isAlfaExcelOutboundCycleRunning,
 } from '../workers/alfaExcelOutboundWorker.js';
 import { getAlfaExcelOutboundConfig } from '../config/alfaExcelOutbound.js';
+import {
+  startAlfaExcelOutboundProgress,
+  updateAlfaExcelOutboundProgress,
+  finishAlfaExcelOutboundProgress,
+  getAlfaExcelOutboundProgress,
+} from '../services/alfaExcelOutboundProgress.js';
 import { generarConsecutivoAlfa, buildAlfaListadoPipeline } from '../services/alfaCasoService.js';
 import {
   homologarEstadoAlfa,
@@ -1887,6 +1893,10 @@ export const getControlSeguimientoAlfaStatus = async (req, res) => {
       ...data,
       outboundPending: outboundQueue.total,
       outboundQueue,
+      outboundProgress: getAlfaExcelOutboundProgress(),
+      outboundBusy: Boolean(
+        getAlfaExcelOutboundProgress()?.running || isAlfaExcelOutboundCycleRunning()
+      ),
     });
   } catch (error) {
     return res.status(500).json({
@@ -1918,6 +1928,10 @@ export const postControlSeguimientoAlfaCheck = async (req, res) => {
       ...status,
       outboundPending: outboundQueue.total,
       outboundQueue,
+      outboundProgress: getAlfaExcelOutboundProgress(),
+      outboundBusy: Boolean(
+        getAlfaExcelOutboundProgress()?.running || isAlfaExcelOutboundCycleRunning()
+      ),
     });
   } catch (error) {
     return res.status(500).json({
@@ -1941,11 +1955,15 @@ export const postControlSeguimientoAlfaCheck = async (req, res) => {
  */
 export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
   try {
-    if (isAlfaExcelOutboundCycleRunning()) {
+    if (
+      isAlfaExcelOutboundCycleRunning() ||
+      getAlfaExcelOutboundProgress()?.running
+    ) {
       return res.status(409).json({
         success: false,
         error: 'Ya hay un envío a Excel en curso. Espere un momento.',
         code: 'OUTBOUND_BUSY',
+        outboundProgress: getAlfaExcelOutboundProgress(),
       });
     }
     const cfg = getAlfaExcelOutboundConfig();
@@ -1964,8 +1982,18 @@ export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
       500
     );
 
+    const identidad = await obtenerIdentidadUsuarioReq(req);
+    const startedByLogin = String(identidad?.login || identidad?.cedula || '').trim();
+    const startedByName = String(identidad?.name || identidad?.nombre || '').trim();
+
     // Contar cola real (pending + processing atascados + failed)
     let queueBefore = await getAlfaExcelOutboundQueueStats();
+
+    startAlfaExcelOutboundProgress({
+      startedByLogin,
+      startedByName,
+      peakTotal: queueBefore.total,
+    });
 
     // Reintentar fallidos en este flush manual
     try {
@@ -1982,12 +2010,18 @@ export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
         }
       );
       queueBefore = await getAlfaExcelOutboundQueueStats();
+      updateAlfaExcelOutboundProgress({
+        peakTotal: Math.max(queueBefore.total, getAlfaExcelOutboundProgress().peakTotal),
+        left: queueBefore.total,
+        label: 'Reencolando fallidos…',
+      });
     } catch {
       /* ignore */
     }
 
     let enqueueSummary = null;
     if (consecutivos.length > 0) {
+      updateAlfaExcelOutboundProgress({ label: 'Encolando casos indicados…' });
       enqueueSummary = await forceEnqueueAlfaExcelOutboundCases({
         consecutivos,
         limit: Math.max(consecutivos.length, 1),
@@ -1995,12 +2029,23 @@ export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
       });
     } else if (forceResync && queueBefore.total === 0) {
       // Alinear Excel con ARNALD: solo celdas amarillas que realmente difieren
+      updateAlfaExcelOutboundProgress({ label: 'Comparando ARNALD vs Excel…' });
       enqueueSummary = await forceEnqueueAlfaExcelOutboundCases({
         onlyWithMoney: onlyWithMoney || true,
         limit: enqueueLimit,
         diffAgainstExcel: true,
       });
     }
+
+    queueBefore = await getAlfaExcelOutboundQueueStats();
+    updateAlfaExcelOutboundProgress({
+      peakTotal: Math.max(queueBefore.total, getAlfaExcelOutboundProgress().peakTotal),
+      left: queueBefore.total,
+      label:
+        queueBefore.total > 0
+          ? `Enviando a Excel… 0 de ${queueBefore.total}`
+          : 'Sin pendientes en cola',
+    });
 
     const started = Date.now();
     let totalClaimed = 0;
@@ -2015,6 +2060,17 @@ export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
       totalClaimed += summary.claimed || 0;
       totalSynced += summary.synced || 0;
       totalFailed += summary.failed || 0;
+      const liveQueue = await getAlfaExcelOutboundQueueStats();
+      const prog = updateAlfaExcelOutboundProgress({
+        peakTotal: Math.max(liveQueue.total, getAlfaExcelOutboundProgress().peakTotal),
+        left: liveQueue.total,
+        synced: totalSynced,
+        failed: totalFailed,
+        roundsRun,
+      });
+      updateAlfaExcelOutboundProgress({
+        label: `Enviando a Excel… ${prog.done} de ${prog.peakTotal}`,
+      });
       if (!(summary.claimed > 0)) break;
     }
 
@@ -2054,19 +2110,36 @@ export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
       message += ` (alineados ${enqueueSummary.enqueued}).`;
     }
 
+    finishAlfaExcelOutboundProgress({
+      left: outboundQueue.total,
+      synced: totalSynced,
+      failed: totalFailed,
+      roundsRun,
+    });
+
     return res.json({
       success: true,
       flush,
       outboundPending: outboundQueue.total,
       outboundQueue,
+      outboundProgress: getAlfaExcelOutboundProgress(),
+      outboundBusy: false,
       message,
     });
   } catch (error) {
     console.error('❌ Error flush outbound Alfa Excel:', error);
+    finishAlfaExcelOutboundProgress({
+      left: getAlfaExcelOutboundProgress()?.left || 0,
+      synced: getAlfaExcelOutboundProgress()?.synced || 0,
+      failed: getAlfaExcelOutboundProgress()?.failed || 0,
+      roundsRun: getAlfaExcelOutboundProgress()?.roundsRun || 0,
+      error: error.message,
+    });
     return res.status(500).json({
       success: false,
       error: error.message || 'Error al enviar cambios a Excel',
       code: 'CONTROL_SEGUIMIENTO_OUTBOUND_FLUSH_ERROR',
+      outboundProgress: getAlfaExcelOutboundProgress(),
     });
   }
 };
