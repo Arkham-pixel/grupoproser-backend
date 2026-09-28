@@ -208,7 +208,12 @@ function calcularDeducible({ valorAsegurado, totalDanios, cfg = {} }) {
   return round2(Math.max(porPct, minSmmlv));
 }
 
-export function liquidadorAlfaTieneCifras(liquidador) {
+/**
+ * Base de indemnización (ítems NSR / detalle CAT / cotización PDF).
+ * Sin esto, un liquidador “slim” del listado (solo otrosAmparos) no debe
+ * recalcular valorLiquidado — dejaría solo coberturas adicionales.
+ */
+export function liquidadorAlfaTieneBaseIndemnizacion(liquidador) {
   if (!liquidador || typeof liquidador !== 'object') return false;
   const items = liquidador?.evaluacionSismicaNSR10?.presupuesto?.items;
   if (Array.isArray(items) && items.some((it) => textoItem(it) || n(it.total) || n(it.valorUnitario))) {
@@ -218,8 +223,14 @@ export function liquidadorAlfaTieneCifras(liquidador) {
   if (Array.isArray(detalle) && detalle.some((it) => textoItem(it) || n(it.valorPerdida))) {
     return true;
   }
-  if (sumarOtrosAmparos(liquidador?.otrosAmparos) > 0) return true;
   if (resumenCotizacion(liquidador).usaComoBase) return true;
+  return false;
+}
+
+export function liquidadorAlfaTieneCifras(liquidador) {
+  if (!liquidador || typeof liquidador !== 'object') return false;
+  if (liquidadorAlfaTieneBaseIndemnizacion(liquidador)) return true;
+  if (sumarOtrosAmparos(liquidador?.otrosAmparos) > 0) return true;
   return false;
 }
 
@@ -243,15 +254,22 @@ export function pareceInfladoPorCentavos(guardado, correcto) {
 }
 
 /**
- * Si reclamado/liquidado guardados son el recálculo del liquidador con
- * centavos concatenados (p. ej. 7.597.812,12 → 759.781.212), usa el recálculo.
- * No toca SID/reclamados reales de cientos de millones.
- * Si el recálculo liquida 0 (deducible > daños) pero el guardado es el daños ×~100,
- * también se corrige a 0.
+ * Aplica montos oficiales del liquidador al documento plano del caso.
+ * No recalcula si el liquidador es “slim” (solo otrosAmparos, sin ítems/detalle/cotiz).
  */
 export function aplicarMontosOficialesDesdeLiquidadorAlfa(doc = {}) {
   if (!doc || typeof doc !== 'object') return doc;
   if (!liquidadorAlfaTieneCifras(doc.liquidador)) return doc;
+
+  // Listado slim: otrosAmparos sin ítems/detalle/cotiz → no pisar indemnización.
+  if (!liquidadorAlfaTieneBaseIndemnizacion(doc.liquidador)) {
+    const out = { ...doc };
+    out.valorLiquidacionCoberturasAdicionales = Math.round(
+      sumarOtrosAmparos(doc.liquidador?.otrosAmparos) || 0
+    );
+    return out;
+  }
+
   const montos = extraerMontosLiquidadorAlfa(doc.liquidador, doc);
   const out = { ...doc };
   const recOk = Math.round(Number(montos.valorReclamado) || 0);
