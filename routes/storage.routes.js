@@ -8,14 +8,18 @@ import {
 import { parseS3KeyFromStoredPath } from '../utils/storageKeyBuilder.js';
 import { storageConfig } from '../config/storage.js';
 import { enviarArchivoCompatibleNavegador } from '../utils/heicToJpeg.js';
+import { resolveBackendPublicUrl } from '../config/platformUrls.js';
 
 const router = express.Router();
 
 const esHeicRef = (ref = '') => /\.hei[cf](\?|$)/i.test(String(ref));
 
 function proxyFileUrl(req, ref) {
-  const base = `${req.protocol}://${req.get('host')}`;
-  return `${base}/api/storage/file?ref=${encodeURIComponent(ref)}`;
+  // Detrás de Coolify, req.protocol/host pueden ser internos (rompe <img> en prod).
+  const base =
+    resolveBackendPublicUrl() ||
+    `${req.protocol}://${req.get('host')}`;
+  return `${base.replace(/\/$/, '')}/api/storage/file?ref=${encodeURIComponent(ref)}`;
 }
 
 /**

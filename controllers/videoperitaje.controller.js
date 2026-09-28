@@ -272,15 +272,20 @@ async function persistirMediaPerito(sesion, media) {
   return hidratada;
 }
 
-async function hidratarMedias(medias = []) {
+async function hidratarMedias(medias = [], { firmar = false } = {}) {
   const list = [];
   for (const m of medias || []) {
     const plain = typeof m.toObject === 'function' ? m.toObject() : { ...m };
     let url = '';
-    try {
-      url = (await getDownloadUrl(plain.ruta)) || '';
-    } catch {
-      url = '';
+    // Por defecto NO firmar: firmar N fotos en cada poll de sala tumba el API/S3.
+    // El front resuelve con /api/storage/signed-url?prefer=proxy (una vez).
+    if (firmar && plain.ruta) {
+      try {
+        const signed = (await getDownloadUrl(plain.ruta)) || '';
+        url = /^https?:\/\//i.test(signed) ? signed : '';
+      } catch {
+        url = '';
+      }
     }
     list.push({ ...plain, url });
   }
