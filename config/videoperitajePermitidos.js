@@ -1,8 +1,7 @@
 /**
- * Módulo de videoperitaje: abierto a todos los usuarios autenticados.
- * Admin (vaciar papelera / cupo): LOGINS_VIDEOPERITAJE_ADMIN o rol admin.
+ * Módulo de videoperitaje: abierto a todos los autenticados.
+ * Historial: cada uno ve solo sus sesiones; admin ve todas / vacía / cupo.
  * Debe coincidir con frontend/src/config/videoperitajePermitidos.js
- * El portal del asegurado (/public/:token) no pasa por este filtro.
  */
 
 function parseLogins(raw) {

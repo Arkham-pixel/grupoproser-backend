@@ -38,6 +38,8 @@ import {
 } from '../services/videoperitajePgService.js';
 import {
   usuarioEsAdminVideoperitaje,
+  filtroSesionesPropias,
+  sesionPerteneceAUsuario,
 } from '../config/videoperitajePermitidos.js';
 
 const ESTADOS_ABIERTOS = new Set(['pendiente', 'en_proceso']);
@@ -332,14 +334,12 @@ function usuarioDesdeReq(req) {
   };
 }
 
-/** Cualquier usuario con acceso a videoperitaje puede ver/operar cualquier sesión. */
+/** Solo dueño de la sesión o admin de videoperitaje. */
 function exigirSesionPropiaOAdmin(sesion, req) {
   const usuario = usuarioDesdeReq(req);
-  if (!usuario?.id && !usuario?.login) {
-    return { ok: false, usuario, admin: false };
-  }
-  const admin = usuarioEsAdminVideoperitaje(usuario);
-  return { ok: true, usuario, admin };
+  if (usuarioEsAdminVideoperitaje(usuario)) return { ok: true, usuario, admin: true };
+  if (sesionPerteneceAUsuario(sesion, usuario)) return { ok: true, usuario, admin: false };
+  return { ok: false, usuario, admin: false };
 }
 
 export async function crearSesion(req, res) {
@@ -482,21 +482,30 @@ export async function listarSesiones(req, res) {
     const usuario = usuarioDesdeReq(req);
     const admin = usuarioEsAdminVideoperitaje(usuario);
     const { estado, tipo, modulo, casoId, q, page = 1, limit = 40 } = req.query;
-    // Historial compartido: todos los usuarios con acceso ven todas las sesiones.
+    // Cada ajustador ve solo las suyas; admin ve todas.
     const filtro = {};
+    if (!admin) {
+      Object.assign(filtro, filtroSesionesPropias(usuario));
+    }
     if (estado) filtro.estado = String(estado);
     if (tipo) filtro.tipo = String(tipo);
     if (modulo) filtro.modulo = normalizarModulo(modulo);
     if (casoId && mongoose.Types.ObjectId.isValid(casoId)) filtro.casoId = casoId;
     if (q) {
       const rx = new RegExp(String(q).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      filtro.$or = [
+      const texto = [
         { expediente: rx },
         { siniestro: rx },
         { aseguradoNombre: rx },
         { celular: rx },
         { peritoNombre: rx },
       ];
+      if (filtro.$or) {
+        filtro.$and = [{ $or: filtro.$or }, { $or: texto }];
+        delete filtro.$or;
+      } else {
+        filtro.$or = texto;
+      }
     }
     const skip = (Math.max(1, Number(page)) - 1) * Math.max(1, Number(limit));
     const [data, total] = await Promise.all([
@@ -509,7 +518,7 @@ export async function listarSesiones(req, res) {
       total,
       page: Number(page),
       limit: Number(limit),
-      scope: 'all',
+      scope: admin ? 'all' : 'own',
       canVaciarHistorial: admin,
     });
   } catch (error) {
