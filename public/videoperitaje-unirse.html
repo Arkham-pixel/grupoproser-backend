@@ -479,8 +479,11 @@
           new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
         ]);
       }
-      async function captureFotoHd(video, track) {
-        if (track && typeof ImageCapture === 'function') {
+      async function captureFotoHd(video, track, opts) {
+        const soloStream = opts && opts.soloStream;
+        // takePhoto en muchos Android congela el MediaStream → pantalla negra en la llamada.
+        // En vivo usamos solo frame del <video> / grabFrame.
+        if (!soloStream && track && typeof ImageCapture === 'function') {
           try {
             const ic = new ImageCapture(track);
             if (ic.takePhoto) {
@@ -523,6 +526,8 @@
               }
             }
           } catch (_) {}
+        }
+        if (track && typeof ImageCapture === 'function') {
           try {
             const ic = new ImageCapture(track);
             if (ic.grabFrame) {
@@ -546,6 +551,38 @@
         }
         return captureFrom(video);
       }
+      async function recuperarVideoTrasCaptura() {
+        const room = liveRoom;
+        const localEl = document.getElementById('local');
+        if (!room || !room.localParticipant) return;
+        try {
+          const pubs = Array.from(room.localParticipant.videoTrackPublications.values());
+          const current = pubs.find(function (p) { return p.track; });
+          if (current && current.track && current.track.restartTrack) {
+            await current.track.restartTrack({ facingMode: facingMode });
+          }
+          if (current && current.track && localEl) {
+            current.track.attach(localEl);
+            localEl.muted = true;
+            localEl.setAttribute('playsinline', '');
+            fitVideo(localEl);
+            localEl.play().catch(function () {});
+          }
+        } catch (_) {
+          try {
+            await room.localParticipant.setCameraEnabled(false);
+            await room.localParticipant.setCameraEnabled(true, { facingMode: facingMode });
+            const pubs2 = Array.from(room.localParticipant.videoTrackPublications.values());
+            const pub = pubs2.find(function (p) { return p.track; });
+            if (pub && pub.track && localEl) {
+              pub.track.attach(localEl);
+              localEl.muted = true;
+              fitVideo(localEl);
+              localEl.play().catch(function () {});
+            }
+          } catch (__) {}
+        }
+      }
       function flashWhite() {
         let el = document.getElementById('flash');
         if (!el) {
@@ -559,10 +596,15 @@
       }
       async function tomarFotoHd() {
         const localEl = document.getElementById('local');
-        const blob = await captureFotoHd(localEl, pistaVideoLocal(liveRoom));
+        // soloStream: evita takePhoto (congela cámara → negro en ajustador y cliente).
+        const blob = await captureFotoHd(localEl, pistaVideoLocal(liveRoom), { soloStream: true });
         if (!blob) return;
         flashWhite();
-        await uploadBlob(blob, { descripcion: 'Captura videoperitaje' });
+        try {
+          await uploadBlob(blob, { descripcion: 'Captura videoperitaje' });
+        } finally {
+          await recuperarVideoTrasCaptura();
+        }
       }
       function renderWelcome() {
         panel.innerHTML = `
