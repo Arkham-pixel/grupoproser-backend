@@ -84,6 +84,7 @@ import { normalizeMoney, normalizeMoneyOficial, pareceIdentificacionComoMontoAlf
 import {
   aplicarMontosOficialesDesdeLiquidadorAlfa,
   liquidadorAlfaTieneCifras,
+  liquidadorAlfaTieneBaseIndemnizacion,
 } from '../utils/valoresLiquidadorAlfa.js';
 import * as XLSX from 'xlsx';
 
@@ -693,6 +694,9 @@ function sameMontoAlfa(a, b) {
 async function persistAlfaMontosInflados(documentos = []) {
   for (const doc of documentos) {
     if (!doc?._id) continue;
+    // Listado slim (sin ítems/detalle/cotiz): NUNCA persistir recálculo parcial
+    // (dejaba valorLiquidado = solo coberturas adicionales, p.ej. 67.000).
+    if (!liquidadorAlfaTieneBaseIndemnizacion(doc.liquidador)) continue;
     const sanado = healAlfaMoneyDoc(doc);
     const patch = {};
     const afterForExcel = { ...doc };
