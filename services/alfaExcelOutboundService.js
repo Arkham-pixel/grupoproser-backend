@@ -1826,14 +1826,18 @@ export async function syncMissingArnaldCasosToAlfaExcel({
           });
           continue;
         }
-        // Último freno: cualquier fila con la misma cédula ya existe → no duplicar.
-        if (excelN > 0) {
+        // Misma cédula ya en Excel, pero excelN < mongoN: otro riesgo (dir/crédito distinto).
+        // Solo bloquear si el caso no trae dir ni crédito para diferenciarse.
+        const dirCaso = normKeyAddress(caso?.direccionPredio);
+        const credCaso = normKeyCredit(caso?.numeroCredito);
+        if (excelN > 0 && !dirCaso && !credCaso) {
           idCapSkipped += 1;
           logOut('ALFA_EXCEL_APPEND_ID_EXISTS_SKIP', {
             consecutivo: caso.consecutivo || null,
             identificacion: id,
             excelRowsForId: excelN,
             mongoCasesForId: mongoN,
+            reason: 'same_id_no_dir_no_credito',
           });
           continue;
         }
