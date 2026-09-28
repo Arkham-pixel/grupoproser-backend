@@ -403,10 +403,10 @@ export function buildAlfaListadoPipeline({ filtro = {}, skip = 0, limit = 25 } =
         // Aprox. sin leer presupuesto/detalle (evita timeout en listados grandes).
         tieneLiquidadorConContenido: { $eq: [{ $type: '$liquidador' }, 'object'] },
         _liquidadorSlim: {
+          // Sin otrosAmparos ni solo aiu: el front no debe recalcular liquidado en listado.
           cotizacionesPdf: '$liquidador.cotizacionesPdf',
           cotizacionPdf: '$liquidador.cotizacionPdf',
           liquidacionCotizacionPdf: '$liquidador.liquidacionCotizacionPdf',
-          otrosAmparos: '$liquidador.otrosAmparos',
           valorReclamadoCaso: '$liquidador.valorReclamadoCaso',
           encabezado: {
             valorAseguradoSid: '$liquidador.encabezado.valorAseguradoSid',

@@ -648,10 +648,27 @@ const ALFA_CAMPOS_CONTROL_LIQUIDACION = [
 
 function sanitizarCasoAlfaParaListado(doc) {
   if (!doc || typeof doc !== 'object') return doc;
-  const out = healAlfaMoneyDoc(doc);
-  // Listado: no enviar liquidador/informe (pueden ir firmas/fotos en base64).
+  // Listado/reporte: NO recalcular montos desde liquidador slim (solo otrosAmparos).
+  // Eso dejaba valorLiquidado = coberturas adicionales (p.ej. 67.000) y pisaba Mongo.
+  const out = { ...doc };
   delete out.liquidador;
   delete out.informeUnico;
+  for (const f of ALFA_CAMPOS_PESOS) {
+    if (out[f] == null || out[f] === '') continue;
+    if (
+      (f === 'valorReclamado' || f === 'valorLiquidado') &&
+      pareceIdentificacionComoMontoAlfa(out[f], out.identificacion)
+    ) {
+      out[f] = null;
+      continue;
+    }
+    const p = normalizeMoneyOficial(
+      out[f],
+      f === 'valorReclamado' || f === 'valorLiquidado' ? out.identificacion : undefined,
+      f
+    );
+    if (p != null) out[f] = p;
+  }
   return out;
 }
 
@@ -773,8 +790,7 @@ async function ejecutarListadoCasosAlfa(req) {
           SegurosAlfaCaso.countDocuments({ excluidoBaseAlfa: true }).maxTimeMS(30000),
         ]).then(([all, excluidos]) => Math.max(0, all - excluidos));
   const [total, documentos] = await Promise.all([countPromise, listQuery]);
-  // Persistir montos saneados (listado ya trae liquidador slim para recalcular).
-  void persistAlfaMontosInflados(documentos);
+  // No persistir “sanidad” de montos en listado: el liquidador slim corrompía valorLiquidado.
   return {
     success: true,
     total,
