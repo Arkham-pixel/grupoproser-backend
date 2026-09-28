@@ -32,7 +32,7 @@ let lastErr = null;
 let result = null;
 for (let attempt = 1; attempt <= 10; attempt += 1) {
   try {
-    result = await syncMissingArnaldCasosToAlfaExcel({ batchSize: 80 });
+    result = await syncMissingArnaldCasosToAlfaExcel({ apply: true, batchSize: 80 });
     lastErr = null;
     console.log('append_result', JSON.stringify(result));
     break;

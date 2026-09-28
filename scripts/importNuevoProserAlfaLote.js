@@ -144,8 +144,7 @@ let excel = null;
 let lastErr = null;
 for (let attempt = 1; attempt <= 6; attempt += 1) {
   try {
-    excel = await syncMissingArnaldCasosToAlfaExcel({
-      batchSize: ids.length,
+    excel = await syncMissingArnaldCasosToAlfaExcel({ apply: true, batchSize: ids.length,
       identificaciones: ids,
     });
     lastErr = null;

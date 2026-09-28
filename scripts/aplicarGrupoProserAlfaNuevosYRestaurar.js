@@ -260,8 +260,7 @@ let lastErr = null;
 if (idsForExcel.length) {
   for (let attempt = 1; attempt <= 6; attempt += 1) {
     try {
-      excel = await syncMissingArnaldCasosToAlfaExcel({
-        batchSize: Math.min(80, idsForExcel.length),
+      excel = await syncMissingArnaldCasosToAlfaExcel({ apply: true, batchSize: Math.min(80, idsForExcel.length),
         identificaciones: idsForExcel,
       });
       lastErr = null;

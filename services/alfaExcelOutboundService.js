@@ -1752,6 +1752,8 @@ function refreshAlfaExcelAutoFilter(ws) {
 export async function syncMissingArnaldCasosToAlfaExcel({
   batchSize = 120,
   identificaciones = null,
+  /** false = solo reporta; no escribe filas (default seguro anti-duplicados). */
+  apply = false,
 } = {}) {
   const resolved = await resolveSourceExcel();
   if (isAlfaExcelFinalProtectedName(resolved.fileName)) {
@@ -1780,11 +1782,36 @@ export async function syncMissingArnaldCasosToAlfaExcel({
         ? { identificacion: { $in: identificaciones.map((v) => String(v).trim()) } }
         : {};
     const casos = await SegurosAlfaCaso.find(idFilter).lean();
+
+    // Cuántas filas Excel / casos Mongo por cédula (anti-duplicado).
+    const excelCountById = new Map();
+    for (const row of excelRows) {
+      const id = normId(row?.payload?.identificacion);
+      if (!id) continue;
+      excelCountById.set(id, (excelCountById.get(id) || 0) + 1);
+    }
+    const mongoCountById = new Map();
+    for (const caso of casos) {
+      const id = normId(caso.identificacion);
+      if (!id) continue;
+      mongoCountById.set(id, (mongoCountById.get(id) || 0) + 1);
+    }
+
     const missing = [];
     let softSkipped = 0;
+    let idCapSkipped = 0;
     for (const caso of casos) {
       const id = normId(caso.identificacion);
       if (!id || String(id).length < 5) continue;
+
+      // Si Excel ya tiene ≥ filas que casos Mongo con esa cédula, NUNCA append.
+      const excelN = excelCountById.get(id) || 0;
+      const mongoN = mongoCountById.get(id) || 0;
+      if (excelN > 0 && excelN >= mongoN) {
+        idCapSkipped += 1;
+        continue;
+      }
+
       try {
         findExcelRowForCase(caso, excelRows);
       } catch (e) {
@@ -1799,6 +1826,17 @@ export async function syncMissingArnaldCasosToAlfaExcel({
           });
           continue;
         }
+        // Último freno: cualquier fila con la misma cédula ya existe → no duplicar.
+        if (excelN > 0) {
+          idCapSkipped += 1;
+          logOut('ALFA_EXCEL_APPEND_ID_EXISTS_SKIP', {
+            consecutivo: caso.consecutivo || null,
+            identificacion: id,
+            excelRowsForId: excelN,
+            mongoCasesForId: mongoN,
+          });
+          continue;
+        }
         missing.push(caso);
       }
     }
@@ -1809,6 +1847,8 @@ export async function syncMissingArnaldCasosToAlfaExcel({
         excelRowsBefore,
         appended: totalAppended,
         softSkipped,
+        idCapSkipped,
+        apply,
         rounds: round,
         done: true,
       });
@@ -1816,9 +1856,35 @@ export async function syncMissingArnaldCasosToAlfaExcel({
         appended: totalAppended,
         missing: 0,
         softSkipped,
+        idCapSkipped,
+        apply,
         excelRowsBefore,
         excelRowsAfter: excelRowsBefore + totalAppended,
         fileName,
+      };
+    }
+
+    if (!apply) {
+      logOut('ALFA_EXCEL_APPEND_DRY_RUN', {
+        fileName,
+        wouldAppend: missing.length,
+        softSkipped,
+        idCapSkipped,
+        sample: missing.slice(0, 10).map((c) => ({
+          consecutivo: c.consecutivo,
+          identificacion: c.identificacion,
+        })),
+      });
+      return {
+        appended: 0,
+        missing: missing.length,
+        softSkipped,
+        idCapSkipped,
+        apply: false,
+        excelRowsBefore,
+        excelRowsAfter: excelRowsBefore,
+        fileName,
+        dryRun: true,
       };
     }
 

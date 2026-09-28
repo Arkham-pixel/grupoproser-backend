@@ -51,24 +51,28 @@ export function iniciarCronAlfaExcelEstadoReconcile() {
       }
       running = true;
       try {
-        // 1) Filas ARNALD que aún no están en Excel
+        // 1) Filas ARNALD faltantes: SOLO dry-run (apply:false).
+        // El append automático recreaba duplicados (póliza distinta / mismo riesgo).
         let appendSummary = null;
         try {
-          appendSummary = await syncMissingArnaldCasosToAlfaExcel({ batchSize: 80 });
-          if (appendSummary?.appended > 0) {
+          appendSummary = await syncMissingArnaldCasosToAlfaExcel({
+            batchSize: 80,
+            apply: false,
+          });
+          if (appendSummary?.missing > 0) {
             console.log(
-              `➕ Alfa Excel append-missing: appended=${appendSummary.appended} rowsAfter=${appendSummary.excelRowsAfter} file=${appendSummary.fileName}`
+              `ℹ️ Alfa Excel missing-rows (sin append): wouldAppend=${appendSummary.missing} softSkipped=${appendSummary.softSkipped || 0} idCapSkipped=${appendSummary.idCapSkipped || 0} file=${appendSummary.fileName}`
             );
           }
         } catch (appendErr) {
-          console.error('❌ Error append-missing Alfa Excel:', appendErr.message);
+          console.error('❌ Error audit-missing Alfa Excel:', appendErr.message);
         }
 
         // 2) Estados de cierre desfasados
         const summary = await reconcileAlfaExcelEstadoGaps({ apply: true });
-        if (summary.gaps > 0 || summary.enqueued > 0 || (appendSummary?.appended || 0) > 0) {
+        if (summary.gaps > 0 || summary.enqueued > 0 || (appendSummary?.missing || 0) > 0) {
           console.log(
-            `🔁 Alfa Excel estado-reconcile: gaps=${summary.gaps} enqueued=${summary.enqueued} missingRows=${summary.missingRows || 0} appended=${appendSummary?.appended || 0} file=${summary.fileName}`
+            `🔁 Alfa Excel estado-reconcile: gaps=${summary.gaps} enqueued=${summary.enqueued} missingRows=${summary.missingRows || 0} wouldAppend=${appendSummary?.missing || 0} file=${summary.fileName}`
           );
         }
       } catch (error) {

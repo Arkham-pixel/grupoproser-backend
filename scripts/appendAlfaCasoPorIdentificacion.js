@@ -43,8 +43,7 @@ let result = null;
 let lastErr = null;
 for (let attempt = 1; attempt <= 6; attempt += 1) {
   try {
-    result = await syncMissingArnaldCasosToAlfaExcel({
-      batchSize: 1,
+    result = await syncMissingArnaldCasosToAlfaExcel({ apply: true, batchSize: 1,
       identificaciones: [id],
     });
     lastErr = null;

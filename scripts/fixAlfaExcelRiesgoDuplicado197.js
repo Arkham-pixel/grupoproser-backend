@@ -79,8 +79,7 @@ for (const caso of casos) {
 let append = null;
 for (let i = 1; i <= 6; i += 1) {
   try {
-    append = await syncMissingArnaldCasosToAlfaExcel({
-      batchSize: 20,
+    append = await syncMissingArnaldCasosToAlfaExcel({ apply: true, batchSize: 20,
       identificaciones: ['1130615893'],
     });
     console.log('append', append);

@@ -104,8 +104,7 @@ const ids = [...new Set(casos.map((c) => String(c.identificacion || '')).filter(
 let append = null;
 for (let i = 1; i <= 8; i += 1) {
   try {
-    append = await syncMissingArnaldCasosToAlfaExcel({
-      batchSize: 20,
+    append = await syncMissingArnaldCasosToAlfaExcel({ apply: true, batchSize: 20,
       identificaciones: ids,
     });
     console.log('append', append);
