@@ -82,6 +82,7 @@
         text-shadow: 0 1px 2px rgba(0,0,0,.6);
       }
       .msg { padding: 10px 12px; border-radius: 12px; font-size: 14px; margin-bottom: 12px; }
+      .hidden { display: none !important; }
       body.in-call .msg { position: fixed; left: 12px; right: 12px; top: 32px; z-index: 7; margin: 0; }
       .err { background: #fef2f2; color: #b91c1c; }
       .ok { background: #ecfdf5; color: #047857; }
@@ -204,6 +205,13 @@
       let facingMode = 'user';
       let callEnded = false;
 
+      function showAlert(msg, ok) {
+        if (!alertBox) return;
+        alertBox.className = 'msg ' + (ok ? 'ok' : 'err');
+        alertBox.style.display = 'block';
+        alertBox.textContent = String(msg || '');
+      }
+
       function sesionCerrada(s) {
         return s && (s.estado === 'finalizada' || s.estado === 'cancelada');
       }
@@ -309,27 +317,40 @@
         el.style.position = 'absolute';
       }
       function videoConstraints() {
-        // 720×1280: FOV amplio. 1080×1920 / 4K recorta el sensor en muchas frontales.
-        const base = {
+        // FOV amplio; sin advanced/zoom (rompe WebViews de WhatsApp).
+        return {
           facingMode: { ideal: facingMode },
           width: { ideal: 720 },
           height: { ideal: 1280 },
           frameRate: { ideal: 24 },
         };
-        if (facingMode === 'user') {
-          return Object.assign({}, base, {
-            resizeMode: 'none',
-            advanced: [{ zoom: 1.0 }],
-          });
+      }
+      async function pedirCamara() {
+        if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+          throw new Error('Abra este enlace en Safari o Chrome (no en WhatsApp/Gmail).');
         }
-        return base;
+        const intentos = [
+          { video: videoConstraints(), audio: true },
+          { video: { facingMode: { ideal: facingMode } }, audio: true },
+          { video: true, audio: true },
+          { video: true, audio: false },
+        ];
+        let lastErr = null;
+        for (let i = 0; i < intentos.length; i++) {
+          try {
+            return await navigator.mediaDevices.getUserMedia(intentos[i]);
+          } catch (err) {
+            lastErr = err;
+          }
+        }
+        throw lastErr || new Error('Permita cámara y micrófono para continuar.');
       }
       function html(s) {
         return String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
       }
       async function load() {
         const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 20000) : null;
+        const timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 12000) : null;
         let r;
         try {
           r = await fetch(api, ctrl ? { signal: ctrl.signal } : undefined);
@@ -585,10 +606,7 @@
           if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
             throw new Error('Abra este enlace en Safari o Chrome (no en Gmail).');
           }
-          previewStream = await navigator.mediaDevices.getUserMedia({
-            video: videoConstraints(),
-            audio: true,
-          });
+          previewStream = await pedirCamara();
           if (localEl) {
             localEl.srcObject = previewStream;
             localEl.muted = true;
@@ -790,10 +808,11 @@
 
       (async () => {
         if (!token) {
-          showAlert('Enlace incompleto');
-          panel.textContent = '';
+          try { showAlert('Enlace incompleto'); } catch (_) {}
+          if (panel) panel.innerHTML = '<p class="hint">Enlace incompleto. Pida un nuevo link al ajustador.</p>';
           return;
         }
+        if (panel) panel.innerHTML = '<p class="hint">Cargando sesión…</p>';
         try {
           await load();
           if (sesionCerrada(sesion)) {
@@ -802,8 +821,11 @@
           }
           renderWelcome();
         } catch (e) {
-          showAlert(e.message);
-          panel.textContent = '';
+          var msg = (e && e.message) || 'No se pudo cargar la sesión';
+          try { showAlert(msg); } catch (_) {}
+          if (panel) {
+            panel.innerHTML = '<p class="hint">' + html(msg) + '</p><p class="hint">Si abrió desde WhatsApp, toque ⋮ → Abrir en Chrome o Safari.</p>';
+          }
         }
       })();
     </script>
