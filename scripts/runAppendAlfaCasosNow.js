@@ -6,6 +6,8 @@ import '../config/loadEnv.js';
 import mongoose from 'mongoose';
 import AlfaExcelOutboundUpdate from '../models/AlfaExcelOutboundUpdate.js';
 import { syncMissingArnaldCasosToAlfaExcel } from '../services/alfaExcelOutboundService.js';
+
+process.env.ALLOW_ALFA_EXCEL_APPEND = '1';
 import { parseAlfaExcelBuffer } from '../services/alfaExcelImportService.js';
 import {
   resolveDriveContext,

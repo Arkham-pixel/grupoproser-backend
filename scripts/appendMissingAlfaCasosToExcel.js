@@ -7,6 +7,9 @@ import '../config/loadEnv.js';
 import mongoose from 'mongoose';
 import { syncMissingArnaldCasosToAlfaExcel } from '../services/alfaExcelOutboundService.js';
 
+// Freno duro en syncMissing: exige ALLOW_ALFA_EXCEL_APPEND=1 además de apply:true.
+process.env.ALLOW_ALFA_EXCEL_APPEND = '1';
+
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }

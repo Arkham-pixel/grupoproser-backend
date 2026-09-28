@@ -1864,12 +1864,18 @@ export async function syncMissingArnaldCasosToAlfaExcel({
       };
     }
 
-    if (!apply) {
+    // Append solo con apply:true Y ALLOW_ALFA_EXCEL_APPEND=1 (freno duro anti-duplicados).
+    const appendAllowed =
+      apply === true &&
+      String(process.env.ALLOW_ALFA_EXCEL_APPEND || '').trim() === '1';
+    if (!appendAllowed) {
       logOut('ALFA_EXCEL_APPEND_DRY_RUN', {
         fileName,
         wouldAppend: missing.length,
         softSkipped,
         idCapSkipped,
+        applyRequested: apply === true,
+        allowEnv: String(process.env.ALLOW_ALFA_EXCEL_APPEND || ''),
         sample: missing.slice(0, 10).map((c) => ({
           consecutivo: c.consecutivo,
           identificacion: c.identificacion,
@@ -1885,6 +1891,7 @@ export async function syncMissingArnaldCasosToAlfaExcel({
         excelRowsAfter: excelRowsBefore,
         fileName,
         dryRun: true,
+        blockedWithoutAllowEnv: apply === true,
       };
     }
 

@@ -7,6 +7,8 @@ import mongoose from 'mongoose';
 import SegurosAlfaCaso from '../models/SegurosAlfaCaso.js';
 import { syncMissingArnaldCasosToAlfaExcel } from '../services/alfaExcelOutboundService.js';
 
+process.env.ALLOW_ALFA_EXCEL_APPEND = '1';
+
 const id = String(process.argv[2] || '').trim();
 if (!id) {
   console.error('Uso: node scripts/appendAlfaCasoPorIdentificacion.js <identificacion>');

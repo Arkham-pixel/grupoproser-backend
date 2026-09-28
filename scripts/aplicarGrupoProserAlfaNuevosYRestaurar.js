@@ -29,6 +29,8 @@ import { syncMissingArnaldCasosToAlfaExcel } from '../services/alfaExcelOutbound
 import { normalizeIdentification as normId } from '../utils/alfaIdentification.js';
 import { homologarEstadoAlfa } from '../config/alfaExcelStatuses.js';
 
+process.env.ALLOW_ALFA_EXCEL_APPEND = '1';
+
 const APPLY = process.argv.includes('--apply');
 const EXCEL = path.resolve(
   process.argv.find((a) => a.endsWith('.xlsx') && !a.includes('--')) ||

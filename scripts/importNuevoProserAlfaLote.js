@@ -29,6 +29,8 @@ import { ALFA_EXCEL_UPDATABLE_FIELDS } from '../config/alfaExcelColumnMap.js';
 import { syncMissingArnaldCasosToAlfaExcel } from '../services/alfaExcelOutboundService.js';
 import { normalizeIdentification as normId } from '../utils/alfaIdentification.js';
 
+process.env.ALLOW_ALFA_EXCEL_APPEND = '1';
+
 const APPLY = process.argv.includes('--apply');
 const EXCEL = path.resolve(
   process.argv.find((a) => a.endsWith('.xlsx')) ||

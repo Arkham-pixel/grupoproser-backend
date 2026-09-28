@@ -21,6 +21,8 @@ import { parseAlfaExcelBuffer } from '../services/alfaExcelImportService.js';
 import { downloadDriveItemBuffer } from '../services/microsoftGraphService.js';
 import AlfaExcelSharePointSource from '../models/AlfaExcelSharePointSource.js';
 
+process.env.ALLOW_ALFA_EXCEL_APPEND = '1';
+
 const CAMPOS = [
   'valorReclamado',
   'valorLiquidado',

@@ -23,6 +23,8 @@ import { parseAlfaExcelBuffer } from '../services/alfaExcelImportService.js';
 import { downloadDriveItemBuffer } from '../services/microsoftGraphService.js';
 import { isAlfaExcelFinalProtectedName } from '../utils/alfaExcelSharePointPath.js';
 
+process.env.ALLOW_ALFA_EXCEL_APPEND = '1';
+
 const TARGETS = [
   'ALFA-2026-08-159',
   'ALFA-2026-08-201',

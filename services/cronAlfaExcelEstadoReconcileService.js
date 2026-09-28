@@ -6,7 +6,7 @@
 
 import cron from 'node-cron';
 import { getAlfaExcelOutboundConfig } from '../config/alfaExcelOutbound.js';
-import { reconcileAlfaExcelEstadoGaps, syncMissingArnaldCasosToAlfaExcel } from './alfaExcelOutboundService.js';
+import { reconcileAlfaExcelEstadoGaps } from './alfaExcelOutboundService.js';
 import { isAlfaExcelOutboundCycleRunning } from '../workers/alfaExcelOutboundWorker.js';
 import { isSharePointConfigured } from '../config/sharepoint.js';
 
@@ -51,28 +51,15 @@ export function iniciarCronAlfaExcelEstadoReconcile() {
       }
       running = true;
       try {
-        // 1) Filas ARNALD faltantes: SOLO dry-run (apply:false).
-        // El append automático recreaba duplicados (póliza distinta / mismo riesgo).
-        let appendSummary = null;
-        try {
-          appendSummary = await syncMissingArnaldCasosToAlfaExcel({
-            batchSize: 80,
-            apply: false,
-          });
-          if (appendSummary?.missing > 0) {
-            console.log(
-              `ℹ️ Alfa Excel missing-rows (sin append): wouldAppend=${appendSummary.missing} softSkipped=${appendSummary.softSkipped || 0} idCapSkipped=${appendSummary.idCapSkipped || 0} file=${appendSummary.fileName}`
-            );
-          }
-        } catch (appendErr) {
-          console.error('❌ Error audit-missing Alfa Excel:', appendErr.message);
-        }
+        // Append de filas faltantes DESHABILITADO (recreaba duplicados).
+        // No llamar syncMissing aquí: producción con código viejo aún podía append.
+        const appendSummary = null;
 
-        // 2) Estados de cierre desfasados
+        // Estados de cierre desfasados
         const summary = await reconcileAlfaExcelEstadoGaps({ apply: true });
-        if (summary.gaps > 0 || summary.enqueued > 0 || (appendSummary?.missing || 0) > 0) {
+        if (summary.gaps > 0 || summary.enqueued > 0) {
           console.log(
-            `🔁 Alfa Excel estado-reconcile: gaps=${summary.gaps} enqueued=${summary.enqueued} missingRows=${summary.missingRows || 0} wouldAppend=${appendSummary?.missing || 0} file=${summary.fileName}`
+            `🔁 Alfa Excel estado-reconcile: gaps=${summary.gaps} enqueued=${summary.enqueued} missingRows=${summary.missingRows || 0} file=${summary.fileName}`
           );
         }
       } catch (error) {
