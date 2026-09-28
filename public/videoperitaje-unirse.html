@@ -671,7 +671,12 @@
           room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, _pub, participant) => {
             if (participant.isLocal) return;
             if (track.kind === 'audio' || track.kind === LivekitClient.Track.Kind.Audio) {
-              track.attach();
+              const audioEl = track.attach();
+              if (audioEl) {
+                audioEl.autoplay = true;
+                audioEl.play && audioEl.play().catch(function () {});
+              }
+              if (room.startAudio) room.startAudio().catch(function () {});
             }
             if (track.kind === 'video' || track.kind === LivekitClient.Track.Kind.Video) {
               track.attach(remoteEl);
@@ -682,6 +687,19 @@
               if (status) status.style.display = 'none';
             }
           });
+          room.on(LivekitClient.RoomEvent.AudioPlaybackStatusChanged, function () {
+            if (room.canPlaybackAudio) return;
+            if (status) {
+              status.style.display = '';
+              status.textContent = 'Toque la pantalla para oír al ajustador';
+            }
+          });
+          // Un toque en la llamada desbloquea audio (política autoplay del celular).
+          const unlockAudio = function () {
+            if (room.startAudio) room.startAudio().catch(function () {});
+          };
+          document.body.addEventListener('click', unlockAudio, { passive: true });
+          document.body.addEventListener('touchstart', unlockAudio, { passive: true });
           let reconnecting = false;
           room.on(LivekitClient.RoomEvent.Disconnected, async () => {
             soltarCamara(room);
@@ -731,8 +749,21 @@
             } catch (_) {}
           });
           await room.connect(lk.url, lk.token);
+          try {
+            if (room.startAudio) await room.startAudio();
+          } catch (_) {}
           if (previewStream) {
-            previewStream.getTracks().forEach(function (track) {
+            const vids = previewStream.getVideoTracks();
+            const auds = previewStream.getAudioTracks();
+            // Mic vía LiveKit (no amarrado al preview) para que no se corte.
+            try {
+              await room.localParticipant.setMicrophoneEnabled(true);
+            } catch (_) {
+              auds.forEach(function (track) {
+                room.localParticipant.publishTrack(track).catch(function () {});
+              });
+            }
+            vids.forEach(function (track) {
               room.localParticipant.publishTrack(track).catch(function () {});
             });
           } else {
