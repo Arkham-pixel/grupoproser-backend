@@ -372,7 +372,17 @@ export async function verificarVentanaLlamada(sesion) {
 
   if (videoperitajeSdkConfigurado()) {
     try {
-      const data = await sdkPuedeIniciarLlamada(String(sesion._id));
+      let data = await sdkPuedeIniciarLlamada(String(sesion._id));
+      // Tras cambio de servidor SDK, la sesión puede existir en Mongo pero no en PG.
+      // Re-registrar una vez y reintentar (también cubre registro fallido al crear).
+      if (!data.permitido && String(data.motivo || '') === 'sesion_no_encontrada') {
+        softLog(
+          new Error(`mongo ${sesion._id} ausente en SDK; re-registrando`),
+          'verificarVentanaLlamada.reconcile'
+        );
+        await registrarSesionPostgres(sesion, {});
+        data = await sdkPuedeIniciarLlamada(String(sesion._id));
+      }
       if (!data.permitido) {
         return {
           ok: false,
