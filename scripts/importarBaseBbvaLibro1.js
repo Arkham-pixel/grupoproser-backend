@@ -45,10 +45,17 @@ const fechaDia = (valor) => {
 };
 
 const homologarRamo = (valor) => {
+  // Celdas corridas: a veces Ramo trae serial Excel de fecha (ej. 46287 = 2026-09-22)
+  if (typeof valor === 'number' && Number.isFinite(valor) && valor > 40000 && valor < 60000) {
+    return { tipoPoliza: 'HOGAR', tipoPolizaOtro: '' };
+  }
   const t = toTxt(valor)
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
     .toUpperCase();
+  if (/^\d{5}$/.test(t) && Number(t) > 40000 && Number(t) < 60000) {
+    return { tipoPoliza: 'HOGAR', tipoPolizaOtro: '' };
+  }
   if (t === 'HOMEOWNERS' || t === 'HOGAR') return { tipoPoliza: 'HOGAR', tipoPolizaOtro: '' };
   if (t === 'PROPERTY' || t === 'INCENDIO') return { tipoPoliza: 'INCENDIO', tipoPolizaOtro: '' };
   if (!t) return { tipoPoliza: '', tipoPolizaOtro: '' };

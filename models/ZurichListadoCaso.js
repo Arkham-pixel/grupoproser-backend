@@ -112,6 +112,7 @@ const ZurichListadoCasoSchema = new mongoose.Schema(
 );
 
 ZurichListadoCasoSchema.index({ zc: 1 }, { unique: false, sparse: true });
+ZurichListadoCasoSchema.index({ createdAt: -1 }, { name: 'idx_lista_createdAt' });
 
 ZurichListadoCasoSchema.add({
   tomador: String,

@@ -107,6 +107,7 @@ const BbvaCatListadoCasoSchema = new mongoose.Schema(
 );
 
 BbvaCatListadoCasoSchema.index({ zc: 1 }, { unique: false, sparse: true });
+BbvaCatListadoCasoSchema.index({ createdAt: -1 }, { name: 'idx_lista_createdAt' });
 aplicarCamposAgendaCatastrofico(BbvaCatListadoCasoSchema);
 aplicarPluginNotificacionesOperativas(BbvaCatListadoCasoSchema, { modulo: 'bbvaCatListado' });
 

@@ -12,6 +12,7 @@ import { aplicarRestriccionRolCaso } from '../utils/permisosCasoPorRol.js';
 import { resolverLiquidadorParaUpdate } from '../utils/protegerPresupuestoNsr10.js';
 import { aplicarFechaAccionEstadoBbvaCat, homologarEstadoBbvaCat } from '../utils/estadosBbvaCat.js';
 import { homologarCiudadBbvaCat } from '../utils/ciudadesBbvaCat.js';
+import { contarDocumentosLista } from '../utils/contarDocumentosLista.js';
 import {
   geocodeCasosBbvaCatPendientes,
   aplicarUbicacionesPredioBbvaCat,
@@ -714,11 +715,12 @@ export const listarCasosBbvaCat = async (req, res) => {
     const skip = (Number(page) - 1) * Number(limit);
     const filtro = debeFiltrarChecklistParaUsuario(req) ? filtroMongoChecklistCatLleno() : {};
     const [total, documentos] = await Promise.all([
-      BbvaCatCaso.countDocuments(filtro),
+      contarDocumentosLista(BbvaCatCaso, filtro),
       BbvaCatCaso.find(filtro)
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(Number(limit)),
+        .limit(Number(limit))
+        .lean(),
     ]);
 
     res.json({

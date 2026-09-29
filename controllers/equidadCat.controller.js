@@ -8,6 +8,7 @@ import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
 import { rechazarSiFranjaOcupada } from '../services/agendaCatastroficoService.js';
 import { aplicarFechaAccionEstadoEquidadCat, homologarEstadoEquidadCat } from '../utils/estadosEquidadCat.js';
 import { crearControladoresArchivosListado } from '../utils/archivosCasoListado.js';
+import { contarDocumentosLista } from '../utils/contarDocumentosLista.js';
 
 const esVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null';
@@ -323,7 +324,7 @@ export const listarCasosListadoEquidadCat = async (req, res) => {
     const { limit = 25, page = 1 } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
     const [total, documentos] = await Promise.all([
-      EquidadCatCaso.countDocuments({}),
+      contarDocumentosLista(EquidadCatCaso),
       EquidadCatCaso.find({})
         .sort({ createdAt: -1 })
         .skip(skip)

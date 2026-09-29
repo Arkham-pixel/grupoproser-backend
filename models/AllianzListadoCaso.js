@@ -109,6 +109,7 @@ const AllianzListadoCasoSchema = new mongoose.Schema(
 );
 
 AllianzListadoCasoSchema.index({ zc: 1 }, { unique: false, sparse: true });
+AllianzListadoCasoSchema.index({ createdAt: -1 }, { name: 'idx_lista_createdAt' });
 aplicarCamposAgendaCatastrofico(AllianzListadoCasoSchema);
 aplicarPluginNotificacionesOperativas(AllianzListadoCasoSchema, { modulo: 'allianzListado' });
 

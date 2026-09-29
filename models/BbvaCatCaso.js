@@ -223,6 +223,7 @@ const BbvaCatCasoSchema = new mongoose.Schema(
 );
 
 aplicarCamposAgendaCatastrofico(BbvaCatCasoSchema);
+BbvaCatCasoSchema.index({ createdAt: -1 }, { name: 'idx_lista_createdAt' });
 aplicarPluginNotificacionesOperativas(BbvaCatCasoSchema, { modulo: 'bbvaCat' });
 
 const BbvaCatCaso = mongoose.model(

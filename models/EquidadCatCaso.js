@@ -124,6 +124,7 @@ const EquidadCatCasoSchema = new mongoose.Schema(
 );
 
 EquidadCatCasoSchema.index({ zc: 1 }, { unique: false, sparse: true });
+EquidadCatCasoSchema.index({ createdAt: -1 }, { name: 'idx_lista_createdAt' });
 aplicarCamposAgendaCatastrofico(EquidadCatCasoSchema);
 aplicarPluginNotificacionesOperativas(EquidadCatCasoSchema, { modulo: 'equidadCat' });
 

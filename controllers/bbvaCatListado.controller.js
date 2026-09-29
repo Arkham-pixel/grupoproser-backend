@@ -9,6 +9,7 @@ import { rutaArchivoSigueEnUsoBbvaCat } from '../utils/espejarArchivoBbvaCatEnLi
 import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
 import { rechazarSiFranjaOcupada } from '../services/agendaCatastroficoService.js';
 import { aplicarValorLiquidadoDesdeLiquidadorBbva } from '../utils/valoresLiquidadorBbvaCat.js';
+import { contarDocumentosLista } from '../utils/contarDocumentosLista.js';
 
 const esVacio = (valor) =>
   valor === undefined || valor === null || valor === '' || valor === 'null';
@@ -387,7 +388,7 @@ export const listarCasosListadoBbvaCat = async (req, res) => {
     const quiereCompleto = String(completo || '') === '1' || String(completo || '') === 'true';
 
     const [total, documentos] = await Promise.all([
-      BbvaCatListadoCaso.countDocuments({}),
+      contarDocumentosLista(BbvaCatListadoCaso),
       quiereCompleto
         ? BbvaCatListadoCaso.find({}).sort({ createdAt: -1 }).skip(skip).limit(limite).lean()
         : BbvaCatListadoCaso.aggregate([

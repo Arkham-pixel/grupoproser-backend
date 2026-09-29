@@ -200,6 +200,7 @@ const ZurichCasoSchema = new mongoose.Schema(
 );
 
 aplicarCamposAgendaCatastrofico(ZurichCasoSchema);
+ZurichCasoSchema.index({ createdAt: -1 }, { name: 'idx_lista_createdAt' });
 aplicarPluginNotificacionesOperativas(ZurichCasoSchema, { modulo: 'zurich' });
 
 const ZurichCaso = mongoose.model(

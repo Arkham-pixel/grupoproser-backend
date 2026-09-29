@@ -29,6 +29,20 @@ tmp-inventario-*.mjs
 # One-shot CAT / Excel / HEIC pipeline (keep local, never deploy)
 scripts/_*.mjs
 scripts/_*.js
+scripts/_*.txt
+scripts/_out/
+scripts/auditAlfa*.js
+scripts/diffExcelPteVsKpi.js
+scripts/enviarArnaldHoyAExcel.mjs
+scripts/fixAlfa*.js
+scripts/habilitar_*.js
+scripts/inspeccionarLiquidadorPrevisora162.js
+scripts/listAlfa*.js
+scripts/listExcel*.js
+scripts/reemplazar_guillermo_por_santiago.js
+scripts/restaurarLiquidadorPrevisora162.js
+scripts/syncAlfaProcesoPago*.js
+scripts/verDraftPrevisora162.js
 scripts/aplicarLotesInformeIa.mjs
 scripts/llenarInformesPreliminaresZurichDesdeFotos.mjs
 scripts/syncReservaDesdePresupuestoZurich.mjs

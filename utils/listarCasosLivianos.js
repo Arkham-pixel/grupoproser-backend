@@ -5,6 +5,7 @@
  * Con strict:false, `.select('-informeUnico')` de Mongoose no recorta el documento.
  * Proyección de inclusión + banderas livianas (mismo patrón Zurich / BBVA listado).
  */
+import { contarDocumentosLista } from './contarDocumentosLista.js';
 
 export const quiereListaCompleta = (query = {}) => {
   const v = String(query?.completo ?? '').toLowerCase();
@@ -163,9 +164,6 @@ export async function listarCasosLivianos({
   const pagina = Math.max(1, Number(page) || 1);
   const skip = (pagina - 1) * limite;
 
-  const countQuery = Model.countDocuments(filtro || {});
-  if (collation) countQuery.collation(collation);
-
   let dataQuery;
   if (quiereCompleto) {
     dataQuery = Model.find(filtro || {})
@@ -192,7 +190,10 @@ export async function listarCasosLivianos({
     if (collation) dataQuery.collation(collation);
   }
 
-  const [total, documentos] = await Promise.all([countQuery, dataQuery]);
+  const [total, documentos] = await Promise.all([
+    contarDocumentosLista(Model, filtro || {}, { collation }),
+    dataQuery,
+  ]);
   return {
     total,
     page: pagina,

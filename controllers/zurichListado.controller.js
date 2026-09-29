@@ -18,6 +18,7 @@ import { aplicarReservaDesdePresupuestoZurich, fusionarInformeUnicoZurich } from
 import { aplicarLiderZurich } from '../utils/filtrarCatalogoPorModulo.js';
 import { TORRE_CONFIG_ZURICH } from '../config/zurichListadoTorre.js';
 import { notificarPersistenciaNativa } from '../services/notificacionesOperativasService.js';
+import { contarDocumentosLista } from '../utils/contarDocumentosLista.js';
 import { mapearFranjaAgenda } from '../utils/agendaCatastrofico.js';
 import { rechazarSiFranjaOcupada } from '../services/agendaCatastroficoService.js';
 import { aplicarCamposControlHorasZurich } from '../utils/controlHorasZurichPersist.js';
@@ -480,7 +481,7 @@ export const listarCasosListadoZurich = async (req, res) => {
     const quiereCompleto = String(completo || '') === '1' || String(completo || '') === 'true';
 
     const [total, documentos] = await Promise.all([
-      ZurichListadoCaso.countDocuments({}),
+      contarDocumentosLista(ZurichListadoCaso),
       quiereCompleto
         ? ZurichListadoCaso.find({}).sort({ createdAt: -1 }).skip(skip).limit(limite).lean()
         : ZurichListadoCaso.aggregate([

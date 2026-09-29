@@ -18,6 +18,7 @@ import {
   homologarEstadoZurich,
 } from '../utils/estadosZurich.js';
 import { homologarCiudadZurich } from '../utils/ciudadesBbvaCat.js';
+import { contarDocumentosLista } from '../utils/contarDocumentosLista.js';
 import { homologarCausaZurich } from '../utils/causasZurich.js';
 import { aplicarReservaDesdePresupuestoZurich, fusionarInformeUnicoZurich } from '../utils/reservaPresupuestoZurich.js';
 import { aplicarLiderZurich } from '../utils/filtrarCatalogoPorModulo.js';
@@ -776,11 +777,12 @@ export const listarCasosZurich = async (req, res) => {
     const skip = (Number(page) - 1) * Number(limit);
     const filtro = debeFiltrarChecklistParaUsuario(req) ? filtroMongoChecklistCatLleno() : {};
     const [total, documentos] = await Promise.all([
-      ZurichCaso.countDocuments(filtro),
+      contarDocumentosLista(ZurichCaso, filtro),
       ZurichCaso.find(filtro)
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(Number(limit)),
+        .limit(Number(limit))
+        .lean(),
     ]);
 
     res.json({
