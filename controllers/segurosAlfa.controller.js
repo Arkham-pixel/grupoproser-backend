@@ -1967,15 +1967,40 @@ export const postControlSeguimientoAlfaCheck = async (req, res) => {
 
 /**
  * POST /api/seguros-alfa/control-seguimiento/outbound-flush
- * Envía cola ARNALD → Excel SharePoint (manual; el cron debe estar OFF).
+ * Acepta el envío y procesa en segundo plano (evita timeout de proxy/navegador).
+ * El progreso se consulta en GET /control-seguimiento/status → outboundProgress.
  * Body opcional:
  * - forceResync: true → si cola vacía, alinea amarillas ARNALD→Excel solo donde difieren
  * - consecutivos: ['ALFA-…'] → fuerza sync de esos casos
  * - onlyWithMoney: true → (con forceResync) prioriza casos tipificados / con montos
  */
+let alfaOutboundFlushJobRunning = false;
+
 export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
   try {
+    const progNow = getAlfaExcelOutboundProgress();
+    const startedMs = progNow?.startedAt
+      ? new Date(progNow.startedAt).getTime()
+      : 0;
+    const stuckMs = 45 * 60 * 1000;
+    const stuck =
+      Boolean(progNow?.running) &&
+      startedMs > 0 &&
+      Date.now() - startedMs > stuckMs;
+
+    if (stuck) {
+      finishAlfaExcelOutboundProgress({
+        left: progNow?.left || 0,
+        synced: progNow?.synced || 0,
+        failed: progNow?.failed || 0,
+        roundsRun: progNow?.roundsRun || 0,
+        error: 'Envío anterior quedó atascado; se liberó el candado',
+      });
+      alfaOutboundFlushJobRunning = false;
+    }
+
     if (
+      alfaOutboundFlushJobRunning ||
       isAlfaExcelOutboundCycleRunning() ||
       getAlfaExcelOutboundProgress()?.running
     ) {
@@ -1984,12 +2009,14 @@ export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
         error: 'Ya hay un envío a Excel en curso. Espere un momento.',
         code: 'OUTBOUND_BUSY',
         outboundProgress: getAlfaExcelOutboundProgress(),
+        outboundBusy: true,
       });
     }
+
     const cfg = getAlfaExcelOutboundConfig();
     const maxRounds = Math.min(
       Math.max(Number(req.body?.maxRounds) || 8, 1),
-      30
+      40
     );
     const batchSize = req.body?.batchSize ?? cfg.batchSize;
     const consecutivos = Array.isArray(req.body?.consecutivos)
@@ -2006,148 +2033,182 @@ export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
     const startedByLogin = String(identidad?.login || identidad?.cedula || '').trim();
     const startedByName = String(identidad?.name || identidad?.nombre || '').trim();
 
-    // Contar cola real (pending + processing atascados + failed)
     let queueBefore = await getAlfaExcelOutboundQueueStats();
-
     startAlfaExcelOutboundProgress({
       startedByLogin,
       startedByName,
       peakTotal: queueBefore.total,
     });
+    alfaOutboundFlushJobRunning = true;
 
-    // Reintentar fallidos en este flush manual
-    try {
-      await AlfaExcelOutboundUpdate.updateMany(
-        { status: 'failed' },
-        {
-          $set: {
-            status: 'pending',
-            attempts: 0,
-            nextRetryAt: new Date(),
-            lastError: null,
-            lastErrorCode: null,
-          },
-        }
-      );
-      queueBefore = await getAlfaExcelOutboundQueueStats();
-      updateAlfaExcelOutboundProgress({
-        peakTotal: Math.max(queueBefore.total, getAlfaExcelOutboundProgress().peakTotal),
-        left: queueBefore.total,
-        label: 'Reencolando fallidos…',
-      });
-    } catch {
-      /* ignore */
-    }
-
-    let enqueueSummary = null;
-    if (consecutivos.length > 0) {
-      updateAlfaExcelOutboundProgress({ label: 'Encolando casos indicados…' });
-      enqueueSummary = await forceEnqueueAlfaExcelOutboundCases({
-        consecutivos,
-        limit: Math.max(consecutivos.length, 1),
-        diffAgainstExcel: true,
-      });
-    } else if (forceResync && queueBefore.total === 0) {
-      // Alinear Excel con ARNALD: solo celdas amarillas que realmente difieren
-      updateAlfaExcelOutboundProgress({ label: 'Comparando ARNALD vs Excel…' });
-      enqueueSummary = await forceEnqueueAlfaExcelOutboundCases({
-        onlyWithMoney: onlyWithMoney || true,
-        limit: enqueueLimit,
-        diffAgainstExcel: true,
-      });
-    }
-
-    queueBefore = await getAlfaExcelOutboundQueueStats();
-    updateAlfaExcelOutboundProgress({
-      peakTotal: Math.max(queueBefore.total, getAlfaExcelOutboundProgress().peakTotal),
-      left: queueBefore.total,
-      label:
-        queueBefore.total > 0
-          ? `Enviando a Excel… 0 de ${queueBefore.total}`
-          : 'Sin pendientes en cola',
+    // Responder YA: el trabajo sigue en background (Graph/SharePoint tarda minutos).
+    res.status(202).json({
+      success: true,
+      accepted: true,
+      async: true,
+      message:
+        'Envío iniciado. La barra de progreso se actualizará sola; no cierre la pestaña.',
+      outboundPending: queueBefore.total,
+      outboundQueue: queueBefore,
+      outboundProgress: getAlfaExcelOutboundProgress(),
+      outboundBusy: true,
     });
 
-    const started = Date.now();
-    let totalClaimed = 0;
-    let totalSynced = 0;
-    let totalFailed = 0;
-    let roundsRun = 0;
-
-    for (let i = 0; i < maxRounds; i += 1) {
-      const summary = await runAlfaExcelOutboundWorkerCycle({ batchSize });
-      if (summary?.skippedOverlapping) break;
-      roundsRun += 1;
-      totalClaimed += summary.claimed || 0;
-      totalSynced += summary.synced || 0;
-      totalFailed += summary.failed || 0;
-      const liveQueue = await getAlfaExcelOutboundQueueStats();
-      const prog = updateAlfaExcelOutboundProgress({
-        peakTotal: Math.max(liveQueue.total, getAlfaExcelOutboundProgress().peakTotal),
-        left: liveQueue.total,
-        synced: totalSynced,
-        failed: totalFailed,
-        roundsRun,
-      });
-      updateAlfaExcelOutboundProgress({
-        label: `Enviando a Excel… ${prog.done} de ${prog.peakTotal}`,
-      });
-      if (!(summary.claimed > 0)) break;
-    }
-
-    const outboundQueue = await getAlfaExcelOutboundQueueStats();
-    const flush = {
-      claimed: totalClaimed,
-      synced: totalSynced,
-      failed: totalFailed,
-      pendingLeft: outboundQueue.total,
-      queueBefore: queueBefore.total,
-      roundsRun,
-      durationMs: Date.now() - started,
-      enqueue: enqueueSummary,
+    const jobOpts = {
+      maxRounds,
+      batchSize,
+      consecutivos,
+      forceResync,
+      onlyWithMoney,
+      enqueueLimit,
+      queueBeforeTotal: queueBefore.total,
     };
 
-    let message;
-    if (flush.synced > 0 || flush.claimed > 0) {
-      message = `Enviados ${flush.synced} caso(s) a Excel`;
-      if (enqueueSummary?.fieldsQueued > 0) {
-        message += ` (${enqueueSummary.fieldsQueued} campo(s) distintos)`;
-      }
-      if (outboundQueue.total > 0) {
-        message += `. Quedan ${outboundQueue.total} en cola (pulse de nuevo).`;
-      } else {
-        message += '. Cola vacía.';
-      }
-    } else if (enqueueSummary?.enqueued > 0) {
-      message = `Se detectaron ${enqueueSummary.enqueued} caso(s) distintos vs Excel (${enqueueSummary.fieldsQueued || 0} campos); pulse de nuevo para enviarlos.`;
-    } else if (enqueueSummary?.excelError) {
-      message = `No se pudo leer Excel para comparar: ${enqueueSummary.excelError}`;
-    } else if (queueBefore.total > 0) {
-      message = `Hay ${queueBefore.total} en cola pero no se pudo enviar en este intento. Pulse de nuevo.`;
-    } else {
-      message = 'Excel y ARNALD ya coinciden en columnas amarillas (nada pendiente).';
-    }
-    if (enqueueSummary?.enqueued && flush.synced > 0) {
-      message += ` (alineados ${enqueueSummary.enqueued}).`;
-    }
+    setImmediate(() => {
+      void (async () => {
+        try {
+          // Reintentar fallidos en este flush manual
+          try {
+            await AlfaExcelOutboundUpdate.updateMany(
+              { status: 'failed' },
+              {
+                $set: {
+                  status: 'pending',
+                  attempts: 0,
+                  nextRetryAt: new Date(),
+                  lastError: null,
+                  lastErrorCode: null,
+                },
+              }
+            );
+            const qb = await getAlfaExcelOutboundQueueStats();
+            updateAlfaExcelOutboundProgress({
+              peakTotal: Math.max(qb.total, getAlfaExcelOutboundProgress().peakTotal),
+              left: qb.total,
+              label: 'Reencolando fallidos…',
+            });
+          } catch {
+            /* ignore */
+          }
 
-    finishAlfaExcelOutboundProgress({
-      left: outboundQueue.total,
-      synced: totalSynced,
-      failed: totalFailed,
-      roundsRun,
-    });
+          let enqueueSummary = null;
+          if (jobOpts.consecutivos.length > 0) {
+            updateAlfaExcelOutboundProgress({ label: 'Encolando casos indicados…' });
+            enqueueSummary = await forceEnqueueAlfaExcelOutboundCases({
+              consecutivos: jobOpts.consecutivos,
+              limit: Math.max(jobOpts.consecutivos.length, 1),
+              diffAgainstExcel: true,
+            });
+          } else if (jobOpts.forceResync && jobOpts.queueBeforeTotal === 0) {
+            updateAlfaExcelOutboundProgress({
+              label: 'Comparando ARNALD vs Excel (puede tardar)…',
+            });
+            enqueueSummary = await forceEnqueueAlfaExcelOutboundCases({
+              onlyWithMoney: jobOpts.onlyWithMoney || true,
+              limit: jobOpts.enqueueLimit,
+              diffAgainstExcel: true,
+            });
+          }
 
-    return res.json({
-      success: true,
-      flush,
-      outboundPending: outboundQueue.total,
-      outboundQueue,
-      outboundProgress: getAlfaExcelOutboundProgress(),
-      outboundBusy: false,
-      message,
+          let queueLive = await getAlfaExcelOutboundQueueStats();
+          updateAlfaExcelOutboundProgress({
+            peakTotal: Math.max(
+              queueLive.total,
+              getAlfaExcelOutboundProgress().peakTotal
+            ),
+            left: queueLive.total,
+            label:
+              queueLive.total > 0
+                ? `Enviando a Excel… 0 de ${queueLive.total}`
+                : 'Sin pendientes en cola',
+          });
+
+          let totalClaimed = 0;
+          let totalSynced = 0;
+          let totalFailed = 0;
+          let roundsRun = 0;
+
+          for (let i = 0; i < jobOpts.maxRounds; i += 1) {
+            const summary = await runAlfaExcelOutboundWorkerCycle({
+              batchSize: jobOpts.batchSize,
+            });
+            if (summary?.skippedOverlapping) break;
+            roundsRun += 1;
+            totalClaimed += summary.claimed || 0;
+            totalSynced += summary.synced || 0;
+            totalFailed += summary.failed || 0;
+            queueLive = await getAlfaExcelOutboundQueueStats();
+            const prog = updateAlfaExcelOutboundProgress({
+              peakTotal: Math.max(
+                queueLive.total,
+                getAlfaExcelOutboundProgress().peakTotal
+              ),
+              left: queueLive.total,
+              synced: totalSynced,
+              failed: totalFailed,
+              roundsRun,
+            });
+            updateAlfaExcelOutboundProgress({
+              label: `Enviando a Excel… ${prog.done} de ${prog.peakTotal}`,
+            });
+            if (!(summary.claimed > 0)) break;
+          }
+
+          const outboundQueue = await getAlfaExcelOutboundQueueStats();
+          let message;
+          if (totalSynced > 0 || totalClaimed > 0) {
+            message = `Enviados ${totalSynced} caso(s) a Excel`;
+            if (enqueueSummary?.fieldsQueued > 0) {
+              message += ` (${enqueueSummary.fieldsQueued} campo(s) distintos)`;
+            }
+            message +=
+              outboundQueue.total > 0
+                ? `. Quedan ${outboundQueue.total} en cola (pulse de nuevo).`
+                : '. Cola vacía.';
+          } else if (enqueueSummary?.enqueued > 0) {
+            message = `Se detectaron ${enqueueSummary.enqueued} caso(s) distintos vs Excel; pulse de nuevo para enviarlos.`;
+          } else if (enqueueSummary?.excelError) {
+            message = `No se pudo leer Excel para comparar: ${enqueueSummary.excelError}`;
+          } else if (jobOpts.queueBeforeTotal > 0) {
+            message = `Hay pendientes en cola pero no se pudo enviar en este intento. Pulse de nuevo.`;
+          } else {
+            message =
+              'Excel y ARNALD ya coinciden en columnas amarillas (nada pendiente).';
+          }
+
+          finishAlfaExcelOutboundProgress({
+            left: outboundQueue.total,
+            synced: totalSynced,
+            failed: totalFailed,
+            roundsRun,
+          });
+          updateAlfaExcelOutboundProgress({ label: message });
+          console.log(
+            JSON.stringify({
+              event: 'Alfa Excel outbound flush async done',
+              synced: totalSynced,
+              failed: totalFailed,
+              left: outboundQueue.total,
+              roundsRun,
+            })
+          );
+        } catch (error) {
+          console.error('❌ Error flush outbound Alfa Excel (async):', error);
+          finishAlfaExcelOutboundProgress({
+            left: getAlfaExcelOutboundProgress()?.left || 0,
+            synced: getAlfaExcelOutboundProgress()?.synced || 0,
+            failed: getAlfaExcelOutboundProgress()?.failed || 0,
+            roundsRun: getAlfaExcelOutboundProgress()?.roundsRun || 0,
+            error: error.message,
+          });
+        } finally {
+          alfaOutboundFlushJobRunning = false;
+        }
+      })();
     });
   } catch (error) {
-    console.error('❌ Error flush outbound Alfa Excel:', error);
+    console.error('❌ Error iniciando flush outbound Alfa Excel:', error);
+    alfaOutboundFlushJobRunning = false;
     finishAlfaExcelOutboundProgress({
       left: getAlfaExcelOutboundProgress()?.left || 0,
       synced: getAlfaExcelOutboundProgress()?.synced || 0,

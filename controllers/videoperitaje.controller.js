@@ -683,6 +683,61 @@ export async function cancelarSesion(req, res) {
   }
 }
 
+/**
+ * Webhook del Videoperitaje SDK: cuando el SDK hace timeout/cancela por duración,
+ * sincroniza Mongo + LiveKit. No decide el cierre (eso es del SDK).
+ * Auth: header x-api-key = VIDEOPERITAJE_SDK_KEY
+ */
+export async function hookSdkCierreSesion(req, res) {
+  try {
+    const key = String(req.headers['x-api-key'] || '').trim();
+    const expected = String(
+      process.env.VIDEOPERITAJE_SDK_KEY || process.env.VIDEOPERITAJE_API_KEY || ''
+    ).trim();
+    if (!expected || key !== expected) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const mongoId = String(req.body?.mongo_sesion_id || '').trim();
+    if (!mongoId || !/^[a-f0-9]{24}$/i.test(mongoId)) {
+      return res.status(400).json({ success: false, error: 'mongo_sesion_id inválido' });
+    }
+
+    const sesion = await VideoperitajeSesion.findById(mongoId);
+    if (!sesion) {
+      return res.json({ success: true, skipped: true, reason: 'mongo_not_found' });
+    }
+    if (!ESTADOS_ABIERTOS.has(sesion.estado)) {
+      return res.json({ success: true, skipped: true, reason: 'ya_cerrada', estado: sesion.estado });
+    }
+
+    const motivo = String(req.body?.motivo || 'sdk_auto_cierre');
+    const fin = req.body?.finalizada_at
+      ? new Date(req.body.finalizada_at)
+      : new Date();
+    const inicio = sesion.inicio || sesion.createdAt || fin;
+    sesion.estado = 'cancelada';
+    sesion.fin = Number.isNaN(fin.getTime()) ? new Date() : fin;
+    sesion.duracionSeg =
+      Number(req.body?.duracion_segundos) ||
+      Math.max(0, Math.round((sesion.fin.getTime() - new Date(inicio).getTime()) / 1000));
+    sesion.notas = [sesion.notas, `[sdk] Cierre obligatorio: ${motivo}`]
+      .filter(Boolean)
+      .join('\n');
+    await sesion.save();
+    await cerrarSalaLivekit(sesion.livekitRoom || nombreSalaLivekit(sesion._id));
+
+    return res.json({
+      success: true,
+      closed: true,
+      id: String(sesion._id),
+      motivo,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
 /** Borra la sesión del historial (cualquier usuario con acceso a videoperitaje). */
 export async function eliminarSesion(req, res) {
   try {

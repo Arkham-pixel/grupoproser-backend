@@ -30,6 +30,7 @@ import {
   crearPlantilla,
   actualizarPlantilla,
   archivarPlantilla,
+  hookSdkCierreSesion,
 } from '../controllers/videoperitaje.controller.js';
 
 const router = express.Router();
@@ -58,6 +59,9 @@ router.post('/public/:token/fotos', upload.single('archivo'), persistPublico, su
 router.post('/public/:token/uploads/presign', presignUploadPublico);
 router.post('/public/:token/uploads/completar', completarUploadPublico);
 router.post('/public/:token/pasos/completar', completarPasoPublico);
+
+/** Webhook SDK (sin JWT de usuario; auth por x-api-key del SDK). */
+router.post('/hooks/sdk-cierre', hookSdkCierreSesion);
 
 router.use(verificarToken);
 router.use(restringirVideoperitaje);
