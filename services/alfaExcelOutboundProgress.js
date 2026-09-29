@@ -107,9 +107,26 @@ export function finishAlfaExcelOutboundProgress({
       error
         ? `Error en envío: ${error}`
         : leftN > 0
-          ? `Envío parcial: quedan ${leftN} en cola`
+          ? `Envío parcial: quedan ${leftN} en cola — pulse Enviar de nuevo`
           : 'Envío a Excel completado',
     lastError: error ? String(error) : null,
   };
   return getAlfaExcelOutboundProgress();
+}
+
+/** Libera progreso stuck (p. ej. deploy a mitad de flush o Graph colgado). */
+export function clearStuckAlfaExcelOutboundProgress({ maxAgeMs = 20 * 60 * 1000 } = {}) {
+  if (!progress.running) return { cleared: false, reason: 'not_running' };
+  const startedMs = progress.startedAt ? new Date(progress.startedAt).getTime() : 0;
+  if (!startedMs || Date.now() - startedMs < maxAgeMs) {
+    return { cleared: false, reason: 'too_recent', ageMs: startedMs ? Date.now() - startedMs : null };
+  }
+  finishAlfaExcelOutboundProgress({
+    left: progress.left || 0,
+    synced: progress.synced || 0,
+    failed: progress.failed || 0,
+    roundsRun: progress.roundsRun || 0,
+    error: `Envío liberado: llevaba más de ${Math.round(maxAgeMs / 60000)} min`,
+  });
+  return { cleared: true, progress: getAlfaExcelOutboundProgress() };
 }

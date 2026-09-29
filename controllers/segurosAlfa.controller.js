@@ -49,6 +49,7 @@ import {
   updateAlfaExcelOutboundProgress,
   finishAlfaExcelOutboundProgress,
   getAlfaExcelOutboundProgress,
+  clearStuckAlfaExcelOutboundProgress,
 } from '../services/alfaExcelOutboundProgress.js';
 import { generarConsecutivoAlfa, buildAlfaListadoPipeline } from '../services/alfaCasoService.js';
 import {
@@ -1901,6 +1902,9 @@ export const postEnviarAlertasAlfaAjustador = async (req, res) => {
 /** GET /api/seguros-alfa/control-seguimiento/status */
 export const getControlSeguimientoAlfaStatus = async (req, res) => {
   try {
+    // Evita barra “Enviando…” eterna si el proceso murió a mitad de flush
+    clearStuckAlfaExcelOutboundProgress({ maxAgeMs: 20 * 60 * 1000 });
+
     const data = await getAlfaExcelSharePointStatus();
     let outboundQueue = { pending: 0, processing: 0, failed: 0, total: 0 };
     try {
@@ -1908,6 +1912,22 @@ export const getControlSeguimientoAlfaStatus = async (req, res) => {
     } catch {
       /* ignore */
     }
+
+    // Cola vacía + progreso aún “running” = UI fantasma (caso típico tras timeout/Graph)
+    const prog = getAlfaExcelOutboundProgress();
+    if (
+      prog?.running &&
+      outboundQueue.total === 0 &&
+      !isAlfaExcelOutboundCycleRunning()
+    ) {
+      finishAlfaExcelOutboundProgress({
+        left: 0,
+        synced: prog.synced || 0,
+        failed: prog.failed || 0,
+        roundsRun: prog.roundsRun || 0,
+      });
+    }
+
     return res.json({
       success: true,
       ...data,
@@ -1982,7 +2002,7 @@ export const postControlSeguimientoAlfaOutboundFlush = async (req, res) => {
     const startedMs = progNow?.startedAt
       ? new Date(progNow.startedAt).getTime()
       : 0;
-    const stuckMs = 45 * 60 * 1000;
+    const stuckMs = 20 * 60 * 1000;
     const stuck =
       Boolean(progNow?.running) &&
       startedMs > 0 &&
