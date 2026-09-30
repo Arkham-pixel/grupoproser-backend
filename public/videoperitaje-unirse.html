@@ -462,12 +462,9 @@
         return /Android/i.test(navigator.userAgent || '');
       }
       function opcionesCamara() {
-        if (esAndroid()) {
-          return { facingMode: facingMode, resolution: { width: 720, height: 1280 } };
-        }
         return {
           facingMode: facingMode,
-          resolution: { width: 1280, height: 720, frameRate: 30 },
+          resolution: { width: 1280, height: 960, aspectRatio: 4 / 3 },
         };
       }
       function opcionesPublicacion() {
@@ -484,7 +481,8 @@
         return {
           facingMode: { ideal: facingMode },
           width: { ideal: 1280 },
-          height: { ideal: 720 },
+          height: { ideal: 960 },
+          aspectRatio: { ideal: 4 / 3 },
           frameRate: { ideal: 30 },
         };
       }
@@ -493,7 +491,7 @@
           throw new Error('Abra este enlace en Safari o Chrome (no en WhatsApp/Gmail).');
         }
         const intentos = [
-          { video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true },
+          { video: videoConstraints(), audio: true },
           { video: { facingMode: { ideal: facingMode } }, audio: true },
           { video: true, audio: true },
           { video: true, audio: false },
