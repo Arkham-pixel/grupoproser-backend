@@ -124,14 +124,18 @@ function mimePermitidoVideoperitaje(contentType) {
   return mime.startsWith('image/') || mime.startsWith('video/');
 }
 
-async function presignMediaSesion(req, sesion, ownerId, extra = {}) {
-  if (!ESTADOS_ABIERTOS.has(sesion.estado)) {
+async function presignMediaSesion(req, sesion, ownerId, extra = {}, rol = 'asegurado') {
+  const filename = String(extra.filename || extra.nombreOriginal || `captura-${Date.now()}.jpg`);
+  const contentType = String(extra.contentType || extra.tipoMime || 'image/jpeg');
+  const tipo = tipoDesdeMime(contentType, extra.tipo);
+  const acepta = rol === 'perito'
+    ? sesionAceptaMediaPerito(sesion, tipo)
+    : sesionAceptaMediaAsegurado(sesion);
+  if (!acepta) {
     const err = new Error('La sesión no admite más fotos');
     err.status = 409;
     throw err;
   }
-  const filename = String(extra.filename || extra.nombreOriginal || `captura-${Date.now()}.jpg`);
-  const contentType = String(extra.contentType || extra.tipoMime || 'image/jpeg');
   if (!mimePermitidoVideoperitaje(contentType)) {
     const err = new Error('Solo se permiten fotos o videos');
     err.status = 400;
@@ -165,7 +169,7 @@ async function registrarMediaPresign(sesion, ownerId, body, rol) {
       err.status = 409;
       throw err;
     }
-  } else if (!ESTADOS_ABIERTOS.has(sesion.estado)) {
+  } else if (!sesionAceptaMediaAsegurado(sesion)) {
     const err = new Error('La sesión no admite más fotos');
     err.status = 409;
     throw err;
@@ -217,7 +221,7 @@ async function registrarMediaPresign(sesion, ownerId, body, rol) {
     sesion.inicio = sesion.inicio || new Date();
   }
   await sesion.save();
-  if (sesionDebeAdjuntarAlCaso(sesion)) {
+  if (sesionDebeAdjuntarAlCaso(sesion) || (sesion.estado === 'finalizada' && sesion.casoId)) {
     try {
       const adjunto = await adjuntarMediasAlCaso(sesion, [media]);
       if (adjunto?.ok && adjunto.agregados > 0) {
@@ -238,10 +242,23 @@ function errorHttp(res, error) {
   return res.status(status).json({ success: false, error: error.message });
 }
 
+// Fotos disparadas justo antes de colgar siguen subiendo a S3; se aceptan un rato tras finalizar.
+const GRACIA_MEDIA_TRAS_FIN_MS = 10 * 60 * 1000;
+
+function dentroDeGraciaTrasFin(sesion) {
+  if (!sesion || sesion.estado !== 'finalizada' || !sesion.fin) return false;
+  return Date.now() - new Date(sesion.fin).getTime() <= GRACIA_MEDIA_TRAS_FIN_MS;
+}
+
+function sesionAceptaMediaAsegurado(sesion) {
+  if (!sesion) return false;
+  return ESTADOS_ABIERTOS.has(sesion.estado) || dentroDeGraciaTrasFin(sesion);
+}
+
 function sesionAceptaMediaPerito(sesion, tipo) {
   if (!sesion || sesion.estado === 'cancelada') return false;
   if (ESTADOS_ABIERTOS.has(sesion.estado)) return true;
-  return sesion.estado === 'finalizada' && String(tipo) === 'video';
+  return sesion.estado === 'finalizada' && (String(tipo) === 'video' || dentroDeGraciaTrasFin(sesion));
 }
 
 async function persistirMediaPerito(sesion, media) {
@@ -1019,7 +1036,7 @@ export async function subirFotoPublica(req, res) {
   try {
     const sesion = await buscarPorTokenPublico(req.params.token);
     if (!sesion) return res.status(404).json({ success: false, error: 'Enlace inválido o vencido' });
-    if (!ESTADOS_ABIERTOS.has(sesion.estado)) {
+    if (!sesionAceptaMediaAsegurado(sesion)) {
       return res.status(409).json({ success: false, error: 'La sesión no admite más fotos' });
     }
     const media = buildMediaFromUpload(req, {
@@ -1052,6 +1069,11 @@ export async function subirFotoPublica(req, res) {
     const creado = sesion.medias[sesion.medias.length - 1];
     const [hidratada] = await hidratarMedias([creado]);
     res.status(201).json({ success: true, data: hidratada });
+    if (sesion.estado === 'finalizada' && sesion.casoId) {
+      void adjuntarMediasAlCaso(sesion, [creado]).catch((err) => {
+        console.warn('[videoperitaje] adjunto tardío asegurado:', err?.message || err);
+      });
+    }
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -1148,7 +1170,7 @@ export async function presignUploadPerito(req, res) {
   try {
     const sesion = await VideoperitajeSesion.findById(req.params.id);
     if (!sesion) return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
-    const data = await presignMediaSesion(req, sesion, sesion._id.toString(), req.body || {});
+    const data = await presignMediaSesion(req, sesion, sesion._id.toString(), req.body || {}, 'perito');
     res.json({ success: true, ...data });
   } catch (error) {
     errorHttp(res, error);

@@ -771,17 +771,19 @@
           capOverlay.classList.remove('hidden');
         }
 
+        let blob = null;
         try {
           // Trasera: foto del sensor para el informe. Frontal: cuadro del video, sin recorte de cara.
-          const blob = await captureFotoHd(localEl, pistaVideoLocal(liveRoom), {
+          blob = await captureFotoHd(localEl, pistaVideoLocal(liveRoom), {
             soloStream: facingMode !== 'environment',
           });
           flashWhite();
           if (blob) {
             if (capIcon) capIcon.textContent = '✅';
             if (capTitle) capTitle.textContent = '¡Foto capturada!';
-            if (capDesc) capDesc.textContent = 'Subiendo al expediente...';
-            await uploadBlob(blob, { descripcion: 'Captura videoperitaje' });
+            if (capDesc) capDesc.textContent = 'Puede continuar';
+          } else if (capTitle) {
+            capTitle.textContent = 'Error al capturar';
           }
         } catch (e) {
           if (capTitle) capTitle.textContent = 'Error al capturar';
@@ -789,7 +791,18 @@
           await recuperarVideoTrasCaptura();
           setTimeout(() => {
             if (capOverlay) capOverlay.classList.add('hidden');
-          }, 1200);
+          }, 900);
+        }
+        if (blob) subirFotoEnSegundoPlano(blob);
+      }
+      async function subirFotoEnSegundoPlano(blob) {
+        for (let intento = 0; intento < 3; intento++) {
+          try {
+            await uploadBlob(blob, { descripcion: 'Captura videoperitaje' });
+            return;
+          } catch (_) {
+            await new Promise(function (r) { setTimeout(r, 1500 * (intento + 1)); });
+          }
         }
       }
       function renderWelcome() {
@@ -1004,7 +1017,12 @@
             if (participant && participant.isLocal) return;
             try {
               const msg = JSON.parse(new TextDecoder().decode(payload));
-              if (msg && msg.type === 'CAPTURE') await tomarFotoHd();
+              if (msg && msg.type === 'CAPTURE') {
+                room.localParticipant
+                  .publishData(new TextEncoder().encode(JSON.stringify({ type: 'CAPTURE_ACK' })), { reliable: true })
+                  .catch(function () {});
+                await tomarFotoHd();
+              }
               if (msg && msg.type === 'SWITCH_CAMERA' && alCambiarCamara) await alCambiarCamara();
               if (msg && msg.type === 'TORCH' && alAlternarFlash) await alAlternarFlash();
             } catch (_) {}
