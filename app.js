@@ -233,6 +233,9 @@ if (process.env.NODE_ENV === 'production') {
 // 4️ Monta aquí tus rutas
 // Redirige enlaces de recuperación que apunten al dominio del API hacia el frontend
 app.get('/videoperitaje/unirse/:token', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.join(__dirname, 'public', 'videoperitaje-unirse.html'));
 });
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#c8102e" />
     <title>Videoperitaje Grupo Proser</title>
-    <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.15.7/dist/livekit-client.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.js"></script>
     <style>
       :root { color-scheme: light; }
       * { box-sizing: border-box; }
@@ -16,10 +16,12 @@
         background: #f4f4f5;
         color: #111827;
       }
-      body.in-call { background: #000; }
+      body.in-call { background: #000; overflow: hidden; }
       .wrap { max-width: 420px; margin: 0 auto; padding: 20px 16px 40px; }
       body.in-call .wrap {
-        position: relative; max-width: none; margin: 0; padding: 0; width: 100%; height: 100dvh; min-height: 100vh;
+        position: relative; max-width: none; margin: 0; padding: 0; width: 100%;
+        height: 100dvh; min-height: 100dvh; min-height: -webkit-fill-available;
+        overflow: hidden;
       }
       .brand { text-align: center; }
       .brand p { margin: 0; font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: #c8102e; font-weight: 700; }
@@ -34,19 +36,34 @@
       }
       .btn:disabled { opacity: .5; }
       .btn.ghost { background: #fff; color: #111; border: 1px solid #d1d5db; }
-      video.main { width: 100%; aspect-ratio: 9/16; object-fit: cover; object-position: center; background: #000; display: block; border-radius: 0; transform: scaleX(-1) !important; }
-      body.in-call video.main {
+      video.main { width: 100%; aspect-ratio: 9/16; object-fit: cover; object-position: center; background: #000; display: block; border-radius: 0; }
+      #local, video#local, video.main, body.in-call video.main {
         width: 100%; height: 100%; max-height: none; aspect-ratio: auto;
         object-fit: cover; object-position: center;
         position: absolute; inset: 0; left: 0; top: 0; right: 0; bottom: 0; z-index: 0;
-        transform: scaleX(-1) !important;
+        transform: none !important;
+        -webkit-transform: none !important;
       }
       .stage { position: relative; overflow: hidden; border-radius: 16px; background: #000; }
       body.in-call .stage {
         position: relative; overflow: hidden; border-radius: 0;
-        width: 100%; height: 100dvh; min-height: 100vh;
+        width: 100%;
+        height: 100dvh;
+        min-height: 100dvh;
+        min-height: -webkit-fill-available;
         display: block;
         background: #000;
+      }
+      body.in-call .pip {
+        top: auto;
+        bottom: calc(16px + env(safe-area-inset-bottom));
+        right: calc(12px + env(safe-area-inset-right));
+        left: auto;
+        width: min(30vw, 120px);
+        height: auto;
+        aspect-ratio: 3 / 4;
+        max-width: none;
+        z-index: 4; border-width: 2px; object-fit: cover;
       }
       .pip {
         position: absolute; top: 12px; right: 12px; width: 32%; aspect-ratio: 3/4;
@@ -54,11 +71,6 @@
         border-radius: 12px; border: 2px solid #fff; background: #000;
         box-shadow: 0 4px 16px rgba(0,0,0,.35); z-index: 2;
         transform: none !important;
-      }
-      body.in-call .pip {
-        top: auto; bottom: 24px; right: 12px; left: auto;
-        width: 112px; height: 150px; max-width: none; aspect-ratio: auto;
-        z-index: 4; border-width: 2px; object-fit: cover;
       }
       .tiny-brand {
         display: none;
@@ -70,14 +82,32 @@
       }
       .flip { display: none; }
       body.in-call .flip {
-        display: flex; position: absolute; left: 12px; top: 28px; transform: none;
+        display: flex; position: absolute;
+        left: calc(12px + env(safe-area-inset-left));
+        top: calc(12px + env(safe-area-inset-top));
+        transform: none;
         z-index: 6; width: 44px; height: 44px; border: 0; border-radius: 50%;
         background: rgba(255,255,255,.92); color: #111; align-items: center; justify-content: center;
         box-shadow: 0 6px 18px rgba(0,0,0,.35);
       }
+      .torch { display: none; }
+      body.in-call .torch {
+        display: flex; position: absolute;
+        right: calc(12px + env(safe-area-inset-right));
+        top: calc(12px + env(safe-area-inset-top));
+        z-index: 6; height: 44px; padding: 0 14px; border: 0; border-radius: 999px;
+        background: rgba(255,255,255,.92); color: #111; align-items: center; justify-content: center;
+        font-size: 13px; font-weight: 700;
+        box-shadow: 0 6px 18px rgba(0,0,0,.35);
+      }
+      body.in-call .torch.on { background: #f5c518; }
       .cam-label { display: none; }
       body.in-call .cam-label {
-        display: block; position: absolute; left: 64px; top: 40px; right: auto; bottom: auto; z-index: 6;
+        display: block; position: absolute;
+        left: calc(64px + env(safe-area-inset-left));
+        top: calc(22px + env(safe-area-inset-top));
+        right: calc(140px + env(safe-area-inset-right));
+        bottom: auto; z-index: 6;
         margin: 0; text-align: left; font-size: 10px; color: rgba(255,255,255,.8);
         text-shadow: 0 1px 2px rgba(0,0,0,.6);
       }
@@ -203,7 +233,8 @@
       let liveRoom = null;
       let liveReconnectAttempts = 0;
       let watchTimer = null;
-      let facingMode = 'user';
+      let facingMode = 'environment';
+      let torchOn = false;
       let callEnded = false;
 
       function showAlert(msg, ok) {
@@ -211,6 +242,11 @@
         alertBox.className = 'msg ' + (ok ? 'ok' : 'err');
         alertBox.style.display = 'block';
         alertBox.textContent = String(msg || '');
+      }
+      function hideAlert() {
+        if (!alertBox) return;
+        alertBox.style.display = 'none';
+        alertBox.textContent = '';
       }
 
       function sesionCerrada(s) {
@@ -297,17 +333,16 @@
         const esPip = el.classList.contains('pip');
         el.style.objectFit = 'cover';
         el.style.objectPosition = 'center';
-        // Local (main): espejo. Remoto (pip): orientación real.
-        const espejo = !esPip && facingMode !== 'environment';
-        const t = espejo ? 'scaleX(-1)' : 'none';
-        el.style.transform = t;
-        el.style.webkitTransform = t;
+        // Sin espejo: lo que está a la derecha se ve a la derecha en todas las pantallas.
+        el.style.transform = 'none';
+        el.style.webkitTransform = 'none';
         if (esPip) {
-          el.style.width = '112px';
-          el.style.height = '150px';
+          el.style.width = 'min(30vw, 120px)';
+          el.style.height = 'auto';
+          el.style.aspectRatio = '3 / 4';
           el.style.top = 'auto';
-          el.style.bottom = '24px';
-          el.style.right = '12px';
+          el.style.bottom = 'calc(16px + env(safe-area-inset-bottom))';
+          el.style.right = 'calc(12px + env(safe-area-inset-right))';
           el.style.left = 'auto';
           el.style.position = 'absolute';
           return;
@@ -317,34 +352,106 @@
         el.style.inset = '0';
         el.style.position = 'absolute';
       }
-      function videoConstraints() {
-        // FOV amplio; sin advanced/zoom (rompe WebViews de WhatsApp).
+      function esAndroid() {
+        return /Android/i.test(navigator.userAgent || '');
+      }
+      function opcionesCamara() {
+        if (esAndroid()) {
+          return {
+            facingMode: facingMode,
+            resolution: { width: 1280, height: 720, frameRate: 24 },
+          };
+        }
         return {
-          facingMode: { ideal: facingMode },
-          width: { ideal: 720 },
-          height: { ideal: 1280 },
-          frameRate: { ideal: 24 },
+          facingMode: facingMode,
+          resolution: { width: 1920, height: 1080, frameRate: 30 },
+        };
+      }
+      function opcionesPublicacion() {
+        const P = window.LivekitClient && window.LivekitClient.VideoPresets;
+        if (esAndroid()) {
+          return {
+            simulcast: true,
+            videoCodec: 'vp8',
+            videoSimulcastLayers: P ? [P.h720, P.h360] : undefined,
+            audioPreset: { maxBitrate: 48000 },
+          };
+        }
+        return {
+          simulcast: true,
+          videoCodec: 'vp9',
+          videoSimulcastLayers: P ? [P.h1080, P.h720, P.h360] : undefined,
+          audioPreset: { maxBitrate: 64000 },
+        };
+      }
+      function videoConstraints() {
+        // Sin advanced/zoom (rompe WebViews de WhatsApp).
+        const o = opcionesCamara();
+        return {
+          facingMode: { ideal: o.facingMode },
+          width: { ideal: o.resolution.width },
+          height: { ideal: o.resolution.height },
+          frameRate: { ideal: o.resolution.frameRate },
         };
       }
       async function pedirCamara() {
         if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
           throw new Error('Abra este enlace en Safari o Chrome (no en WhatsApp/Gmail).');
         }
-        const intentos = [
-          { video: videoConstraints(), audio: true },
-          { video: { facingMode: { ideal: facingMode } }, audio: true },
-          { video: true, audio: true },
-          { video: true, audio: false },
-        ];
+        const o = opcionesCamara();
+        const res = {
+          width: { ideal: o.resolution.width },
+          height: { ideal: o.resolution.height },
+          frameRate: { ideal: o.resolution.frameRate },
+        };
+        const intentos = [];
+        if (facingMode === 'environment') {
+          // Forzar cámara trasera primero con exact para que Android/iOS no abran la selfie
+          intentos.push({ video: { facingMode: { exact: 'environment' }, ...res }, audio: true });
+          intentos.push({ video: { facingMode: 'environment', ...res }, audio: true });
+          intentos.push({ video: { facingMode: { ideal: 'environment' }, ...res }, audio: true });
+        } else {
+          intentos.push({ video: { facingMode: { exact: 'user' }, ...res }, audio: true });
+          intentos.push({ video: { facingMode: 'user', ...res }, audio: true });
+        }
+        intentos.push({ video: true, audio: true });
+        intentos.push({ video: true, audio: false });
+
+        let stream = null;
         let lastErr = null;
         for (let i = 0; i < intentos.length; i++) {
           try {
-            return await navigator.mediaDevices.getUserMedia(intentos[i]);
+            stream = await navigator.mediaDevices.getUserMedia(intentos[i]);
+            if (stream) break;
           } catch (err) {
             lastErr = err;
           }
         }
-        throw lastErr || new Error('Permita cámara y micrófono para continuar.');
+        if (!stream) throw lastErr || new Error('Permita cámara y micrófono para continuar.');
+
+        // Si pedimos trasera pero el navegador entregó la frontal (sucede en algunos Android con dos frontales),
+        // buscamos en enumerateDevices la trasera real por su id
+        if (facingMode === 'environment') {
+          try {
+            const vTrack = stream.getVideoTracks()[0];
+            const setts = vTrack && vTrack.getSettings ? vTrack.getSettings() : {};
+            if (setts.facingMode === 'user' && navigator.mediaDevices.enumerateDevices) {
+              const devs = await navigator.mediaDevices.enumerateDevices();
+              const trasera = devs.find((d) => d.kind === 'videoinput' && /back|rear|trasera|environment/i.test(d.label));
+              if (trasera && trasera.deviceId) {
+                const s2 = await navigator.mediaDevices.getUserMedia({
+                  video: { deviceId: { exact: trasera.deviceId }, ...res },
+                  audio: true,
+                }).catch(() => null);
+                if (s2) {
+                  try { stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
+                  stream = s2;
+                }
+              }
+            }
+          } catch (_) {}
+        }
+        return stream;
       }
       function html(s) {
         return String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -368,7 +475,7 @@
         try { j = text ? JSON.parse(text) : {}; } catch (_) {
           throw new Error('Respuesta inválida del servidor (' + r.status + ').');
         }
-        if (!r.ok) throw new Error(j.error || 'Enlace inválido o vencido');
+        if (!r.ok) throw new Error(j.error || ('No se pudo abrir la sesión (' + r.status + ')'));
         sesion = j.data;
         return sesion;
       }
@@ -559,7 +666,7 @@
           const pubs = Array.from(room.localParticipant.videoTrackPublications.values());
           const current = pubs.find(function (p) { return p.track; });
           if (current && current.track && current.track.restartTrack) {
-            await current.track.restartTrack({ facingMode: facingMode });
+            await current.track.restartTrack(opcionesCamara());
           }
           if (current && current.track && localEl) {
             current.track.attach(localEl);
@@ -571,7 +678,7 @@
         } catch (_) {
           try {
             await room.localParticipant.setCameraEnabled(false);
-            await room.localParticipant.setCameraEnabled(true, { facingMode: facingMode });
+            await room.localParticipant.setCameraEnabled(true, opcionesCamara(), opcionesPublicacion());
             const pubs2 = Array.from(room.localParticipant.videoTrackPublications.values());
             const pub = pubs2.find(function (p) { return p.track; });
             if (pub && pub.track && localEl) {
@@ -596,8 +703,10 @@
       }
       async function tomarFotoHd() {
         const localEl = document.getElementById('local');
-        // soloStream: evita takePhoto (congela cámara → negro en ajustador y cliente).
-        const blob = await captureFotoHd(localEl, pistaVideoLocal(liveRoom), { soloStream: true });
+        // Trasera: foto del sensor para el informe. Frontal: cuadro del video, sin recorte de cara.
+        const blob = await captureFotoHd(localEl, pistaVideoLocal(liveRoom), {
+          soloStream: facingMode !== 'environment',
+        });
         if (!blob) return;
         flashWhite();
         try {
@@ -624,7 +733,8 @@
       }
       async function renderLive(joined) {
         document.body.classList.add('in-call');
-        facingMode = 'user';
+        hideAlert();
+        facingMode = 'environment';
         panel.className = 'card';
         panel.innerHTML = `
           <div class="stage">
@@ -637,7 +747,8 @@
                 <circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="2"/>
               </svg>
             </button>
-            <p class="cam-label" id="cam-label">Cámara frontal · toque para cambiar</p>
+            <button type="button" class="torch" id="torch" aria-pressed="false">Flash apagado</button>
+            <p class="cam-label" id="cam-label">Cámara trasera · toque para cambiar</p>
           </div>
         `;
         startWatch();
@@ -677,23 +788,18 @@
           const LivekitClient = window.LivekitClient;
           if (!LivekitClient) throw new Error('No se pudo cargar la videollamada');
           const room = new LivekitClient.Room({
-            adaptiveStream: false,
+            adaptiveStream: true,
             dynacast: true,
             stopLocalTrackOnUnpublish: true,
-            disconnectOnPageLeave: true,
+            disconnectOnPageLeave: false,
             reconnectPolicy: {
               nextRetryDelayInMs: function (ctx) {
-                if (!ctx || ctx.retryCount > 8) return null;
-                return Math.min(800 * Math.pow(2, ctx.retryCount), 8000);
+                if (!ctx || ctx.retryCount > 14) return null;
+                return Math.min(1000 * Math.pow(2, Math.min(ctx.retryCount, 3)), 8000);
               },
             },
-            videoCaptureDefaults: {
-              facingMode: facingMode,
-              resolution: { width: 720, height: 1280 },
-            },
-            videoPublishDefaults: {
-              videoEncoding: { maxBitrate: 2500000, maxFramerate: 24 },
-            },
+            videoCaptureDefaults: opcionesCamara(),
+            publishDefaults: opcionesPublicacion(),
           });
           liveRoom = room;
           const attachLocal = () => {
@@ -757,7 +863,7 @@
               localEl.play().catch(function () {});
             }
             if (reconnecting || liveRoom !== room) return;
-            if (liveReconnectAttempts >= 3) {
+            if (liveReconnectAttempts >= 6) {
               if (status) status.textContent = 'Sin video. Recargue el enlace en Chrome o Safari.';
               showAlert('Se perdió la videollamada. Recargue el enlace.');
               return;
@@ -783,11 +889,15 @@
             if (status) status.textContent = 'Sin video. Toque Entrar de nuevo o recargue el enlace.';
             showAlert('Se perdió la videollamada. Recargue el enlace o pulse Entrar otra vez.');
           });
+          let alCambiarCamara = null;
+          let alAlternarFlash = null;
           room.on(LivekitClient.RoomEvent.DataReceived, async (payload, participant) => {
             if (participant && participant.isLocal) return;
             try {
               const msg = JSON.parse(new TextDecoder().decode(payload));
               if (msg && msg.type === 'CAPTURE') await tomarFotoHd();
+              if (msg && msg.type === 'SWITCH_CAMERA' && alCambiarCamara) await alCambiarCamara();
+              if (msg && msg.type === 'TORCH' && alAlternarFlash) await alAlternarFlash();
             } catch (_) {}
           });
           await room.connect(lk.url, lk.token);
@@ -806,14 +916,12 @@
               });
             }
             vids.forEach(function (track) {
-              room.localParticipant.publishTrack(track).catch(function () {});
+              room.localParticipant.publishTrack(track, opcionesPublicacion()).catch(function () {});
             });
           } else {
             try { await room.localParticipant.setMicrophoneEnabled(true); } catch (_) {}
             try {
-              await room.localParticipant.setCameraEnabled(true, {
-                facingMode,
-              });
+              await room.localParticipant.setCameraEnabled(true, opcionesCamara(), opcionesPublicacion());
             } catch (e) {
               showAlert(e.message || 'No se pudo encender la cámara');
             }
@@ -821,19 +929,53 @@
           attachLocal();
             const flip = document.getElementById('flip');
             const camLabel = document.getElementById('cam-label');
+            const torchBtn = document.getElementById('torch');
+            async function apagarFlash() {
+              torchOn = false;
+              if (torchBtn) {
+                torchBtn.classList.remove('on');
+                torchBtn.setAttribute('aria-pressed', 'false');
+                torchBtn.textContent = 'Flash apagado';
+              }
+              const track = pistaVideoLocal(room) || (previewStream && previewStream.getVideoTracks()[0]);
+              if (!track) return;
+              try { await track.applyConstraints({ advanced: [{ torch: false }] }); } catch (_) {}
+            }
+            if (torchBtn) {
+              torchBtn.onclick = async () => {
+                if (facingMode !== 'environment') {
+                  showAlert('El flash solo funciona con la cámara trasera.');
+                  return;
+                }
+                const track = pistaVideoLocal(room) || (previewStream && previewStream.getVideoTracks()[0]);
+                if (!track) return;
+                const next = !torchOn;
+                try {
+                  await track.applyConstraints({ advanced: [{ torch: next }] });
+                  torchOn = next;
+                  torchBtn.classList.toggle('on', torchOn);
+                  torchBtn.setAttribute('aria-pressed', torchOn ? 'true' : 'false');
+                  torchBtn.textContent = torchOn ? 'Flash encendido' : 'Flash apagado';
+                } catch (err) {
+                  torchOn = false;
+                  torchBtn.classList.remove('on');
+                  torchBtn.textContent = 'Flash apagado';
+                  showAlert('Este celular no enciende el flash en la videollamada.');
+                }
+              };
+            }
             if (flip) {
               flip.onclick = async () => {
+                await apagarFlash();
                 facingMode = facingMode === 'environment' ? 'user' : 'environment';
                 try {
                   const pubs = Array.from(room.localParticipant.videoTrackPublications.values());
                   const current = pubs.find((p) => p.track);
                   if (current && current.track && current.track.restartTrack) {
-                    await current.track.restartTrack({
-                      facingMode,
-                    });
+                    await current.track.restartTrack(opcionesCamara());
                   } else {
                     await room.localParticipant.setCameraEnabled(false);
-                    await room.localParticipant.setCameraEnabled(true, { facingMode });
+                    await room.localParticipant.setCameraEnabled(true, opcionesCamara(), opcionesPublicacion());
                   }
                   if (localEl) {
                     localEl.classList.remove('front');
@@ -850,6 +992,12 @@
                 }
               };
             }
+            alAlternarFlash = async () => {
+              if (torchBtn) torchBtn.click();
+            };
+            alCambiarCamara = async () => {
+              if (flip) flip.click();
+            };
         } catch (e) {
           const msg = (e && e.message) || 'No se pudo conectar la videollamada';
           if (status) status.textContent = msg;
