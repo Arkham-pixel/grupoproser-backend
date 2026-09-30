@@ -5,7 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#c8102e" />
     <title>Videoperitaje Grupo Proser</title>
-    <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.js"></script>
+    <script src="/vendor/livekit-client-2.22.3.umd.js"></script>
+    <script>
+      if (!window.LivekitClient) {
+        document.write('<script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.js"><\/script>');
+      }
+    </script>
     <style>
       :root { color-scheme: light; }
       * { box-sizing: border-box; }
@@ -428,6 +433,30 @@
         el.style.margin = '0';
         el.style.position = 'absolute';
         el.style.zIndex = '1';
+      }
+      function cargarScript(src) {
+        return new Promise(function (resolve) {
+          const s = document.createElement('script');
+          s.src = src;
+          s.async = true;
+          const timer = setTimeout(function () { resolve(false); }, 20000);
+          s.onload = function () { clearTimeout(timer); resolve(true); };
+          s.onerror = function () { clearTimeout(timer); resolve(false); };
+          document.head.appendChild(s);
+        });
+      }
+      async function asegurarLivekit() {
+        if (window.LivekitClient) return window.LivekitClient;
+        const fuentes = [
+          '/vendor/livekit-client-2.22.3.umd.js?r=' + Date.now(),
+          'https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.js',
+          'https://unpkg.com/livekit-client@2.22.3/dist/livekit-client.umd.js',
+        ];
+        for (let i = 0; i < fuentes.length; i++) {
+          await cargarScript(fuentes[i]);
+          if (window.LivekitClient) return window.LivekitClient;
+        }
+        return null;
       }
       function esAndroid() {
         return /Android/i.test(navigator.userAgent || '');
@@ -864,8 +893,8 @@
           return;
         }
         try {
-          const LivekitClient = window.LivekitClient;
-          if (!LivekitClient) throw new Error('No se pudo cargar la videollamada');
+          const LivekitClient = await asegurarLivekit();
+          if (!LivekitClient) throw new Error('No se pudo cargar la videollamada. Revise su conexión y recargue el enlace.');
           const room = new LivekitClient.Room({
             adaptiveStream: false,
             dynacast: true,
