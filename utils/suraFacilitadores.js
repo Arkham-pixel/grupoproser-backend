@@ -104,25 +104,60 @@ export function tipoViviendaConDefault(valor, defecto = 'URBANA') {
   return normalizarTipoViviendaFacilitador(valor) || defecto;
 }
 
+const TZ_COLOMBIA = 'America/Bogota';
+
+/** Día calendario en Colombia (YYYY, MM, DD) a partir de un instante. */
+function ymdBogota(dt) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ_COLOMBIA,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(dt);
+  const y = Number(parts.find((p) => p.type === 'year')?.value);
+  const m = Number(parts.find((p) => p.type === 'month')?.value);
+  const d = Number(parts.find((p) => p.type === 'day')?.value);
+  if (!y || !m || !d) return null;
+  return { y, m, d };
+}
+
+/** Fecha “solo día” estable en UTC mediodía (evita +1 día al serializar ISO). */
+function fechaSoloDiaUtc(y, m, d) {
+  return new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+}
+
 function parseFecha(valor) {
   if (valor === undefined || valor === null || valor === '') return null;
   if (valor instanceof Date && !Number.isNaN(valor.getTime())) {
-    return new Date(valor.getFullYear(), valor.getMonth(), valor.getDate(), 12, 0, 0);
+    // Contacto a las 23:25 CO es 04:25 UTC del día siguiente: usar día en Bogotá.
+    const ymd = ymdBogota(valor);
+    return ymd ? fechaSoloDiaUtc(ymd.y, ymd.m, ymd.d) : null;
   }
   const s = String(valor).trim();
   if (!s || s === 'null' || s === 'undefined') return null;
-  // datetime-local / ISO: usar solo el día calendario (evita desfases por hora/TZ).
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+  // Solo fecha (YYYY-MM-DD) sin hora: respetar el día literal.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s.slice(0, 10)) && !/[T ]\d{2}:\d{2}/.test(s)) {
     const [y, m, d] = s.slice(0, 10).split('-').map(Number);
-    return new Date(y, m - 1, d, 12, 0, 0);
+    return fechaSoloDiaUtc(y, m, d);
+  }
+  // ISO / datetime-local con hora: día calendario en Colombia.
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const dt = new Date(s);
+    if (!Number.isNaN(dt.getTime())) {
+      const ymd = ymdBogota(dt);
+      if (ymd) return fechaSoloDiaUtc(ymd.y, ymd.m, ymd.d);
+    }
+    const [y, m, d] = s.slice(0, 10).split('-').map(Number);
+    return fechaSoloDiaUtc(y, m, d);
   }
   if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(s)) {
     const [d, m, y] = s.split(/[/\s]/).map(Number);
-    return new Date(y, m - 1, d, 12, 0, 0);
+    return fechaSoloDiaUtc(y, m, d);
   }
   const dt = new Date(s);
   if (Number.isNaN(dt.getTime())) return null;
-  return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), 12, 0, 0);
+  const ymd = ymdBogota(dt);
+  return ymd ? fechaSoloDiaUtc(ymd.y, ymd.m, ymd.d) : null;
 }
 
 function fechaSiMarca(marca, fecha) {
@@ -265,7 +300,8 @@ export function estadoFacilitadorDesdeCasoSura(caso = {}) {
   const tipo = tipoInformeCasoSura(caso);
   const esUnicoOFinal =
     estado === 'INFORME ÚNICO O FINAL' || tipo === 'unico' || tipo === 'final';
-  if (esUnicoOFinal && fechaRadicacionInformeSura(caso)) {
+  // Informe final radicado (fchaInfoFnal) o flujo único/final con fecha de radicación.
+  if (parseFecha(caso.fchaInfoFnal) || (esUnicoOFinal && fechaRadicacionInformeSura(caso))) {
     return 'Tramitado';
   }
 
@@ -426,7 +462,11 @@ export function sugerenciaDesdeCasoSura(caso = {}) {
   const cerradoFac = ['Anulado', 'Tramitado', 'Desistido', 'Objetado', 'Cancelado Sura'].includes(
     estadoFac
   );
-  const fechaInspeccion = parseFecha(caso.fechaInspeccion || caso.fchaInspccion || null);
+  // Fecha de visita es la inspección realizada (fchaInspccion);
+  // solo si el caso no tiene fchaProgInspeccion (casos históricos), fallback a fechaInspeccion.
+  const fechaInspRealizada = parseFecha(caso.fchaInspccion);
+  const fechaInspFallback = !caso.fchaProgInspeccion ? parseFecha(caso.fechaInspeccion) : null;
+  const fechaInspeccion = fechaInspRealizada || fechaInspFallback || null;
   const visitaSi = Boolean(fechaInspeccion);
   const criterio = criterioConDefault(caso.estadoPagoPrimas);
   // 1.er contacto: SOLO Contacto inicial; si el caso no lo tiene, fecha de inspección.
@@ -516,9 +556,9 @@ export function fusionarDesdeCasoSura(destino = {}, caso = {}) {
   if (sugerido.visitaRealizada === 'SI') {
     mezclado.visitaRealizada = 'SI';
     mezclado.fechaVisita = sugerido.fechaVisita;
-  } else if (!destino.visitaRealizada || destino.visitaRealizada === 'N/A') {
-    mezclado.visitaRealizada = sugerido.visitaRealizada || 'NO';
-    mezclado.fechaVisita = sugerido.fechaVisita;
+  } else {
+    mezclado.visitaRealizada = 'NO';
+    mezclado.fechaVisita = null;
   }
 
   // Siempre recalcular 1.er contacto desde el caso (contacto inicial → inspección).
@@ -539,13 +579,12 @@ export function fusionarDesdeCasoSura(destino = {}, caso = {}) {
   mezclado.casoCerrado = sugerido.casoCerrado || 'NO';
   mezclado.fechaCierre = sugerido.fechaCierre || null;
 
-  if (sugerido.ultimoComentario && !String(destino.ultimoComentario || '').trim()) {
+  if (sugerido.ultimoComentario) {
     mezclado.ultimoComentario = sugerido.ultimoComentario;
   }
 
-  mezclado.criterioDetalle = criterioConDefault(
-    destino.criterioDetalle || sugerido.criterioDetalle
-  );
+  // Criterio siempre desde Gestionar (estadoPagoPrimas).
+  mezclado.criterioDetalle = sugerido.criterioDetalle || 'Medio';
 
   mezclado.tipoVivienda = tipoViviendaConDefault(
     caso.tipoVivienda || sugerido.tipoVivienda || destino.tipoVivienda

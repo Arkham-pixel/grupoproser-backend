@@ -29,17 +29,58 @@ async function cargarCasosSuraParaFacilitadores() {
     siniestro: { $exists: true, $nin: [null, ''] },
   })
     .select(
-      'siniestro estado descripcionEstado estadoPagoPrimas fechaLlamada observacionLlamada fechaInspeccion fchaInspccion fchaContIni fchaInfoFnal fchaInfoPrelm fchaRepoActi fechaUltimoDocumento fechaEnvioAseguradora fechaLiquidado informeUnico archivos.etiqueta archivos.fechaSubida archivos.createdAt fchaAsgncion createdAt updatedAt'
+      'siniestro estado estadoFacilitador descripcionEstado estadoPagoPrimas tipoVivienda fechaLlamada observacionLlamada fechaInspeccion fchaInspccion fchaProgInspeccion fchaContIni fchaInfoFnal fchaInfoPrelm fchaRepoActi fechaUltimoDocumento fechaEnvioAseguradora fechaLiquidado informeUnico archivos.etiqueta archivos.fechaSubida archivos.createdAt fchaAsgncion createdAt updatedAt'
     )
     .lean();
 }
 
+function sonFechasIguales(a, b) {
+  const tA = a ? new Date(a).getTime() : null;
+  const tB = b ? new Date(b).getTime() : null;
+  if (!tA && !tB) return true;
+  return tA === tB;
+}
+
+function hayDiferenciasFacilitador(actual = {}, nuevo = {}) {
+  const camposFecha = [
+    'fechaAsignacion',
+    'fechaPrimerContacto',
+    'fechaVisita',
+    'fechaInformePreliminar',
+    'fechaInforme',
+    'fechaDocumentacionCompleta',
+    'fechaCierre',
+  ];
+  for (const f of camposFecha) {
+    if (!sonFechasIguales(actual[f], nuevo[f])) return true;
+  }
+  const camposTexto = [
+    'visitaRealizada',
+    'criterioDetalle',
+    'ultimoComentario',
+    'informePreliminarEnviado',
+    'informeEnviado',
+    'documentacionCompleta',
+    'casoCerrado',
+    'estadoSiniestro',
+    'tipoVivienda',
+    'proveedor',
+    'informacion',
+  ];
+  for (const c of camposTexto) {
+    const vAct = String(actual[c] ?? '').trim();
+    const vNue = String(nuevo[c] ?? '').trim();
+    if (vAct !== vNue) return true;
+  }
+  if (String(actual.casoSuraId || '') !== String(nuevo.casoSuraId || '')) return true;
+  return false;
+}
+
 /**
  * @param {{ quien?: string, fillVacios?: boolean }} opts
- * - Por defecto solo crea reclamaciones faltantes (rápido al abrir la pantalla).
- * - fillVacios=true completa celdas vacías sin pisar lo ya diligenciado.
+ * - Por defecto crea reclamaciones faltantes y sincroniza cambios desde casos SURA.
  */
-async function sincronizarDesdeArnald({ quien = '', fillVacios = false } = {}) {
+async function sincronizarDesdeArnald({ quien = '', fillVacios = true } = {}) {
   const casos = await cargarCasosSuraParaFacilitadores();
   const porCaso = new Map();
   for (const caso of casos) {
@@ -106,13 +147,15 @@ async function sincronizarDesdeArnald({ quien = '', fillVacios = false } = {}) {
       }
 
       const mezclado = fusionarDesdeCasoSura(fila, caso);
-      updates.push({
-        updateOne: {
-          filter: { _id: fila._id },
-          update: { $set: { ...mezclado, actualizadoPor: quien || fila.actualizadoPor } },
-        },
-      });
-      filled += 1;
+      if (hayDiferenciasFacilitador(fila, mezclado)) {
+        updates.push({
+          updateOne: {
+            filter: { _id: fila._id },
+            update: { $set: { ...mezclado, actualizadoPor: quien || fila.actualizadoPor } },
+          },
+        });
+        filled += 1;
+      }
     }
     if (casoBackfills.length) {
       await SegurosSuraCaso.bulkWrite(casoBackfills, { ordered: false });
@@ -176,75 +219,12 @@ function backfillFechasHitoCasoSura(caso = {}) {
 
 export async function listarFacilitadoresSura(req, res) {
   try {
-    let filas = await SuraFacilitadorCaso.find({}).sort({ reclamacion: 1 }).lean();
-    const forzarSync = String(req.query.sync || '') === '1';
-    let syncInfo = null;
     const identidad = await obtenerIdentidadUsuarioReq(req);
     const quien = actor(req, identidad);
 
-    // Altas nuevas si vacío / sync forzado.
-    if (!filas.length || forzarSync) {
-      syncInfo = await sincronizarDesdeArnald({ quien, fillVacios: false });
-      filas = await SuraFacilitadorCaso.find({}).sort({ reclamacion: 1 }).lean();
-    }
-
-    // Auto: alinear visita, informes y DOCS si el caso SURA ya avanzó y Facilitadores quedó atrás.
-    const [inspSura, visitasFac, docsEsperados, docsFac, prelimEsperados, prelimFacOk] =
-      await Promise.all([
-      SegurosSuraCaso.countDocuments({
-        $or: [
-          { fechaInspeccion: { $nin: [null, ''] } },
-          { fchaInspccion: { $nin: [null, ''] } },
-        ],
-      }),
-      SuraFacilitadorCaso.countDocuments({ visitaRealizada: { $in: ['SI', 'si', 'Si'] } }),
-      SegurosSuraCaso.countDocuments({
-        $or: [
-          { fchaInfoFnal: { $nin: [null, ''] } },
-          { estado: 'INFORME ÚNICO O FINAL' },
-          { 'informeUnico.tipoInforme': { $in: ['unico', 'final', 'Único', 'Final', 'UNICO', 'FINAL'] } },
-        ],
-      }),
-      SuraFacilitadorCaso.countDocuments({ documentacionCompleta: { $in: ['SI', 'si', 'Si'] } }),
-      SegurosSuraCaso.countDocuments({
-        $or: [
-          { fchaInfoPrelm: { $nin: [null, ''] } },
-          { estado: 'INFORME PRELIMINAR Y/O ACTUALIZACIÓN' },
-          { estado: 'INFORME ÚNICO O FINAL' },
-          { tieneInforme: true },
-          { informeUnico: { $type: 'object' } },
-          {
-            'informeUnico.tipoInforme': {
-              $exists: true,
-              $nin: [null, ''],
-            },
-          },
-          { 'informeUnico.fechaInformePreliminar': { $nin: [null, ''] } },
-        ],
-      }),
-      SuraFacilitadorCaso.countDocuments({
-        informePreliminarEnviado: { $in: ['SI', 'si', 'Si'] },
-        fechaInformePreliminar: { $nin: [null, ''] },
-      }),
-    ]);
-    const necesitaFill =
-      forzarSync ||
-      inspSura > visitasFac ||
-      docsEsperados > docsFac ||
-      prelimEsperados > prelimFacOk ||
-      String(req.query.fill || '') === '1';
-    if (necesitaFill) {
-      const syncFill = await sincronizarDesdeArnald({ quien, fillVacios: true });
-      syncInfo = {
-        ...(syncInfo || {}),
-        ...syncFill,
-        inspSura,
-        visitasFacAntes: visitasFac,
-        docsEsperados,
-        docsFacAntes: docsFac,
-      };
-      filas = await SuraFacilitadorCaso.find({}).sort({ reclamacion: 1 }).lean();
-    }
+    // Sincronización automática continua desde casos SURA (igual que el reporte listado)
+    const syncInfo = await sincronizarDesdeArnald({ quien, fillVacios: true });
+    const filas = await SuraFacilitadorCaso.find({}).sort({ reclamacion: 1 }).lean();
 
     res.json({
       success: true,
@@ -360,6 +340,36 @@ export async function actualizarFacilitadorSura(req, res) {
     next.actualizadoPor = actor(req, identidad);
     actual.set(next);
     await actual.save();
+
+    // Sincronizar fecha de visita hacia el caso SURA (fchaInspccion y fechaInspeccion)
+    const rec = digitsReclamacion(actual.reclamacion);
+    if (rec.length >= 10) {
+      const query = {
+        $or: [
+          { siniestro: new RegExp(rec) },
+          ...(actual.casoSuraId ? [{ _id: actual.casoSuraId }] : []),
+        ],
+      };
+      const caso = await SegurosSuraCaso.findOne(query);
+      if (caso) {
+        const patchCaso = {};
+        if (req.body.fechaVisita !== undefined || req.body.visitaRealizada !== undefined) {
+          if (next.visitaRealizada === 'SI' && next.fechaVisita) {
+            patchCaso.fchaInspccion = next.fechaVisita;
+            patchCaso.fechaInspeccion = next.fechaVisita;
+          } else if (next.visitaRealizada === 'NO') {
+            patchCaso.fchaInspccion = null;
+          }
+        }
+        if (req.body.fechaPrimerContacto !== undefined) {
+          patchCaso.fchaContIni = next.fechaPrimerContacto || null;
+        }
+        if (Object.keys(patchCaso).length > 0) {
+          await SegurosSuraCaso.updateOne({ _id: caso._id }, { $set: patchCaso });
+        }
+      }
+    }
+
     res.json({ success: true, data: actual.toObject() });
   } catch (error) {
     console.error('Error actualizar facilitador SURA:', error);

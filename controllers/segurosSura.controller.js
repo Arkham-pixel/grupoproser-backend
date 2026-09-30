@@ -476,8 +476,8 @@ export const buildSuraPayload = (data = {}, base = {}) => {
     fechaLlamada: parseDateFlexible(data.fechaLlamada, base.fechaLlamada ?? null),
     observacionLlamada: toStringOrNull(data.observacionLlamada, base.observacionLlamada ?? null) || '',
     fechaInspeccion:
-      primerFecha(data.fechaInspeccion, data.fchaInspccion) ||
-      parseDateFlexible(undefined, base.fechaInspeccion ?? base.fchaInspccion ?? null),
+      primerFecha(data.fchaInspccion, data.fechaInspeccion) ||
+      parseDateFlexible(undefined, base.fchaInspccion ?? base.fechaInspeccion ?? null),
     ...mapearFranjaAgenda(data, base, toStringOrNull),
     fechaUltimoDocumento: parseDateFlexible(
       data.fechaUltimoDocumento,
@@ -505,6 +505,13 @@ export const buildSuraPayload = (data = {}, base = {}) => {
   for (const [clave, valor] of Object.entries(data || {})) {
     if (CAMPOS_NO_COPIAR_COMPLEX.has(clave) || CAMPOS_IDENTIDAD_SURA.has(clave)) continue;
     if (valor !== undefined) payload[clave] = valor;
+  }
+
+  if (data.fchaInspccion !== undefined) {
+    payload.fchaInspccion = parseDateFlexible(data.fchaInspccion);
+    if (payload.fchaInspccion) {
+      payload.fechaInspeccion = payload.fchaInspccion;
+    }
   }
 
   if (data.control_horas !== undefined) payload.control_horas = data.control_horas;
