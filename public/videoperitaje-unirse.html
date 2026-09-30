@@ -80,16 +80,6 @@
         margin: 0; font-size: 9px; letter-spacing: .16em; text-transform: uppercase;
         color: rgba(255,255,255,.85); font-weight: 700; text-shadow: 0 1px 2px rgba(0,0,0,.5);
       }
-      .flip { display: none; }
-      body.in-call .flip {
-        display: flex; position: absolute;
-        left: calc(12px + env(safe-area-inset-left));
-        top: calc(12px + env(safe-area-inset-top));
-        transform: none;
-        z-index: 6; width: 44px; height: 44px; border: 0; border-radius: 50%;
-        background: rgba(255,255,255,.92); color: #111; align-items: center; justify-content: center;
-        box-shadow: 0 6px 18px rgba(0,0,0,.35);
-      }
       .torch { display: none; }
       body.in-call .torch {
         display: flex; position: absolute;
@@ -101,15 +91,45 @@
         box-shadow: 0 6px 18px rgba(0,0,0,.35);
       }
       body.in-call .torch.on { background: #f5c518; }
-      .cam-label { display: none; }
-      body.in-call .cam-label {
-        display: block; position: absolute;
-        left: calc(64px + env(safe-area-inset-left));
-        top: calc(22px + env(safe-area-inset-top));
-        right: calc(140px + env(safe-area-inset-right));
-        bottom: auto; z-index: 6;
-        margin: 0; text-align: left; font-size: 10px; color: rgba(255,255,255,.8);
-        text-shadow: 0 1px 2px rgba(0,0,0,.6);
+      .client-loader {
+        position: absolute; inset: 0; z-index: 25;
+        background: radial-gradient(ellipse at 50% 40%, #171d2b 0%, #090d16 100%);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        padding: 24px; text-align: center; color: #fff;
+        transition: opacity .4s ease, visibility .4s;
+      }
+      .client-loader.fade-out { opacity: 0; visibility: hidden; pointer-events: none; }
+      .loader-spinner {
+        width: 50px; height: 50px;
+        border: 4px solid rgba(255, 255, 255, .16);
+        border-top-color: #c8102e; border-radius: 50%;
+        animation: vpSpin .85s linear infinite; margin-bottom: 20px;
+      }
+      @keyframes vpSpin { to { transform: rotate(360deg); } }
+      .loader-title { font-size: 17px; font-weight: 700; margin: 0 0 6px; color: #fff; }
+      .loader-sub { font-size: 13px; color: rgba(255,255,255,.72); margin: 0; max-width: 280px; line-height: 1.4; }
+      .capture-overlay {
+        position: absolute; inset: 0; z-index: 35;
+        background: rgba(0,0,0,.65); backdrop-filter: blur(3px);
+        display: flex; align-items: center; justify-content: center; padding: 20px;
+        transition: opacity .25s ease;
+      }
+      .capture-overlay.hidden { display: none !important; }
+      .capture-box {
+        background: rgba(24, 24, 27, .96); border: 1px solid rgba(255, 255, 255, .15);
+        border-radius: 20px; padding: 26px 30px; text-align: center; color: #fff;
+        box-shadow: 0 16px 48px rgba(0,0,0,.7); max-width: 290px;
+        animation: vpPop .25s cubic-bezier(.175,.885,.32,1.275);
+      }
+      @keyframes vpPop { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+      .capture-icon { font-size: 40px; margin-bottom: 12px; display: inline-block; }
+      .capture-title { font-size: 17px; font-weight: 700; margin-bottom: 4px; color: #fff; }
+      .capture-desc { font-size: 13px; color: rgba(255,255,255,.75); }
+      .mini-spin {
+        display: inline-block; width: 14px; height: 14px;
+        border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
+        border-radius: 50%; animation: vpSpin .8s linear infinite; margin-right: 8px;
+        vertical-align: middle;
       }
       .msg { padding: 10px 12px; border-radius: 12px; font-size: 14px; margin-bottom: 12px; }
       .hidden { display: none !important; }
@@ -359,12 +379,12 @@
         if (esAndroid()) {
           return {
             facingMode: facingMode,
-            resolution: { width: 1280, height: 720, frameRate: 24 },
+            resolution: { width: 1280, height: 960, frameRate: 24 },
           };
         }
         return {
           facingMode: facingMode,
-          resolution: { width: 1920, height: 1080, frameRate: 30 },
+          resolution: { width: 1280, height: 960, frameRate: 30 },
         };
       }
       function opcionesPublicacion() {
@@ -380,7 +400,7 @@
         return {
           simulcast: true,
           videoCodec: 'vp9',
-          videoSimulcastLayers: P ? [P.h1080, P.h720, P.h360] : undefined,
+          videoSimulcastLayers: P ? [P.h720, P.h360] : undefined,
           audioPreset: { maxBitrate: 64000 },
         };
       }
@@ -391,6 +411,7 @@
           facingMode: { ideal: o.facingMode },
           width: { ideal: o.resolution.width },
           height: { ideal: o.resolution.height },
+          aspectRatio: { ideal: 4 / 3 },
           frameRate: { ideal: o.resolution.frameRate },
         };
       }
@@ -402,6 +423,7 @@
         const res = {
           width: { ideal: o.resolution.width },
           height: { ideal: o.resolution.height },
+          aspectRatio: { ideal: 4 / 3 },
           frameRate: { ideal: o.resolution.frameRate },
         };
         const intentos = [];
@@ -703,16 +725,37 @@
       }
       async function tomarFotoHd() {
         const localEl = document.getElementById('local');
-        // Trasera: foto del sensor para el informe. Frontal: cuadro del video, sin recorte de cara.
-        const blob = await captureFotoHd(localEl, pistaVideoLocal(liveRoom), {
-          soloStream: facingMode !== 'environment',
-        });
-        if (!blob) return;
-        flashWhite();
+        const capOverlay = document.getElementById('capture-overlay');
+        const capIcon = document.getElementById('capture-icon');
+        const capTitle = document.getElementById('capture-title');
+        const capDesc = document.getElementById('capture-desc');
+
+        if (capOverlay) {
+          if (capIcon) capIcon.textContent = '📸';
+          if (capTitle) capTitle.textContent = 'Tomando fotografía...';
+          if (capDesc) capDesc.textContent = 'Mantenga la cámara quieta';
+          capOverlay.classList.remove('hidden');
+        }
+
         try {
-          await uploadBlob(blob, { descripcion: 'Captura videoperitaje' });
+          // Trasera: foto del sensor para el informe. Frontal: cuadro del video, sin recorte de cara.
+          const blob = await captureFotoHd(localEl, pistaVideoLocal(liveRoom), {
+            soloStream: facingMode !== 'environment',
+          });
+          flashWhite();
+          if (blob) {
+            if (capIcon) capIcon.textContent = '✅';
+            if (capTitle) capTitle.textContent = '¡Foto capturada!';
+            if (capDesc) capDesc.textContent = 'Subiendo al expediente...';
+            await uploadBlob(blob, { descripcion: 'Captura videoperitaje' });
+          }
+        } catch (e) {
+          if (capTitle) capTitle.textContent = 'Error al capturar';
         } finally {
           await recuperarVideoTrasCaptura();
+          setTimeout(() => {
+            if (capOverlay) capOverlay.classList.add('hidden');
+          }, 1200);
         }
       }
       function renderWelcome() {
@@ -721,12 +764,17 @@
           <p class="hint">Es una videollamada. Permita cámara y micrófono. El ajustador tomará las fotos.</p>
           <button class="btn" id="entrar">Entrar a la videollamada</button>
         `;
-        document.getElementById('entrar').onclick = async () => {
+        const entrarBtn = document.getElementById('entrar');
+        entrarBtn.onclick = async () => {
+          entrarBtn.disabled = true;
+          entrarBtn.innerHTML = '<span class="mini-spin"></span> Conectando...';
           try {
             const joined = await join();
             if (sesion.tipo === 'guided') renderGuided();
             else renderLive(joined);
           } catch (e) {
+            entrarBtn.disabled = false;
+            entrarBtn.textContent = 'Entrar a la videollamada';
             showAlert(e.message);
           }
         };
@@ -738,23 +786,37 @@
         panel.className = 'card';
         panel.innerHTML = `
           <div class="stage">
+            <div id="client-loader" class="client-loader">
+              <div class="loader-spinner"></div>
+              <p class="loader-title">Conectando videollamada...</p>
+              <p class="loader-sub">Iniciando cámara trasera...</p>
+            </div>
+            <div id="capture-overlay" class="capture-overlay hidden">
+              <div class="capture-box">
+                <div class="capture-icon" id="capture-icon">📸</div>
+                <div class="capture-title" id="capture-title">Tomando fotografía...</div>
+                <div class="capture-desc" id="capture-desc">Mantenga la cámara quieta</div>
+              </div>
+            </div>
             <video id="local" class="main" autoplay muted playsinline webkit-playsinline></video>
             <video id="remote" class="pip" autoplay playsinline webkit-playsinline></video>
             <p id="status" style="position:absolute;left:12px;top:80px;margin:0;background:rgba(0,0,0,.55);color:#fff;font-size:11px;padding:5px 9px;border-radius:999px;z-index:5;">Esperando al ajustador…</p>
-            <button type="button" class="flip" id="flip" aria-label="Cambiar cámara">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M16 4h2a2 2 0 0 1 2 2v2M8 20H6a2 2 0 0 1-2-2v-2M20 16v2a2 2 0 0 1-2 2h-2M4 8V6a2 2 0 0 1 2-2h2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                <circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="2"/>
-              </svg>
-            </button>
             <button type="button" class="torch" id="torch" aria-pressed="false">Flash apagado</button>
-            <p class="cam-label" id="cam-label">Cámara trasera · toque para cambiar</p>
           </div>
         `;
         startWatch();
         const localEl = document.getElementById('local');
         const remoteEl = document.getElementById('remote');
         const status = document.getElementById('status');
+        const hideLoader = () => {
+          const l = document.getElementById('client-loader');
+          if (l) l.classList.add('fade-out');
+        };
+        if (localEl) {
+          localEl.addEventListener('playing', hideLoader, { once: true });
+        }
+        setTimeout(hideLoader, 3500);
+
         let previewStream = null;
         try {
           if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
@@ -767,8 +829,18 @@
             localEl.setAttribute('playsinline', '');
             fitVideo(localEl);
             localEl.play().catch(function () {});
+            hideLoader();
           }
         } catch (camErr) {
+          const l = document.getElementById('client-loader');
+          if (l) {
+            l.innerHTML = `
+              <div style="font-size:36px;margin-bottom:12px;">⚠️</div>
+              <p class="loader-title">Permiso de cámara necesario</p>
+              <p class="loader-sub">${html(camErr.message || 'Permita el acceso a la cámara en el navegador.')}</p>
+              <button class="btn" onclick="location.reload()" style="margin-top:16px;max-width:200px;">Reintentar</button>
+            `;
+          }
           showAlert(camErr.message || 'Permita cámara y micrófono para continuar.');
         }
         const lk = joined && joined.livekit;
@@ -927,8 +999,6 @@
             }
           }
           attachLocal();
-            const flip = document.getElementById('flip');
-            const camLabel = document.getElementById('cam-label');
             const torchBtn = document.getElementById('torch');
             async function apagarFlash() {
               torchOn = false;
@@ -964,40 +1034,30 @@
                 }
               };
             }
-            if (flip) {
-              flip.onclick = async () => {
-                await apagarFlash();
-                facingMode = facingMode === 'environment' ? 'user' : 'environment';
-                try {
-                  const pubs = Array.from(room.localParticipant.videoTrackPublications.values());
-                  const current = pubs.find((p) => p.track);
-                  if (current && current.track && current.track.restartTrack) {
-                    await current.track.restartTrack(opcionesCamara());
-                  } else {
-                    await room.localParticipant.setCameraEnabled(false);
-                    await room.localParticipant.setCameraEnabled(true, opcionesCamara(), opcionesPublicacion());
-                  }
-                  if (localEl) {
-                    localEl.classList.remove('front');
-                    fitVideo(localEl);
-                  }
-                  if (camLabel) {
-                    camLabel.textContent = facingMode === 'environment'
-                      ? 'Cámara trasera · toque para cambiar'
-                      : 'Cámara frontal · toque para cambiar';
-                  }
-                  attachLocal();
-                } catch (err) {
-                  showAlert(err.message || 'No se pudo cambiar de cámara');
+            async function cambiarCamaraRemota() {
+              await apagarFlash();
+              facingMode = facingMode === 'environment' ? 'user' : 'environment';
+              try {
+                const pubs = Array.from(room.localParticipant.videoTrackPublications.values());
+                const current = pubs.find((p) => p.track);
+                if (current && current.track && current.track.restartTrack) {
+                  await current.track.restartTrack(opcionesCamara());
+                } else {
+                  await room.localParticipant.setCameraEnabled(false);
+                  await room.localParticipant.setCameraEnabled(true, opcionesCamara(), opcionesPublicacion());
                 }
-              };
+                if (localEl) {
+                  fitVideo(localEl);
+                }
+                attachLocal();
+              } catch (err) {
+                showAlert(err.message || 'No se pudo cambiar de cámara');
+              }
             }
             alAlternarFlash = async () => {
               if (torchBtn) torchBtn.click();
             };
-            alCambiarCamara = async () => {
-              if (flip) flip.click();
-            };
+            alCambiarCamara = cambiarCamaraRemota;
         } catch (e) {
           const msg = (e && e.message) || 'No se pudo conectar la videollamada';
           if (status) status.textContent = msg;
