@@ -391,24 +391,19 @@
         };
       }
       function opcionesPublicacion() {
+        const P = window.LivekitClient && window.LivekitClient.VideoPresets;
         if (esAndroid()) {
           return {
-            simulcast: false,
+            simulcast: true,
             videoCodec: 'vp8',
-            videoEncoding: {
-              maxBitrate: 2800000,
-              maxFramerate: 30,
-            },
+            videoSimulcastLayers: P ? [P.h720, P.h360] : undefined,
             audioPreset: { maxBitrate: 64000 },
           };
         }
         return {
-          simulcast: false,
-          videoCodec: 'h264',
-          videoEncoding: {
-            maxBitrate: 3500000,
-            maxFramerate: 30,
-          },
+          simulcast: true,
+          videoCodec: 'vp8',
+          videoSimulcastLayers: P ? [P.h1080, P.h720, P.h360] : undefined,
           audioPreset: { maxBitrate: 64000 },
         };
       }
@@ -873,8 +868,8 @@
           const LivekitClient = window.LivekitClient;
           if (!LivekitClient) throw new Error('No se pudo cargar la videollamada');
           const room = new LivekitClient.Room({
-            adaptiveStream: false,
-            dynacast: false,
+            adaptiveStream: true,
+            dynacast: true,
             stopLocalTrackOnUnpublish: true,
             disconnectOnPageLeave: false,
             reconnectPolicy: {
@@ -988,10 +983,7 @@
               if (msg && msg.type === 'TORCH' && alAlternarFlash) await alAlternarFlash();
             } catch (_) {}
           });
-          await room.connect(lk.url, lk.token, {
-            peerConnectionTimeout: 30000,
-            maxRetries: 3,
-          });
+          await room.connect(lk.url, lk.token);
           try {
             if (room.startAudio) await room.startAudio();
           } catch (_) {}
