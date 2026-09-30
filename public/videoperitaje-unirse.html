@@ -382,28 +382,33 @@
         if (esAndroid()) {
           return {
             facingMode: facingMode,
-            resolution: { width: 1280, height: 960, frameRate: 24 },
+            resolution: { width: 1280, height: 720, frameRate: 30 },
           };
         }
         return {
           facingMode: facingMode,
-          resolution: { width: 1280, height: 960, frameRate: 30 },
+          resolution: { width: 1920, height: 1080, frameRate: 30 },
         };
       }
       function opcionesPublicacion() {
-        const P = window.LivekitClient && window.LivekitClient.VideoPresets;
         if (esAndroid()) {
           return {
-            simulcast: true,
+            simulcast: false,
             videoCodec: 'vp8',
-            videoSimulcastLayers: P ? [P.h720, P.h360] : undefined,
-            audioPreset: { maxBitrate: 48000 },
+            videoEncoding: {
+              maxBitrate: 2800000,
+              maxFramerate: 30,
+            },
+            audioPreset: { maxBitrate: 64000 },
           };
         }
         return {
-          simulcast: true,
-          videoCodec: 'vp9',
-          videoSimulcastLayers: P ? [P.h720, P.h360] : undefined,
+          simulcast: false,
+          videoCodec: 'h264',
+          videoEncoding: {
+            maxBitrate: 3500000,
+            maxFramerate: 30,
+          },
           audioPreset: { maxBitrate: 64000 },
         };
       }
@@ -414,7 +419,6 @@
           facingMode: { ideal: o.facingMode },
           width: { ideal: o.resolution.width },
           height: { ideal: o.resolution.height },
-          aspectRatio: { ideal: 4 / 3 },
           frameRate: { ideal: o.resolution.frameRate },
         };
       }
@@ -422,22 +426,28 @@
         if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
           throw new Error('Abra este enlace en Safari o Chrome (no en WhatsApp/Gmail).');
         }
-        const o = opcionesCamara();
-        const res = {
-          width: { ideal: o.resolution.width },
-          height: { ideal: o.resolution.height },
-          aspectRatio: { ideal: 4 / 3 },
-          frameRate: { ideal: o.resolution.frameRate },
+        const res1080 = {
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          frameRate: { ideal: 30 },
+        };
+        const res720 = {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 },
         };
         const intentos = [];
         if (facingMode === 'environment') {
           // Forzar cámara trasera primero con exact para que Android/iOS no abran la selfie
-          intentos.push({ video: { facingMode: { exact: 'environment' }, ...res }, audio: true });
-          intentos.push({ video: { facingMode: 'environment', ...res }, audio: true });
-          intentos.push({ video: { facingMode: { ideal: 'environment' }, ...res }, audio: true });
+          intentos.push({ video: { facingMode: { exact: 'environment' }, ...res1080 }, audio: true });
+          intentos.push({ video: { facingMode: 'environment', ...res1080 }, audio: true });
+          intentos.push({ video: { facingMode: { ideal: 'environment' }, ...res1080 }, audio: true });
+          intentos.push({ video: { facingMode: { exact: 'environment' }, ...res720 }, audio: true });
+          intentos.push({ video: { facingMode: { ideal: 'environment' }, ...res720 }, audio: true });
         } else {
-          intentos.push({ video: { facingMode: { exact: 'user' }, ...res }, audio: true });
-          intentos.push({ video: { facingMode: 'user', ...res }, audio: true });
+          intentos.push({ video: { facingMode: { exact: 'user' }, ...res1080 }, audio: true });
+          intentos.push({ video: { facingMode: 'user', ...res1080 }, audio: true });
+          intentos.push({ video: { facingMode: { ideal: 'user' }, ...res720 }, audio: true });
         }
         intentos.push({ video: true, audio: true });
         intentos.push({ video: true, audio: false });
@@ -465,7 +475,7 @@
               const trasera = devs.find((d) => d.kind === 'videoinput' && /back|rear|trasera|environment/i.test(d.label));
               if (trasera && trasera.deviceId) {
                 const s2 = await navigator.mediaDevices.getUserMedia({
-                  video: { deviceId: { exact: trasera.deviceId }, ...res },
+                  video: { deviceId: { exact: trasera.deviceId }, ...res1080 },
                   audio: true,
                 }).catch(() => null);
                 if (s2) {
@@ -863,8 +873,8 @@
           const LivekitClient = window.LivekitClient;
           if (!LivekitClient) throw new Error('No se pudo cargar la videollamada');
           const room = new LivekitClient.Room({
-            adaptiveStream: true,
-            dynacast: true,
+            adaptiveStream: false,
+            dynacast: false,
             stopLocalTrackOnUnpublish: true,
             disconnectOnPageLeave: false,
             reconnectPolicy: {
@@ -978,7 +988,10 @@
               if (msg && msg.type === 'TORCH' && alAlternarFlash) await alAlternarFlash();
             } catch (_) {}
           });
-          await room.connect(lk.url, lk.token);
+          await room.connect(lk.url, lk.token, {
+            peerConnectionTimeout: 30000,
+            maxRetries: 3,
+          });
           try {
             if (room.startAudio) await room.startAudio();
           } catch (_) {}
