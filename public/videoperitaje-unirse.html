@@ -43,6 +43,7 @@
         position: absolute; inset: 0; left: 0; top: 0; right: 0; bottom: 0; z-index: 0;
         transform: none !important;
         -webkit-transform: none !important;
+        pointer-events: none;
       }
       .stage { position: relative; overflow: hidden; border-radius: 16px; background: #000; }
       body.in-call .stage {
@@ -64,6 +65,7 @@
         aspect-ratio: 3 / 4;
         max-width: none;
         z-index: 4; border-width: 2px; object-fit: cover;
+        pointer-events: none;
       }
       .pip {
         position: absolute; top: 12px; right: 12px; width: 32%; aspect-ratio: 3/4;
@@ -350,6 +352,7 @@
 
       function fitVideo(el) {
         if (!el) return;
+        el.muted = true;
         const esPip = el.classList.contains('pip');
         el.style.objectFit = 'cover';
         el.style.objectPosition = 'center';
@@ -799,7 +802,7 @@
               </div>
             </div>
             <video id="local" class="main" autoplay muted playsinline webkit-playsinline></video>
-            <video id="remote" class="pip" autoplay playsinline webkit-playsinline></video>
+            <video id="remote" class="pip" autoplay muted playsinline webkit-playsinline></video>
             <p id="status" style="position:absolute;left:12px;top:80px;margin:0;background:rgba(0,0,0,.55);color:#fff;font-size:11px;padding:5px 9px;border-radius:999px;z-index:5;">Esperando al ajustador…</p>
             <button type="button" class="torch" id="torch" aria-pressed="false">Flash apagado</button>
           </div>
@@ -900,10 +903,13 @@
             }
             if (track.kind === 'video' || track.kind === LivekitClient.Track.Kind.Video) {
               track.attach(remoteEl);
+              remoteEl.muted = true;
               remoteEl.setAttribute('playsinline', '');
               remoteEl.setAttribute('webkit-playsinline', '');
               fitVideo(remoteEl);
-              remoteEl.play().catch(() => {});
+              const playRemote = () => remoteEl.play().catch(() => {});
+              if (remoteEl.readyState >= 2) playRemote();
+              else remoteEl.onloadedmetadata = playRemote;
               if (status) status.style.display = 'none';
             }
           });
