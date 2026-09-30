@@ -433,6 +433,9 @@
         return /Android/i.test(navigator.userAgent || '');
       }
       function opcionesCamara() {
+        if (esAndroid()) {
+          return { facingMode: facingMode, resolution: { width: 720, height: 1280 } };
+        }
         return {
           facingMode: facingMode,
           resolution: { width: 1280, height: 720, frameRate: 30 },
@@ -440,14 +443,7 @@
       }
       function opcionesPublicacion() {
         const P = window.LivekitClient && window.LivekitClient.VideoPresets;
-        if (esAndroid()) {
-          return {
-            simulcast: true,
-            videoCodec: 'vp8',
-            videoSimulcastLayers: P ? [P.h720, P.h360] : undefined,
-            audioPreset: { maxBitrate: 64000 },
-          };
-        }
+        if (esAndroid()) return {};
         return {
           simulcast: true,
           videoCodec: 'vp8',
@@ -871,7 +867,7 @@
           const LivekitClient = window.LivekitClient;
           if (!LivekitClient) throw new Error('No se pudo cargar la videollamada');
           const room = new LivekitClient.Room({
-            adaptiveStream: true,
+            adaptiveStream: false,
             dynacast: true,
             stopLocalTrackOnUnpublish: true,
             disconnectOnPageLeave: false,
@@ -986,7 +982,7 @@
               if (msg && msg.type === 'TORCH' && alAlternarFlash) await alAlternarFlash();
             } catch (_) {}
           });
-          await room.connect(lk.url, lk.token);
+          await room.connect(lk.url, lk.token, { peerConnectionTimeout: 30000 });
           try {
             if (room.startAudio) await room.startAudio();
           } catch (_) {}
