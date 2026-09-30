@@ -16,18 +16,39 @@
         background: #f4f4f5;
         color: #111827;
       }
-      body.in-call { background: #000; overflow: hidden; }
+      body.in-call,
+      body.in-call html {
+        width: 100% !important;
+        height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        background: #000 !important;
+      }
       .wrap { max-width: 420px; margin: 0 auto; padding: 20px 16px 40px; }
-      body.in-call .wrap {
-        position: relative; max-width: none; margin: 0; padding: 0; width: 100%;
-        height: 100dvh; min-height: 100dvh; min-height: -webkit-fill-available;
-        overflow: hidden;
+      body.in-call .wrap,
+      body.in-call .card {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100vw !important;
+        height: 100% !important;
+        height: 100dvh !important;
+        max-width: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        background: #000 !important;
+        overflow: hidden !important;
       }
       .brand { text-align: center; }
       .brand p { margin: 0; font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: #c8102e; font-weight: 700; }
       h1 { margin: 4px 0 12px; font-size: 18px; text-align: center; }
       body.in-call .brand { display: none; }
-      body.in-call .card { background: transparent; border-radius: 0; padding: 0; box-shadow: none; height: 100%; }
       .card { background: #fff; border-radius: 16px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
       .btn {
         display: flex; width: 100%; align-items: center; justify-content: center;
@@ -36,24 +57,49 @@
       }
       .btn:disabled { opacity: .5; }
       .btn.ghost { background: #fff; color: #111; border: 1px solid #d1d5db; }
-      video.main { width: 100%; aspect-ratio: 9/16; object-fit: cover; object-position: center; background: #000; display: block; border-radius: 0; }
+      video.main { width: 100%; height: 100%; object-fit: cover; object-position: center; background: #000; display: block; border-radius: 0; }
       #local, video#local, video.main, body.in-call video.main {
-        width: 100%; height: 100%; max-height: none; aspect-ratio: auto;
-        object-fit: cover; object-position: center;
-        position: absolute; inset: 0; left: 0; top: 0; right: 0; bottom: 0; z-index: 0;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        min-width: 100% !important;
+        min-height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        object-fit: cover !important;
+        object-position: center !important;
+        background: #000 !important;
         transform: none !important;
         -webkit-transform: none !important;
         pointer-events: none;
+        z-index: 1 !important;
       }
       .stage { position: relative; overflow: hidden; border-radius: 16px; background: #000; }
       body.in-call .stage {
-        position: relative; overflow: hidden; border-radius: 0;
-        width: 100%;
-        height: 100dvh;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100vw !important;
+        height: 100% !important;
+        height: 100dvh !important;
         min-height: 100dvh;
         min-height: -webkit-fill-available;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
         display: block;
         background: #000;
+        overflow: hidden !important;
+        z-index: 5;
       }
       body.in-call .pip {
         top: auto;
@@ -364,30 +410,32 @@
           el.style.height = 'auto';
           el.style.aspectRatio = '3 / 4';
           el.style.top = 'auto';
+          el.style.left = 'auto';
           el.style.bottom = 'calc(16px + env(safe-area-inset-bottom))';
           el.style.right = 'calc(12px + env(safe-area-inset-right))';
-          el.style.left = 'auto';
           el.style.position = 'absolute';
+          el.style.zIndex = '20';
           return;
         }
         el.style.width = '100%';
         el.style.height = '100%';
-        el.style.inset = '0';
+        el.style.minWidth = '100%';
+        el.style.minHeight = '100%';
+        el.style.top = '0';
+        el.style.left = '0';
+        el.style.right = '0';
+        el.style.bottom = '0';
+        el.style.margin = '0';
         el.style.position = 'absolute';
+        el.style.zIndex = '1';
       }
       function esAndroid() {
         return /Android/i.test(navigator.userAgent || '');
       }
       function opcionesCamara() {
-        if (esAndroid()) {
-          return {
-            facingMode: facingMode,
-            resolution: { width: 1280, height: 720, frameRate: 30 },
-          };
-        }
         return {
           facingMode: facingMode,
-          resolution: { width: 1920, height: 1080, frameRate: 30 },
+          resolution: { width: 1280, height: 720, frameRate: 30 },
         };
       }
       function opcionesPublicacion() {
@@ -408,45 +456,23 @@
         };
       }
       function videoConstraints() {
-        // Sin advanced/zoom (rompe WebViews de WhatsApp).
-        const o = opcionesCamara();
         return {
-          facingMode: { ideal: o.facingMode },
-          width: { ideal: o.resolution.width },
-          height: { ideal: o.resolution.height },
-          frameRate: { ideal: o.resolution.frameRate },
+          facingMode: { ideal: facingMode },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 },
         };
       }
       async function pedirCamara() {
         if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
           throw new Error('Abra este enlace en Safari o Chrome (no en WhatsApp/Gmail).');
         }
-        const res1080 = {
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          frameRate: { ideal: 30 },
-        };
-        const res720 = {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30 },
-        };
-        const intentos = [];
-        if (facingMode === 'environment') {
-          // Forzar cámara trasera primero con exact para que Android/iOS no abran la selfie
-          intentos.push({ video: { facingMode: { exact: 'environment' }, ...res1080 }, audio: true });
-          intentos.push({ video: { facingMode: 'environment', ...res1080 }, audio: true });
-          intentos.push({ video: { facingMode: { ideal: 'environment' }, ...res1080 }, audio: true });
-          intentos.push({ video: { facingMode: { exact: 'environment' }, ...res720 }, audio: true });
-          intentos.push({ video: { facingMode: { ideal: 'environment' }, ...res720 }, audio: true });
-        } else {
-          intentos.push({ video: { facingMode: { exact: 'user' }, ...res1080 }, audio: true });
-          intentos.push({ video: { facingMode: 'user', ...res1080 }, audio: true });
-          intentos.push({ video: { facingMode: { ideal: 'user' }, ...res720 }, audio: true });
-        }
-        intentos.push({ video: true, audio: true });
-        intentos.push({ video: true, audio: false });
-
+        const intentos = [
+          { video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true },
+          { video: { facingMode: { ideal: facingMode } }, audio: true },
+          { video: true, audio: true },
+          { video: true, audio: false },
+        ];
         let stream = null;
         let lastErr = null;
         for (let i = 0; i < intentos.length; i++) {
@@ -458,29 +484,6 @@
           }
         }
         if (!stream) throw lastErr || new Error('Permita cámara y micrófono para continuar.');
-
-        // Si pedimos trasera pero el navegador entregó la frontal (sucede en algunos Android con dos frontales),
-        // buscamos en enumerateDevices la trasera real por su id
-        if (facingMode === 'environment') {
-          try {
-            const vTrack = stream.getVideoTracks()[0];
-            const setts = vTrack && vTrack.getSettings ? vTrack.getSettings() : {};
-            if (setts.facingMode === 'user' && navigator.mediaDevices.enumerateDevices) {
-              const devs = await navigator.mediaDevices.enumerateDevices();
-              const trasera = devs.find((d) => d.kind === 'videoinput' && /back|rear|trasera|environment/i.test(d.label));
-              if (trasera && trasera.deviceId) {
-                const s2 = await navigator.mediaDevices.getUserMedia({
-                  video: { deviceId: { exact: trasera.deviceId }, ...res1080 },
-                  audio: true,
-                }).catch(() => null);
-                if (s2) {
-                  try { stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
-                  stream = s2;
-                }
-              }
-            }
-          } catch (_) {}
-        }
         return stream;
       }
       function html(s) {
