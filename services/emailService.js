@@ -3086,11 +3086,23 @@ export const enviarInvitacionVideoperitaje = async (datos = {}) => {
   const expediente = escapeHtmlEmail(datos.expediente || '');
   const tipo =
     datos.tipo === 'guided' ? 'una autoinspección guiada' : 'un videoperitaje';
+  const horaProgramada = escapeHtmlEmail(
+    datos.programadaAtTexto ||
+      (datos.programadaAt
+        ? new Date(datos.programadaAt).toLocaleString('es-CO', {
+            timeZone: 'America/Bogota',
+            dateStyle: 'short',
+            timeStyle: 'short',
+          })
+        : '')
+  );
 
   const mailOptions = {
     from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
     to: email,
-    subject: 'Grupo Proser — Enlace para su videoperitaje',
+    subject: horaProgramada
+      ? `Grupo Proser — Videoperitaje ${horaProgramada}`
+      : 'Grupo Proser — Enlace para su videoperitaje',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background:#f8f9fa; padding:20px;">
         <div style="background:#fff; padding:28px; border-radius:10px;">
@@ -3099,6 +3111,13 @@ export const enviarInvitacionVideoperitaje = async (datos = {}) => {
             Hola <strong>${nombre}</strong>, un profesional de Grupo Proser le invita a realizar ${tipo}
             ${expediente ? `del expediente <strong>${expediente}</strong>` : ''}.
           </p>
+          ${
+            horaProgramada
+              ? `<p style="color:#111827; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:12px 14px; font-size:15px; margin:0 0 16px;">
+                   <strong>Fecha y hora (Colombia):</strong> ${horaProgramada}
+                 </p>`
+              : ''
+          }
           <p style="color:#374151; line-height:1.6;">
             No necesita instalar ninguna aplicación. Abra el enlace desde el navegador de su celular
             (Chrome o Safari), permita cámara, micrófono y ubicación, y siga las indicaciones.

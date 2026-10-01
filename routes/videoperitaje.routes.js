@@ -13,6 +13,7 @@ import {
   eliminarSesion,
   vaciarHistorialSesiones,
   reenviarInvitacion,
+  reprogramarSesion,
   listarModulosCasoVideoperitaje,
   buscarCasosVideoperitaje,
   asignarSesionACaso,
@@ -75,6 +76,7 @@ router.post(`/sesiones/:id(${ID_MONGO})/token-livekit`, tokenLivekitPerito);
 router.post(`/sesiones/:id(${ID_MONGO})/finalizar`, finalizarSesion);
 router.post(`/sesiones/:id(${ID_MONGO})/cancelar`, cancelarSesion);
 router.post(`/sesiones/:id(${ID_MONGO})/reenviar`, reenviarInvitacion);
+router.post(`/sesiones/:id(${ID_MONGO})/reprogramar`, reprogramarSesion);
 router.post(`/sesiones/:id(${ID_MONGO})/asignar-caso`, asignarSesionACaso);
 router.get('/casos/modulos', listarModulosCasoVideoperitaje);
 router.get('/casos/buscar', buscarCasosVideoperitaje);

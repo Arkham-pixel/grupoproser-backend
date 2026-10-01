@@ -1,6 +1,7 @@
 import { resolveVideoperitajePublicUrl } from '../config/platformUrls.js';
 import { enviarInvitacionVideoperitaje } from './emailService.js';
 import { enviarWhatsAppVideoperitaje } from './videoperitajeWhatsappService.js';
+import { formatFechaHoraBogota } from '../utils/videoperitajeFecha.js';
 
 function soloDigitos(valor) {
   return String(valor || '').replace(/\D/g, '');
@@ -34,9 +35,11 @@ export async function notificarInvitacionSesion({
 }) {
   const urlPublica = urlUnirseVideoperitaje(tokenRaw, frontendUrl || resolveVideoperitajePublicUrl());
   const tipoLabel = sesion.tipo === 'guided' ? 'autoinspección guiada' : 'videoperitaje';
+  const horaProgramada = formatFechaHoraBogota(sesion.programadaAt);
   const textoWa = [
     `Grupo Proser — ${tipoLabel}`,
     sesion.expediente ? `Expediente: ${sesion.expediente}` : '',
+    horaProgramada ? `Fecha y hora (Colombia): ${horaProgramada}` : '',
     'Abra este enlace desde su celular (no necesita instalar ninguna app):',
     urlPublica,
   ]
@@ -56,6 +59,8 @@ export async function notificarInvitacionSesion({
       expediente: sesion.expediente,
       tipo: sesion.tipo,
       urlPublica,
+      programadaAt: sesion.programadaAt,
+      programadaAtTexto: horaProgramada,
     });
     emailEnviado = Boolean(r?.success);
     emailError = r?.success ? '' : String(r?.message || '');

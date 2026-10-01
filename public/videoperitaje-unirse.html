@@ -803,9 +803,23 @@
           }
         }
       }
+      function formatHoraColombia(iso) {
+        if (!iso) return '';
+        try {
+          return new Date(iso).toLocaleString('es-CO', {
+            timeZone: 'America/Bogota',
+            dateStyle: 'short',
+            timeStyle: 'short',
+          });
+        } catch (_) {
+          return '';
+        }
+      }
       function renderWelcome() {
+        const hora = formatHoraColombia(sesion.programadaAt);
         panel.innerHTML = `
           <p>Hola${sesion.aseguradoNombre ? ' ' + html(sesion.aseguradoNombre) : ''}. Un ajustador de Grupo Proser lo espera${sesion.expediente ? ' para el expediente <strong>' + html(sesion.expediente) + '</strong>' : ''}.</p>
+          ${hora ? '<p class="hint" style="color:#991b1b;font-weight:600;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;">Fecha y hora (Colombia): ' + html(hora) + '</p>' : ''}
           <p class="hint">Es una videollamada. Permita cámara y micrófono. El ajustador tomará las fotos.</p>
           <button class="btn" id="entrar">Entrar a la videollamada</button>
         `;

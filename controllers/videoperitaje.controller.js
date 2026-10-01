@@ -41,14 +41,12 @@ import {
   filtroSesionesPropias,
   sesionPerteneceAUsuario,
 } from '../config/videoperitajePermitidos.js';
+import { parseProgramadaAtBogota } from '../utils/videoperitajeFecha.js';
 
 const ESTADOS_ABIERTOS = new Set(['pendiente', 'en_proceso']);
 
 function parseProgramadaAt(raw) {
-  if (raw == null || raw === '') return null;
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
+  return parseProgramadaAtBogota(raw);
 }
 
 function hashToken(raw) {
@@ -834,6 +832,108 @@ export async function reenviarInvitacion(req, res) {
       emailError: aviso.emailError,
       whatsappEnviado: aviso.whatsappEnviado,
       whatsappError: aviso.whatsappError,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/** Cambia fecha/hora programada (Colombia) y opcionalmente re-notifica al asegurado. */
+export async function reprogramarSesion(req, res) {
+  try {
+    const sesion = await VideoperitajeSesion.findById(req.params.id);
+    if (!sesion) return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+    const acceso = exigirSesionPropiaOAdmin(sesion, req);
+    if (!acceso.ok) {
+      return res.status(403).json({ success: false, error: 'No tiene acceso a esta sesión' });
+    }
+    if (!ESTADOS_ABIERTOS.has(sesion.estado)) {
+      return res.status(409).json({
+        success: false,
+        error: 'Solo se pueden reprogramar sesiones pendientes o en proceso',
+      });
+    }
+
+    const body = req.body || {};
+    const rawFecha = body.programadaAt ?? body.programada_at ?? body.fechaHora;
+    const programadaAt =
+      rawFecha === null || rawFecha === ''
+        ? null
+        : parseProgramadaAt(rawFecha);
+    if (rawFecha != null && rawFecha !== '' && !programadaAt) {
+      return res.status(400).json({ success: false, error: 'Fecha/hora de programación inválida' });
+    }
+
+    sesion.programadaAt = programadaAt;
+    if (body.ventanaAntesMin != null && Number(body.ventanaAntesMin) >= 0) {
+      sesion.ventanaAntesMin = Number(body.ventanaAntesMin);
+    }
+    if (body.ventanaDespuesMin != null && Number(body.ventanaDespuesMin) >= 0) {
+      sesion.ventanaDespuesMin = Number(body.ventanaDespuesMin);
+    }
+    await sesion.save();
+
+    // Sincronizar ventana en SDK/Postgres (cupo de entrada por hora)
+    try {
+      const { videoperitajeSdkConfigurado, sdkActualizarSesion } = await import(
+        '../services/videoperitajeSdkClient.js'
+      );
+      if (videoperitajeSdkConfigurado()) {
+        await sdkActualizarSesion(String(sesion._id), {
+          programada_at: programadaAt ? programadaAt.toISOString() : null,
+          ventana_antes_min: sesion.ventanaAntesMin,
+          ventana_despues_min: sesion.ventanaDespuesMin,
+        });
+      } else {
+        await registrarSesionPostgres(sesion, { usuario: acceso.usuario });
+      }
+    } catch (err) {
+      console.warn('[videoperitaje] reprogramar sync SDK:', err?.message || err);
+    }
+
+    const notificar = body.notificar !== false && body.notificar !== '0';
+    let aviso = {
+      tokenAsegurado: null,
+      urlPublica: null,
+      whatsappUrl: null,
+      emailEnviado: false,
+      emailError: '',
+      whatsappEnviado: false,
+      whatsappError: '',
+    };
+    if (notificar) {
+      const { raw, hash } = generarTokenAcceso();
+      sesion.tokenHash = hash;
+      sesion.tokenExpira = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const n = await notificarInvitacionSesion({
+        sesion,
+        tokenRaw: raw,
+        frontendUrl: resolveVideoperitajePublicUrl(),
+      });
+      sesion.invitacion = {
+        emailEnviado: n.emailEnviado,
+        emailError: n.emailError,
+        whatsappUrl: n.whatsappUrl,
+        whatsappEnviado: n.whatsappEnviado,
+        whatsappError: n.whatsappError,
+      };
+      await sesion.save();
+      aviso = {
+        tokenAsegurado: raw,
+        urlPublica: n.urlPublica,
+        whatsappUrl: n.whatsappUrl,
+        emailEnviado: n.emailEnviado,
+        emailError: n.emailError,
+        whatsappEnviado: n.whatsappEnviado,
+        whatsappError: n.whatsappError,
+      };
+    }
+
+    res.json({
+      success: true,
+      data: sesion,
+      programadaAt: sesion.programadaAt,
+      ...aviso,
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
