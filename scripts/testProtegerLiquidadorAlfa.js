@@ -79,10 +79,51 @@ assert(
   resueltoMenos?.evaluacionSismicaNSR10?.presupuesto?.items?.[0]?.actividad === 'Muro editado',
   'CAT/Alfa: valores editados deben persistir'
 );
-const restaurariaCopia = preservarPresupuestoNsrSiVacio(editadoMenosItems, conDosItems);
+
+// Borrar ítems del detalle (array explícito más corto) debe persistir
+const conDetalleTres = {
+  modelo: 'nsr10',
+  evaluacionSismicaNSR10: {
+    presupuesto: {
+      items: [
+        { actividad: 'A', cantidad: 1, valorUnitario: 10 },
+        { actividad: 'B', cantidad: 1, valorUnitario: 20 },
+        { actividad: 'C', cantidad: 1, valorUnitario: 30 },
+      ],
+    },
+  },
+  detalleLiquidacionCat: [
+    { descripcion: 'A', valorPerdida: 10 },
+    { descripcion: 'B', valorPerdida: 20 },
+    { descripcion: 'C', valorPerdida: 30 },
+  ],
+};
+const detalleConUno = {
+  modelo: 'nsr10',
+  evaluacionSismicaNSR10: {
+    presupuesto: {
+      items: [{ actividad: 'B', cantidad: 1, valorUnitario: 20 }],
+    },
+  },
+  detalleLiquidacionCat: [{ descripcion: 'B', valorPerdida: 20 }],
+};
+const resueltoBorrado = resolverLiquidadorParaUpdate(detalleConUno, conDetalleTres);
 assert(
-  restaurariaCopia?.evaluacionSismicaNSR10?.presupuesto?.items?.length === 2,
-  'preservar (viejo) sí restauraría la copia inicial; por eso CAT no debe usarlo al editar'
+  resueltoBorrado?.detalleLiquidacionCat?.length === 1,
+  'borrar ítems del detalle debe persistir'
+);
+assert(
+  resueltoBorrado?.evaluacionSismicaNSR10?.presupuesto?.items?.length === 1,
+  'presupuesto espejo del detalle borrado debe persistir'
+);
+
+const preservarOmitido = preservarPresupuestoNsrSiVacio(
+  { modelo: 'nsr10', encabezado: { asegurado: 'X' } },
+  conDosItems
+);
+assert(
+  preservarOmitido?.evaluacionSismicaNSR10?.presupuesto?.items?.length === 2,
+  'preservar: si el entrante OMITIÓ presupuesto, se conserva el guardado'
 );
 
 const soloPdf = {

@@ -143,11 +143,20 @@ export function preservarPresupuestoNsrSiVacio(nuevo, actual) {
   let evalOut = evalNew;
   let protegio = false;
 
-  if (contarPresupuestoNsr(actual) > contarPresupuestoNsr(nuevo) && evalOld.presupuesto) {
+  // Solo reinyectar si el entrante OMITIÓ el array. Menos ítems = borrado intencional.
+  if (
+    !Array.isArray(evalNew.presupuesto?.items) &&
+    contarPresupuestoNsr(actual) > 0 &&
+    evalOld.presupuesto
+  ) {
     evalOut = { ...evalOut, presupuesto: evalOld.presupuesto };
     protegio = true;
   }
-  if (contarContenidosNsr(actual) > contarContenidosNsr(nuevo) && evalOld.contenidos) {
+  if (
+    !Array.isArray(evalNew.contenidos?.items) &&
+    contarContenidosNsr(actual) > 0 &&
+    evalOld.contenidos
+  ) {
     evalOut = { ...evalOut, contenidos: evalOld.contenidos };
     protegio = true;
   }
@@ -155,16 +164,18 @@ export function preservarPresupuestoNsrSiVacio(nuevo, actual) {
   let next = protegio ? { ...nuevo, evaluacionSismicaNSR10: evalOut } : { ...nuevo };
 
   if (
-    contarDetalleCat(actual) > contarDetalleCat(nuevo) &&
-    Array.isArray(actual.detalleLiquidacionCat)
+    !Array.isArray(nuevo.detalleLiquidacionCat) &&
+    Array.isArray(actual.detalleLiquidacionCat) &&
+    contarDetalleCat(actual) > 0
   ) {
     next = { ...next, detalleLiquidacionCat: actual.detalleLiquidacionCat };
     protegio = true;
   }
 
   if (
-    contarOtrosAmparosAlfa(actual) > contarOtrosAmparosAlfa(next) &&
-    Array.isArray(actual.otrosAmparos)
+    !Array.isArray(nuevo.otrosAmparos) &&
+    Array.isArray(actual.otrosAmparos) &&
+    contarOtrosAmparosAlfa(actual) > 0
   ) {
     next = { ...next, otrosAmparos: actual.otrosAmparos };
     protegio = true;
@@ -219,7 +230,15 @@ export function resolverLiquidadorParaUpdate(incoming, actual) {
   if (scoreOld > 0 && scoreNew === 0) return actual;
   const valNew = contarPresupuestoNsrConValor(incoming);
   const valOld = contarPresupuestoNsrConValor(actual);
-  // Catálogo sin cantidades no puede pisar un presupuesto ya digitado.
+  const detIncoming = Array.isArray(incoming.detalleLiquidacionCat);
+  const presupIncoming = Array.isArray(
+    incoming?.evaluacionSismicaNSR10?.presupuesto?.items
+  );
+  // Detalle/presupuesto explícitos (aunque con menos ítems): confiar en la edición.
+  if (detIncoming || presupIncoming || valNew > 0) {
+    return preservarLiquidacionCotizacionPdfAlfa(incoming, actual);
+  }
+  // Catálogo omitido / sin cantidades no puede pisar un presupuesto ya digitado.
   let next = incoming;
   if (valOld > 0 && valNew === 0) {
     next = preservarPresupuestoNsrSiVacio(incoming, actual);
