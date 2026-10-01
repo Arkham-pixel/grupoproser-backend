@@ -458,23 +458,21 @@
         }
         return null;
       }
-      function esAndroid() {
-        return /Android/i.test(navigator.userAgent || '');
-      }
       function opcionesCamara() {
         return {
           facingMode: facingMode,
-          resolution: { width: 1280, height: 960, aspectRatio: 4 / 3 },
+          resolution: { width: 1280, height: 960, frameRate: 24, aspectRatio: 4 / 3 },
         };
       }
+      // ~1 Mbps es lo que un 4G sostiene de subida sin jitter. Las fotos salen de la cámara, no de este video.
       function opcionesPublicacion() {
         const P = window.LivekitClient && window.LivekitClient.VideoPresets;
-        if (esAndroid()) return {};
         return {
           simulcast: true,
           videoCodec: 'vp8',
-          videoSimulcastLayers: P ? [P.h1080, P.h720, P.h360] : undefined,
-          audioPreset: { maxBitrate: 64000 },
+          videoEncoding: { maxBitrate: 1000000, maxFramerate: 24 },
+          videoSimulcastLayers: P ? [P.h180] : undefined,
+          audioPreset: { maxBitrate: 48000 },
         };
       }
       function videoConstraints() {
@@ -483,7 +481,7 @@
           width: { ideal: 1280 },
           height: { ideal: 960 },
           aspectRatio: { ideal: 4 / 3 },
-          frameRate: { ideal: 30 },
+          frameRate: { ideal: 24 },
         };
       }
       async function pedirCamara() {
@@ -907,7 +905,7 @@
           const LivekitClient = await asegurarLivekit();
           if (!LivekitClient) throw new Error('No se pudo cargar la videollamada. Revise su conexión y recargue el enlace.');
           const room = new LivekitClient.Room({
-            adaptiveStream: false,
+            adaptiveStream: true,
             dynacast: true,
             stopLocalTrackOnUnpublish: true,
             disconnectOnPageLeave: false,
