@@ -106,11 +106,16 @@ export function crearControladoresArchivosListado({
         'INFORME_FINAL',
         'DESPRENDIBLE_CAT',
       ].includes(et);
+      const keepAll =
+        req.body?.replaceSameSlot === false ||
+        req.body?.replaceSameSlot === 'false' ||
+        req.body?.replaceSameSlot === '0';
       const replaceSameSlot =
-        autoReplace ||
-        req.body?.replaceSameSlot === true ||
-        req.body?.replaceSameSlot === 'true' ||
-        req.body?.replaceSameSlot === '1';
+        !keepAll &&
+        (autoReplace ||
+          req.body?.replaceSameSlot === true ||
+          req.body?.replaceSameSlot === 'true' ||
+          req.body?.replaceSameSlot === '1');
       if (replaceSameSlot) {
         const ext = String(nuevoMeta.nombreOriginal || '')
           .toLowerCase()
